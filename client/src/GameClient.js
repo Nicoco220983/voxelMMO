@@ -1,5 +1,9 @@
 // @ts-check
+import * as THREE from 'three'
 import { ChunkMessageType } from './types.js'
+import { Chunk } from './Chunk.js'
+
+/** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
 /** @type {Record<number, string>} */
 const MSG_TYPE_NAMES = Object.fromEntries(
@@ -16,30 +20,33 @@ const MSG_TYPE_NAMES = Object.fromEntries(
 
 /**
  * @class GameClient
- * @description Manages the WebSocket connection to the gateway engine.
+ * @description Manages the WebSocket connection, chunk state, and Three.js meshes.
  *
  * All incoming binary messages follow the chunk-state wire format:
  *   byte[0]    – ChunkMessageType
  *   byte[1:9]  – ChunkId packed as little-endian int64
  *   byte[9:]   – payload (voxel section + entity section)
- *
- * Outgoing messages carry raw player input (binary format defined by game design).
  */
 export class GameClient {
   /** @type {WebSocket|null} */
   #socket = null
 
-  /** @type {ChunkMessageHandler|null} */
-  #chunkMessageHandler = null
-
   /** @type {string} */
   #url
 
+  /** @type {THREE.Scene} */
+  #scene
+
+  /** @type {Map<ChunkIdPacked, Chunk>} */
+  #chunks = new Map()
+
   /**
-   * @param {string} url  Full WebSocket URL, e.g. "ws://localhost:8080".
+   * @param {string}      url    Full WebSocket URL, e.g. "ws://localhost:8080".
+   * @param {THREE.Scene} scene  The Three.js scene to add/remove chunk meshes into.
    */
-  constructor(url) {
-    this.#url = url
+  constructor(url, scene) {
+    this.#url   = url
+    this.#scene = scene
   }
 
   /**
@@ -72,14 +79,6 @@ export class GameClient {
   }
 
   /**
-   * Register the handler that receives all parsed chunk messages.
-   * @param {ChunkMessageHandler} handler
-   */
-  onChunkMessage(handler) {
-    this.#chunkMessageHandler = handler
-  }
-
-  /**
    * Send a raw binary player-input message to the server.
    * @param {ArrayBuffer} data  Serialised input bytes.
    */
@@ -95,27 +94,85 @@ export class GameClient {
     this.#socket = null
   }
 
+  /**
+   * Rebuild Three.js meshes for all chunks that received voxel changes since
+   * the last call. Call once per animation frame.
+   */
+  rebuildDirtyChunks() {
+    for (const chunk of this.#chunks.values()) {
+      if (chunk.dirty) chunk.rebuildMesh(this.#scene)
+    }
+  }
+
+  /** Remove all chunk meshes and clear internal state. */
+  clear() {
+    for (const chunk of this.#chunks.values()) {
+      chunk.dispose(this.#scene)
+    }
+    this.#chunks.clear()
+  }
+
   // ── private ──────────────────────────────────────────────────────────────
 
   /**
-   * Parse an incoming binary message and dispatch to the registered handler.
-   * Minimum valid message size is 9 bytes: type(1) + ChunkId(8).
+   * @param {ChunkIdPacked} chunkId
+   * @returns {Chunk}
+   */
+  #getOrCreateChunk(chunkId) {
+    let chunk = this.#chunks.get(chunkId)
+    if (!chunk) {
+      chunk = new Chunk(chunkId)
+      this.#chunks.set(chunkId, chunk)
+    }
+    return chunk
+  }
+
+  /**
+   * Parse an incoming WebSocket frame as a batch of length-prefixed messages.
+   * Batch wire format: repeated [ uint32 msgLen (LE) | msgLen bytes ]
    * @param {ArrayBuffer} buf
    */
   #handleMessage(buf) {
-    if (buf.byteLength < 9) return
+    const view = new DataView(buf)
+    let off = 0
+    while (off + 4 <= buf.byteLength) {
+      const len = view.getUint32(off, true); off += 4
+      if (off + len > buf.byteLength) break
+      this.#dispatch(new DataView(buf, off, len))
+      off += len
+    }
+  }
 
-    const view    = new DataView(buf)
-    const msgType = view.getUint8(0)
-    // ChunkId is a little-endian signed 64-bit integer
-    const chunkId = view.getBigInt64(1, /* littleEndian */ true)
+  /**
+   * Dispatch one parsed message to the appropriate chunk.
+   * Minimum valid message size is 13 bytes: type(1) + ChunkId(8) + tick(4).
+   * @param {DataView} view  View over exactly one message (byteOffset may be non-zero).
+   */
+  #dispatch(view) {
+    if (view.byteLength < 13) return
+
+    const msgType    = view.getUint8(0)
+    const chunkId    = view.getBigInt64(1, /* littleEndian */ true)
+    const messageTick = view.getUint32(9, /* littleEndian */ true)
 
     const cy = Number(BigInt.asIntN(6,  chunkId >> 58n))
     const cx = Number(BigInt.asIntN(29, chunkId >> 29n))
     const cz = Number(BigInt.asIntN(29, chunkId))
     console.debug('[GameClient] rx', MSG_TYPE_NAMES[msgType] ?? msgType,
-      `chunk(${cx},${cy},${cz})`, buf.byteLength + 'B')
+      `chunk(${cx},${cy},${cz})`, view.byteLength + 'B')
 
-    this.#chunkMessageHandler?.(msgType, chunkId, view)
+    switch (msgType) {
+      case ChunkMessageType.SNAPSHOT_COMPRESSED:
+        this.#getOrCreateChunk(chunkId).applySnapshot(view, messageTick)
+        break
+      case ChunkMessageType.SNAPSHOT_DELTA:
+      case ChunkMessageType.TICK_DELTA:
+        this.#chunks.get(chunkId)?.applyVoxelDelta(view, false, messageTick)
+        break
+      case ChunkMessageType.SNAPSHOT_DELTA_COMPRESSED:
+      case ChunkMessageType.TICK_DELTA_COMPRESSED:
+        this.#chunks.get(chunkId)?.applyVoxelDelta(view, true, messageTick)
+        break
+    }
   }
 }

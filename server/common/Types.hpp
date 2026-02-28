@@ -93,6 +93,11 @@ inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK
 /** @brief Minimum payload size (bytes) that triggers LZ4 compression. */
 inline constexpr size_t LZ4_COMPRESSION_THRESHOLD = 256;
 
+// ── Physics constants ─────────────────────────────────────────────────────
+inline constexpr int32_t TICK_RATE = 20;                              ///< Ticks per second.
+inline constexpr float   TICK_DT   = 1.0f / static_cast<float>(TICK_RATE); ///< Seconds per tick.
+inline constexpr float   GRAVITY   = 9.81f;                           ///< Gravitational acceleration (m/s²).
+
 } // namespace voxelmmo
 
 // ── std::hash support for use in unordered containers ──────────────────────

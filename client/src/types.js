@@ -85,7 +85,11 @@ export const VoxelType = Object.freeze({
   GRASS: 3,
 })
 
-// ── Component dirty-bit constants (must match PositionComponent/VelocityComponent) ──
+// ── Physics constants (must match server Types.hpp) ──────────────────────────
+
+/** @type {number} */ export const TICK_RATE = 20      // ticks per second
+/** @type {number} */ export const GRAVITY   = 9.81    // m/s²
+
+// ── Component dirty-bit constants (must match server DynamicPositionComponent.hpp) ──
 
 /** @type {number} */ export const POSITION_BIT = 1 << 0
-/** @type {number} */ export const VELOCITY_BIT = 1 << 1

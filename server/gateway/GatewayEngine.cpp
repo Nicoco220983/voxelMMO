@@ -15,24 +15,29 @@ void GatewayEngine::setPlayerInputCallback(PlayerInputCallback cb)             {
 
 // ── Incoming from game engine ─────────────────────────────────────────────
 
-void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
-    // Copy into a shared_ptr so it can be safely captured across thread boundary
+void GatewayEngine::receiveGameBatch(const uint8_t* data, size_t size) {
+    // Copy the batch so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
-    // Defer execution onto the uWS event loop (uwsLoop captured on the uWS thread)
     uwsLoop->defer([this, buf]() {
-        stateManager.receiveChunkMessage(buf->data(), buf->size());
-
-        if (buf->size() < 1 + sizeof(int64_t)) return;
-        ChunkId cid;
-        std::memcpy(&cid.packed, buf->data() + 1, sizeof(int64_t));
-        broadcastChunkMessage(cid, buf->data(), buf->size());
+        // Parse individual messages and update StateManager
+        size_t off = 0;
+        while (off + 4 <= buf->size()) {
+            uint32_t len;
+            std::memcpy(&len, buf->data() + off, 4);
+            off += 4;
+            if (off + len > buf->size()) break;
+            stateManager.receiveChunkMessage(buf->data() + off, len);
+            off += len;
+        }
+        // Forward the entire batch as a single WebSocket frame to all clients
+        // TODO: filter per-client by watched chunks
+        broadcastBatch(buf->data(), buf->size());
     });
 }
 
-void GatewayEngine::broadcastChunkMessage(ChunkId /*cid*/, const uint8_t* data, size_t size) {
+void GatewayEngine::broadcastBatch(const uint8_t* data, size_t size) {
     const std::string_view msg(reinterpret_cast<const char*>(data), size);
-    // TODO: only send to players watching cid (requires per-player watched-chunk tracking)
     for (auto& [pid, ws] : sockets) {
         ws->send(msg, uWS::OpCode::BINARY);
     }
@@ -42,7 +47,7 @@ void GatewayEngine::broadcastChunkMessage(ChunkId /*cid*/, const uint8_t* data, 
 
 void GatewayEngine::listen(int port) {
     // Capture the loop pointer now, while we are on the uWS thread.
-    // receiveGameMessage() will use this from the game thread.
+    // receiveGameBatch() will use this from the game thread.
     uwsLoop = uWS::Loop::get();
 
     wsApp.ws<PlayerConnection>("/*", {

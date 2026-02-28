@@ -54,7 +54,8 @@ public:
      */
     const std::vector<uint8_t>& buildSnapshot(
         entt::registry& reg,
-        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap);
+        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
+        uint32_t tickCount);
 
     /**
      * @brief Build a snapshot delta and store it in state.snapshotDelta.
@@ -67,7 +68,8 @@ public:
      */
     const std::vector<uint8_t>& buildSnapshotDelta(
         entt::registry& reg,
-        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap);
+        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
+        uint32_t tickCount);
 
     /**
      * @brief Build a tick delta and append it to state.tickDeltas.
@@ -79,14 +81,15 @@ public:
      */
     const std::vector<uint8_t>& buildTickDelta(
         entt::registry& reg,
-        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap);
+        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
+        uint32_t tickCount);
 
     /** @brief Byte length of the always-uncompressed message header. */
-    static constexpr size_t HEADER_SIZE = 1 + sizeof(int64_t); // type(1) + ChunkId(8)
+    static constexpr size_t HEADER_SIZE = 1 + sizeof(int64_t) + sizeof(uint32_t); // type(1) + ChunkId(8) + tick(4)
 
 private:
-    /** @brief Write type byte + ChunkId into buf; return bytes written (= HEADER_SIZE). */
-    size_t writeHeader(uint8_t* buf, ChunkMessageType msgType) const;
+    /** @brief Write type byte + ChunkId + tick into buf; return bytes written (= HEADER_SIZE). */
+    size_t writeHeader(uint8_t* buf, ChunkMessageType msgType, uint32_t tickCount) const;
 
     /**
      * @brief If buf's payload exceeds LZ4_COMPRESSION_THRESHOLD, copy the

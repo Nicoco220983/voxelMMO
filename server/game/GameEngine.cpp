@@ -5,8 +5,16 @@ namespace voxelmmo {
 
 GameEngine::GameEngine() = default;
 
-void GameEngine::setChunkMessageCallback(ChunkMessageCallback cb) {
-    chunkMsgCallback = std::move(cb);
+void GameEngine::setOutputCallback(OutputCallback cb) {
+    outputCallback = std::move(cb);
+}
+
+void GameEngine::appendToBatch(const std::vector<uint8_t>& msg) {
+    if (msg.empty()) return;
+    const uint32_t len = static_cast<uint32_t>(msg.size());
+    const auto* lenBytes = reinterpret_cast<const uint8_t*>(&len);
+    batchBuf.insert(batchBuf.end(), lenBytes, lenBytes + 4);
+    batchBuf.insert(batchBuf.end(), msg.begin(), msg.end());
 }
 
 // ── Gateway management ────────────────────────────────────────────────────
@@ -28,8 +36,7 @@ EntityId GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
                                 float sx, float sy, float sz)
 {
     const entt::entity ent = registry.create();
-    registry.emplace<PositionComponent>(ent, sx, sy, sz);
-    registry.emplace<VelocityComponent>(ent);
+    registry.emplace<DynamicPositionComponent>(ent, tickCount, sx, sy, sz, 0.0f, 0.0f, 0.0f, false);
     registry.emplace<DirtyComponent>(ent);
 
     const EntityId eid = nextEntityId++;
@@ -80,28 +87,32 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
 void GameEngine::serializeSnapshot(GatewayId gwId) {
     auto it = gateways.find(gwId);
     if (it == gateways.end()) return;
+    batchBuf.clear();
     for (const ChunkId& cid : it->second.watchedChunks) {
         auto cit = chunks.find(cid);
         if (cit == chunks.end()) continue;
-        const auto& buf = cit->second->buildSnapshot(registry, entityMap);
-        if (chunkMsgCallback) chunkMsgCallback(gwId, cid, buf.data(), buf.size());
+        appendToBatch(cit->second->buildSnapshot(registry, entityMap, static_cast<uint32_t>(tickCount)));
     }
+    if (!batchBuf.empty() && outputCallback)
+        outputCallback(gwId, batchBuf.data(), batchBuf.size());
 }
 
 void GameEngine::serializeSnapshotDelta() {
     // Build each chunk's delta once (future: parallelisable over chunks)
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
     for (auto& [cid, chunk] : chunks) {
-        chunk->buildSnapshotDelta(registry, entityMap);
+        chunk->buildSnapshotDelta(registry, entityMap, tick);
     }
-    // Dispatch the cached result to every gateway watching each chunk
+    // Dispatch one batch per gateway
     for (auto& [gwId, gwInfo] : gateways) {
+        batchBuf.clear();
         for (const ChunkId& cid : gwInfo.watchedChunks) {
             auto it = chunks.find(cid);
             if (it == chunks.end()) continue;
-            const auto& buf = it->second->state.snapshotDelta;
-            if (!buf.empty() && chunkMsgCallback)
-                chunkMsgCallback(gwId, cid, buf.data(), buf.size());
+            appendToBatch(it->second->state.snapshotDelta);
         }
+        if (!batchBuf.empty() && outputCallback)
+            outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
     // Clear snapshot-level dirty state
     for (auto& [cid, chunk] : chunks) {
@@ -117,19 +128,21 @@ void GameEngine::serializeSnapshotDelta() {
 
 void GameEngine::serializeTickDelta() {
     // Build each chunk's tick delta once (future: parallelisable over chunks)
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
     for (auto& [cid, chunk] : chunks) {
-        chunk->buildTickDelta(registry, entityMap);
+        chunk->buildTickDelta(registry, entityMap, tick);
     }
-    // Dispatch to every gateway watching each chunk
+    // Dispatch one batch per gateway
     for (auto& [gwId, gwInfo] : gateways) {
+        batchBuf.clear();
         for (const ChunkId& cid : gwInfo.watchedChunks) {
             auto it = chunks.find(cid);
             if (it == chunks.end()) continue;
             if (it->second->state.tickDeltas.empty()) continue;
-            const auto& buf = it->second->state.tickDeltas.back();
-            if (!buf.empty() && chunkMsgCallback)
-                chunkMsgCallback(gwId, cid, buf.data(), buf.size());
+            appendToBatch(it->second->state.tickDeltas.back());
         }
+        if (!batchBuf.empty() && outputCallback)
+            outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
     // Clear tick-level dirty state and accumulated tick deltas
     for (auto& [cid, chunk] : chunks) {
@@ -146,22 +159,21 @@ void GameEngine::serializeTickDelta() {
 
 // ── Physics ───────────────────────────────────────────────────────────────
 
-void GameEngine::stepPhysics(float dt) {
-    auto view = registry.view<PositionComponent, VelocityComponent, DirtyComponent>();
-    view.each([&](entt::entity ent,
-                  PositionComponent& pos,
-                  VelocityComponent& vel,
-                  DirtyComponent&    /*dirty*/) {
-        // Apply gravity
-        vel.vy -= 9.81f * dt;
+void GameEngine::stepPhysics() {
+    // Simple planar ground — TODO: replace with voxel collision
+    static constexpr float FLOOR_Y = static_cast<float>(CHUNK_SIZE_Y); // 16.0f
 
-        // Integrate position
-        if (vel.vx != 0.0f || vel.vy != 0.0f || vel.vz != 0.0f) {
-            PositionComponent::modify(registry, ent,
-                pos.x + vel.vx * dt,
-                pos.y + vel.vy * dt,
-                pos.z + vel.vz * dt);
+    auto view = registry.view<DynamicPositionComponent, DirtyComponent>();
+    view.each([&](entt::entity ent, DynamicPositionComponent& dyn, DirtyComponent&) {
+        if (dyn.grounded) return;  // client predicts correctly; nothing to do
+
+        auto [px, py, pz] = DynamicPositionComponent::predictAt(dyn, tickCount);
+        if (py <= FLOOR_Y) {
+            // Entity has landed — snap to floor and stop vertical movement
+            DynamicPositionComponent::modify(registry, ent, tickCount,
+                px, FLOOR_Y, pz, dyn.vx, 0.0f, dyn.vz, true);
         }
+        // else: still airborne — both sides predict identically, no update needed
     });
 }
 
@@ -181,10 +193,10 @@ void GameEngine::checkPlayersChunks() {
             auto entIt = playerEntities.find(pid);
             if (entIt == playerEntities.end()) continue;
 
-            const auto& pos = registry.get<PositionComponent>(entIt->second);
-            const int32_t cx = static_cast<int32_t>(std::floor(pos.x / CHUNK_SIZE_X));
-            const int8_t  cy = static_cast<int8_t> (std::floor(pos.y / CHUNK_SIZE_Y));
-            const int32_t cz = static_cast<int32_t>(std::floor(pos.z / CHUNK_SIZE_Z));
+            const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
+            const int32_t cx = static_cast<int32_t>(std::floor(dyn.x / CHUNK_SIZE_X));
+            const int8_t  cy = static_cast<int8_t> (std::floor(dyn.y / CHUNK_SIZE_Y));
+            const int32_t cz = static_cast<int32_t>(std::floor(dyn.z / CHUNK_SIZE_Z));
 
             for (int32_t dx = -WATCH_RADIUS; dx <= WATCH_RADIUS; ++dx) {
                 for (int8_t dy = -1; dy <= 1; ++dy) {
@@ -216,10 +228,9 @@ void GameEngine::checkPlayersChunks() {
 // ── Main tick ─────────────────────────────────────────────────────────────
 
 void GameEngine::tick() {
-    constexpr float DT = 1.0f / 20.0f; // 20 Hz
     ++tickCount;
 
-    stepPhysics(DT);
+    stepPhysics();
     checkPlayersChunks();
 
     if (tickCount % SNAPSHOT_DELTA_INTERVAL == 0) {

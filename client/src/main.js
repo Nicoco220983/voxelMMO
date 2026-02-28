@@ -1,7 +1,6 @@
 // @ts-check
-import * as THREE      from 'three'
-import { GameClient }  from './GameClient.js'
-import { ChunkManager } from './ChunkManager.js'
+import * as THREE     from 'three'
+import { GameClient } from './GameClient.js'
 
 // ── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -33,33 +32,21 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight)
 })
 
-// ── Chunk manager ─────────────────────────────────────────────────────────
-const chunkManager = new ChunkManager(scene)
-
-// ── Network connection ────────────────────────────────────────────────────
-const wsUrl = `ws://${location.host}/ws`
-const client = new GameClient(wsUrl)
-
-client.onChunkMessage((type, chunkId, view) => {
-  chunkManager.handleChunkMessage(type, chunkId, view)
-})
+// ── Network + chunk state ─────────────────────────────────────────────────
+const client = new GameClient(`ws://${location.host}/ws`, scene)
 
 client.connect().catch((err) => {
-  console.error('[main] Failed to connect to', wsUrl, err)
+  console.error('[main] Failed to connect to server', err)
 })
 
 // ── HUD ───────────────────────────────────────────────────────────────────
 const hud = /** @type {HTMLElement} */ (document.getElementById('hud'))
 
 // ── Render loop ───────────────────────────────────────────────────────────
-
-/**
- * Main render loop — called by requestAnimationFrame every frame.
- */
 function animate() {
   requestAnimationFrame(animate)
 
-  chunkManager.rebuildDirtyChunks()
+  client.rebuildDirtyChunks()
   renderer.render(scene, camera)
 
   const p = camera.position

@@ -25,7 +25,7 @@ struct PlayerConnection {
  *   - Forward raw player-input messages from clients to the GameEngine.
  *   - Maintain StateManager so late-joining players can receive cached state.
  *
- * Threading note: receiveGameMessage() is called from the game-engine thread.
+ * Threading note: receiveGameBatch() is called from the game-engine thread.
  * uWebSockets' App::run() blocks the calling thread. Use uWS::Loop::defer() to
  * safely push work from another thread onto the uWS event loop.
  */
@@ -35,14 +35,15 @@ public:
     ~GatewayEngine();
 
     /**
-     * @brief Deliver a serialised chunk message from the game engine.
+     * @brief Deliver one tick's batch of serialised messages from the game engine.
      *
+     * Batch wire format: repeated [ uint32 msgLen (LE) | msgLen bytes ]
      * Safe to call from any thread; defers to the uWS event loop internally.
      *
-     * @param data  Raw message bytes (caller owns; copied immediately).
-     * @param size  Byte count.
+     * @param data  Batch bytes (caller owns; copied immediately).
+     * @param size  Total batch byte count.
      */
-    void receiveGameMessage(const uint8_t* data, size_t size);
+    void receiveGameBatch(const uint8_t* data, size_t size);
 
     /**
      * @brief Start listening for WebSocket connections. Blocks until stopped.
@@ -78,7 +79,7 @@ private:
 
     /**
      * @brief uWS event-loop pointer captured on the uWS thread during listen().
-     * receiveGameMessage() may be called from any thread and uses this to defer
+     * receiveGameBatch() may be called from any thread and uses this to defer
      * work safely onto the uWS event loop.
      */
     uWS::Loop* uwsLoop{nullptr};
@@ -93,10 +94,10 @@ private:
     PlayerInputCallback      inputCb;
 
     /**
-     * @brief Broadcast a chunk message to all players who watch that chunk.
+     * @brief Send a complete batch to all connected players.
      * Must be called from the uWS event loop thread.
      */
-    void broadcastChunkMessage(ChunkId cid, const uint8_t* data, size_t size);
+    void broadcastBatch(const uint8_t* data, size_t size);
 };
 
 } // namespace voxelmmo

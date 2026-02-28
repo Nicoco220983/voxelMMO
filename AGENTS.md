@@ -56,8 +56,7 @@ A high performance online webgame massive multiplayer, on wide generated world.
       - file PlayerEntity.hpp  # extends BaseEntity, adds ChunkId currentChunk
     - dir components/
       - file DirtyComponent.hpp     # snapshotDirtyFlags, tickDirtyFlags (1 bit/component)
-      - file PositionComponent.hpp  # POSITION_BIT, PositionComponent{x,y,z} with modify()
-      - file VelocityComponent.hpp  # VELOCITY_BIT, VelocityComponent{vx,vy,vz} with modify()
+      - file DynamicPositionComponent.hpp  # POSITION_BIT, x/y/z + vx/vy/vz with modify()
   - dir gateway/
     - file GatewayEngine.hpp/cpp # uWS server, stores uwsLoop ptr for cross-thread defer
     - file StateManager.hpp/cpp  # map[ChunkId, ChunkState], routes received messages

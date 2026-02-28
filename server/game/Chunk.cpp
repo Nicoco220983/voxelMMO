@@ -10,9 +10,10 @@ Chunk::Chunk(ChunkId chunkId) : id(chunkId) {
     state.scratch.reserve(64 * 1024);
 }
 
-size_t Chunk::writeHeader(uint8_t* buf, ChunkMessageType msgType) const {
+size_t Chunk::writeHeader(uint8_t* buf, ChunkMessageType msgType, uint32_t tickCount) const {
     buf[0] = static_cast<uint8_t>(msgType);
     std::memcpy(buf + 1, &id.packed, sizeof(int64_t));
+    std::memcpy(buf + 9, &tickCount, sizeof(uint32_t));
     return HEADER_SIZE;
 }
 
@@ -47,15 +48,15 @@ void Chunk::maybeCompressDelta(std::vector<uint8_t>& buf, ChunkMessageType compr
 
 const std::vector<uint8_t>& Chunk::buildSnapshot(
     entt::registry& reg,
-    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap)
+    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
+    uint32_t tickCount)
 {
     auto& buf = state.snapshot;
     buf.clear();
 
-    // ── Header (9 bytes) + flags byte ────────────────────────────────────
-    buf.resize(HEADER_SIZE + 1);  // [0..8] header, [9] flags
-    buf[0] = static_cast<uint8_t>(ChunkMessageType::SNAPSHOT_COMPRESSED);
-    std::memcpy(buf.data() + 1, &id.packed, sizeof(int64_t));
+    // ── Header (13 bytes) + flags byte ───────────────────────────────────
+    buf.resize(HEADER_SIZE + 1);  // [0..12] header, [13] flags
+    writeHeader(buf.data(), ChunkMessageType::SNAPSHOT_COMPRESSED, tickCount);
     // buf[HEADER_SIZE] = flags — written at the end
 
     // ── Voxels: LZ4 directly from world.voxels (zero intermediate copy) ──
@@ -83,7 +84,7 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(
     for (EntityId eid : entities) {
         auto it = entityMap.find(eid);
         if (it == entityMap.end()) continue;
-        it->second->serializeSnapshot(scratch.data(), entityOff);
+        it->second->serializeSnapshot(scratch.data(), entityOff, tickCount);
         ++entityCount;
     }
     scratch.resize(entityOff);
@@ -127,7 +128,8 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(
 
 const std::vector<uint8_t>& Chunk::buildSnapshotDelta(
     entt::registry& reg,
-    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap)
+    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
+    uint32_t tickCount)
 {
     auto& buf = state.snapshotDelta;
 
@@ -147,7 +149,7 @@ const std::vector<uint8_t>& Chunk::buildSnapshotDelta(
         + sizeof(int32_t) + entities.size() * 64;
     buf.resize(maxSize);
 
-    size_t off = writeHeader(buf.data(), ChunkMessageType::SNAPSHOT_DELTA);
+    size_t off = writeHeader(buf.data(), ChunkMessageType::SNAPSHOT_DELTA, tickCount);
 
     // Voxel delta section
     const int32_t voxelCount = static_cast<int32_t>(world.voxelsSnapshotDeltas.size());
@@ -170,7 +172,7 @@ const std::vector<uint8_t>& Chunk::buildSnapshotDelta(
         if (!entity.isSnapshotDirty()) continue;
         const uint8_t mask = reg.get<DirtyComponent>(entity.handle).snapshotDirtyFlags;
         buf[off++] = static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
-        entity.serializeDelta(buf.data(), off, mask);
+        entity.serializeDelta(buf.data(), off, mask, tickCount);
         ++entityCount;
     }
     std::memcpy(buf.data() + entityCountOff, &entityCount, sizeof(int32_t));
@@ -184,7 +186,8 @@ const std::vector<uint8_t>& Chunk::buildSnapshotDelta(
 
 const std::vector<uint8_t>& Chunk::buildTickDelta(
     entt::registry& reg,
-    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap)
+    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
+    uint32_t tickCount)
 {
     // Early exit: nothing to send
     if (world.voxelsTickDeltas.empty()) {
@@ -208,7 +211,7 @@ const std::vector<uint8_t>& Chunk::buildTickDelta(
         + sizeof(int32_t) + entities.size() * 64;
     buf.resize(maxSize);
 
-    size_t off = writeHeader(buf.data(), ChunkMessageType::TICK_DELTA);
+    size_t off = writeHeader(buf.data(), ChunkMessageType::TICK_DELTA, tickCount);
 
     // Voxel delta section
     const int32_t voxelCount = static_cast<int32_t>(world.voxelsTickDeltas.size());
@@ -231,7 +234,7 @@ const std::vector<uint8_t>& Chunk::buildTickDelta(
         if (!entity.isTickDirty()) continue;
         const uint8_t mask = reg.get<DirtyComponent>(entity.handle).tickDirtyFlags;
         buf[off++] = static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
-        entity.serializeDelta(buf.data(), off, mask);
+        entity.serializeDelta(buf.data(), off, mask, tickCount);
         ++entityCount;
     }
     std::memcpy(buf.data() + entityCountOff, &entityCount, sizeof(int32_t));

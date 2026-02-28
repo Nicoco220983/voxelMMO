@@ -69,15 +69,18 @@ public:
     // ── Serialisation callbacks ───────────────────────────────────────────
 
     /**
-     * @brief Callback invoked with every serialised chunk state message.
+     * @brief Callback invoked once per tick per gateway with a full batch of
+     * serialised messages ready to be forwarded to clients.
      *
-     * Signature: (GatewayId, ChunkId, data*, size)
+     * Batch wire format: repeated [ uint32 msgLen (LE) | msgLen bytes ]
      * The data pointer is valid only for the duration of the call.
+     *
+     * Signature: (GatewayId, data*, size)
+     * Designed to map directly to writev(fd, …) when IPC moves to a real socket.
      */
-    using ChunkMessageCallback =
-        std::function<void(GatewayId, ChunkId, const uint8_t*, size_t)>;
+    using OutputCallback = std::function<void(GatewayId, const uint8_t*, size_t)>;
 
-    void setChunkMessageCallback(ChunkMessageCallback cb);
+    void setOutputCallback(OutputCallback cb);
 
     /**
      * @brief Force-send a full snapshot for all watched chunks of a gateway.
@@ -106,7 +109,10 @@ private:
     EntityId nextEntityId{1};
     int32_t  tickCount{0};
 
-    ChunkMessageCallback chunkMsgCallback;
+    OutputCallback outputCallback;
+
+    /** @brief Reused batch buffer — cleared and refilled every serialize call. */
+    std::vector<uint8_t> batchBuf;
 
     // ── Internal helpers ──────────────────────────────────────────────────
 
@@ -115,7 +121,10 @@ private:
     void   serializeSnapshot(GatewayId gwId);
     void   serializeSnapshotDelta();
     void   serializeTickDelta();
-    void   stepPhysics(float dt);
+    void   stepPhysics();
+
+    /** @brief Append a length-prefixed message to batchBuf. No-op if msg is empty. */
+    void   appendToBatch(const std::vector<uint8_t>& msg);
 };
 
 } // namespace voxelmmo

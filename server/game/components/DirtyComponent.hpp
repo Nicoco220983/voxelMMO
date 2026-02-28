@@ -6,8 +6,8 @@ namespace voxelmmo {
 /**
  * @brief Tracks which components changed since the last snapshot or the last tick.
  *
- * Each bit corresponds to one component type (see POSITION_BIT / VELOCITY_BIT
- * in PositionComponent.hpp / VelocityComponent.hpp). Typically one DirtyComponent is attached to every
+ * Each bit corresponds to one component type (see POSITION_BIT in
+ * DynamicPositionComponent.hpp). Typically one DirtyComponent is attached to every
  * entity that has serialisable state.
  *
  * - snapshotDirtyFlags: set by modify(), cleared after a snapshot delta is sent.

@@ -5,20 +5,16 @@
 #include <atomic>
 #include <chrono>
 
-static constexpr int   GATEWAY_PORT  = 8080;
-static constexpr int   TICK_RATE_HZ  = 20;
+static constexpr int GATEWAY_PORT = 8080;
 
 int main() {
     voxelmmo::GameEngine    game;
     voxelmmo::GatewayEngine gateway;
 
     // ── Wire GameEngine → GatewayEngine ──────────────────────────────────
-    game.setChunkMessageCallback(
-        [&](voxelmmo::GatewayId /*gwId*/,
-            voxelmmo::ChunkId   /*cid*/,
-            const uint8_t*      data,
-            size_t              size) {
-            gateway.receiveGameMessage(data, size);
+    game.setOutputCallback(
+        [&](voxelmmo::GatewayId /*gwId*/, const uint8_t* data, size_t size) {
+            gateway.receiveGameBatch(data, size);
         });
 
     // ── Wire GatewayEngine → GameEngine ──────────────────────────────────
@@ -38,7 +34,7 @@ int main() {
     std::atomic<bool> running{true};
     std::thread gameThread([&]() {
         using Clock = std::chrono::steady_clock;
-        const auto tickDuration = std::chrono::milliseconds(1000 / TICK_RATE_HZ);
+        const auto tickDuration = std::chrono::milliseconds(1000 / voxelmmo::TICK_RATE);
         auto nextTick = Clock::now();
 
         while (running) {
