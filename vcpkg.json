@@ -1,0 +1,9 @@
+{
+  "name": "voxelmmo",
+  "version": "0.1.0",
+  "dependencies": [
+    "entt",
+    "lz4",
+    "uwebsockets"
+  ]
+}

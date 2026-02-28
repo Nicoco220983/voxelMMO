@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "checkJs":           true,
+    "strict":            true,
+    "noUnusedLocals":    true,
+    "noUnusedParameters": true,
+    "noImplicitReturns": true,
+    "moduleResolution":  "bundler",
+    "target":            "ES2022",
+    "module":            "ESNext"
+  },
+  "include": ["src"]
+}

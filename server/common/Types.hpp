@@ -1,0 +1,105 @@
+#pragma once
+#include <cstdint>
+#include <functional>
+
+namespace voxelmmo {
+
+/**
+ * @brief Chunk identifier packed as sint6(y) | sint29(x) | sint29(z) into 64 bits.
+ *
+ * Bit layout (MSB first): [63:58] y (6-bit signed) | [57:29] x (29-bit signed) | [28:0] z (29-bit signed)
+ *
+ * World extents: y ∈ [-32, 31], x/z ∈ [-268 435 456, 268 435 455]
+ */
+struct ChunkId {
+    int64_t packed{0};
+
+    /** @brief Construct a ChunkId from its three signed components. */
+    static constexpr ChunkId make(int8_t y, int32_t x, int32_t z) noexcept {
+        ChunkId id;
+        id.packed = (static_cast<int64_t>(y  & 0x3F)        << 58)
+                  | (static_cast<int64_t>(x  & 0x1FFFFFFF)  << 29)
+                  |  static_cast<int64_t>(z  & 0x1FFFFFFF);
+        return id;
+    }
+
+    /** @brief Y component, signed 6-bit (range [-32, 31]). */
+    constexpr int8_t y() const noexcept {
+        int8_t v = static_cast<int8_t>((packed >> 58) & 0x3F);
+        return (v & 0x20) ? static_cast<int8_t>(v | static_cast<int8_t>(0xC0)) : v;
+    }
+
+    /** @brief X component, signed 29-bit. */
+    constexpr int32_t x() const noexcept {
+        int32_t v = static_cast<int32_t>((packed >> 29) & 0x1FFFFFFF);
+        return (v & 0x10000000) ? (v | static_cast<int32_t>(0xE0000000)) : v;
+    }
+
+    /** @brief Z component, signed 29-bit. */
+    constexpr int32_t z() const noexcept {
+        int32_t v = static_cast<int32_t>(packed & 0x1FFFFFFF);
+        return (v & 0x10000000) ? (v | static_cast<int32_t>(0xE0000000)) : v;
+    }
+
+    constexpr bool operator==(const ChunkId& o) const noexcept { return packed == o.packed; }
+    constexpr bool operator!=(const ChunkId& o) const noexcept { return packed != o.packed; }
+    constexpr bool operator< (const ChunkId& o) const noexcept { return packed <  o.packed; }
+};
+
+/**
+ * @brief Voxel identifier packed as uint4(y) | uint6(x) | uint6(z) into 16 bits.
+ *
+ * Bit layout: [15:12] y (4-bit) | [11:6] x (6-bit) | [5:0] z (6-bit)
+ */
+struct VoxelId {
+    uint16_t packed{0};
+
+    /** @brief Construct a VoxelId from its three unsigned components. */
+    static constexpr VoxelId make(uint8_t y, uint8_t x, uint8_t z) noexcept {
+        VoxelId id;
+        id.packed = static_cast<uint16_t>(
+            ((y & 0x0F) << 12) | ((x & 0x3F) << 6) | (z & 0x3F));
+        return id;
+    }
+
+    /** @brief Y component, 4-bit (range [0, 15]). */
+    constexpr uint8_t y() const noexcept { return (packed >> 12) & 0x0F; }
+    /** @brief X component, 6-bit (range [0, 63]). */
+    constexpr uint8_t x() const noexcept { return (packed >>  6) & 0x3F; }
+    /** @brief Z component, 6-bit (range [0, 63]). */
+    constexpr uint8_t z() const noexcept { return  packed        & 0x3F; }
+
+    constexpr bool operator==(const VoxelId& o) const noexcept { return packed == o.packed; }
+};
+
+/** @brief Voxel type byte. */
+using VoxelType = uint8_t;
+
+/** @brief Entity identifier (uint16, max 65 535 entities per chunk). */
+using EntityId = uint16_t;
+
+/** @brief Persistent player identifier (uint32). */
+using PlayerId = uint32_t;
+
+/** @brief Gateway instance identifier (uint32). */
+using GatewayId = uint32_t;
+
+// ── Chunk voxel dimensions (must match VoxelId bit widths) ──────────────────
+inline constexpr uint8_t CHUNK_SIZE_Y = 16;   ///< uint4 range [0,15]
+inline constexpr uint8_t CHUNK_SIZE_X = 64;   ///< uint6 range [0,63]
+inline constexpr uint8_t CHUNK_SIZE_Z = 64;   ///< uint6 range [0,63]
+inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z; // 65 536
+
+/** @brief Minimum payload size (bytes) that triggers LZ4 compression. */
+inline constexpr size_t LZ4_COMPRESSION_THRESHOLD = 256;
+
+} // namespace voxelmmo
+
+// ── std::hash support for use in unordered containers ──────────────────────
+namespace std {
+template<> struct hash<voxelmmo::ChunkId> {
+    size_t operator()(const voxelmmo::ChunkId& id) const noexcept {
+        return std::hash<int64_t>{}(id.packed);
+    }
+};
+} // namespace std
