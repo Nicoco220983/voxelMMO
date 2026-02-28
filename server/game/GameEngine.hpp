@@ -66,6 +66,19 @@ public:
     /** @brief Advance one game tick (physics → chunk checks → tick-delta serialisation). */
     void tick();
 
+    /**
+     * @brief Process a raw player-input message (may be called from the gateway thread).
+     *
+     * Input wire format: float vx · float vy · float vz (12 bytes, little-endian).
+     * The entity's position is advanced to the current tick before the new velocity
+     * is applied, keeping prediction consistent on both sides.
+     *
+     * @param playerId  Player whose entity to update.
+     * @param data      Raw message bytes.
+     * @param size      Must be ≥ 12; extra bytes are ignored.
+     */
+    void handlePlayerInput(PlayerId playerId, const uint8_t* data, size_t size);
+
     // ── Serialisation callbacks ───────────────────────────────────────────
 
     /**
@@ -111,6 +124,7 @@ private:
 
     OutputCallback outputCallback;
 
+    // TODO: remove it when migrated to sockets using writev
     /** @brief Reused batch buffer — cleared and refilled every serialize call. */
     std::vector<uint8_t> batchBuf;
 

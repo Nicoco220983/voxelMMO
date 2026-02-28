@@ -30,6 +30,11 @@ int main() {
         game.removePlayer(pid);
     });
 
+    gateway.setPlayerInputCallback([&](voxelmmo::PlayerId pid,
+                                       const uint8_t* data, size_t size) {
+        game.handlePlayerInput(pid, data, size);
+    });
+
     // ── Game loop (separate thread) ───────────────────────────────────────
     std::atomic<bool> running{true};
     std::thread gameThread([&]() {

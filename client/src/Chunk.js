@@ -28,6 +28,24 @@ const FACE_VERTS = [
 ]
 
 /**
+ * Directional shading multiplier per face (same order as FACE_VERTS).
+ * Top face is full brightness; bottom is darkest; sides are intermediate.
+ */
+const FACE_SHADE = [0.75, 0.70, 1.00, 0.55, 0.80, 0.65] // +X -X +Y -Y +Z -Z
+
+/**
+ * Deterministic brightness jitter in [0, 1] from integer world coordinates.
+ * Uses a fast integer hash so adjacent voxels look slightly different.
+ * @param {number} wx @param {number} wy @param {number} wz
+ * @returns {number}
+ */
+function voxelHash(wx, wy, wz) {
+  let h = (Math.imul(wx, 1619) ^ Math.imul(wy, 31337) ^ Math.imul(wz, 6271)) | 0
+  h = Math.imul(h ^ (h >>> 16), 0x45d9f3b)
+  return (h >>> 24) / 255  // top 8 bits → 0..1
+}
+
+/**
  * @class Chunk
  * @description Client-side state for one chunk: voxel data and Three.js mesh.
  */
@@ -137,18 +155,31 @@ export class Chunk {
           const vtype = get(x, y, z)
           if (vtype === 0) continue
 
-          const color   = new THREE.Color(VOXEL_COLORS[vtype] ?? 0xffffff)
+          // Decode base RGB from packed hex (avoids THREE.Color allocation per voxel)
+          const hex = VOXEL_COLORS[vtype] ?? 0xffffff
+          const br  = ((hex >>> 16) & 0xFF) / 255
+          const bg  = ((hex >>>  8) & 0xFF) / 255
+          const bb  = ( hex         & 0xFF) / 255
+
+          // Per-voxel brightness jitter [0.88 .. 1.12] from world position hash
+          const jitter = 0.88 + 0.24 * voxelHash(cx * CHUNK_SIZE_X + x,
+                                                   cy * CHUNK_SIZE_Y + y,
+                                                   cz * CHUNK_SIZE_Z + z)
+
           /** @type {Array<[number,number,number]>} */
-          const offsets = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
+          const NEIGHBOR = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
 
           for (let face = 0; face < 6; face++) {
-            const [dx, dy, dz] = offsets[face]
+            const [dx, dy, dz] = NEIGHBOR[face]
             if (get(x + dx, y + dy, z + dz) !== 0) continue
+
+            const shade = FACE_SHADE[face] * jitter
+            const r = br * shade, g = bg * shade, b = bb * shade
 
             const base = positions.length / 3
             for (const [fx, fy, fz] of FACE_VERTS[face]) {
               positions.push(x + fx, y + fy, z + fz)
-              colors.push(color.r, color.g, color.b)
+              colors.push(r, g, b)
             }
             indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
           }

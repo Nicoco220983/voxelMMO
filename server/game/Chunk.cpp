@@ -84,7 +84,7 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(
     for (EntityId eid : entities) {
         auto it = entityMap.find(eid);
         if (it == entityMap.end()) continue;
-        it->second->serializeSnapshot(scratch.data(), entityOff, tickCount);
+        it->second->serializeSnapshot(scratch.data(), entityOff);
         ++entityCount;
     }
     scratch.resize(entityOff);
@@ -172,7 +172,7 @@ const std::vector<uint8_t>& Chunk::buildSnapshotDelta(
         if (!entity.isSnapshotDirty()) continue;
         const uint8_t mask = reg.get<DirtyComponent>(entity.handle).snapshotDirtyFlags;
         buf[off++] = static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
-        entity.serializeDelta(buf.data(), off, mask, tickCount);
+        entity.serializeDelta(buf.data(), off, mask);
         ++entityCount;
     }
     std::memcpy(buf.data() + entityCountOff, &entityCount, sizeof(int32_t));
@@ -234,7 +234,7 @@ const std::vector<uint8_t>& Chunk::buildTickDelta(
         if (!entity.isTickDirty()) continue;
         const uint8_t mask = reg.get<DirtyComponent>(entity.handle).tickDirtyFlags;
         buf[off++] = static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
-        entity.serializeDelta(buf.data(), off, mask, tickCount);
+        entity.serializeDelta(buf.data(), off, mask);
         ++entityCount;
     }
     std::memcpy(buf.data() + entityCountOff, &entityCount, sizeof(int32_t));

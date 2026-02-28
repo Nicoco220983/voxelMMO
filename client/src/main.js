@@ -10,14 +10,13 @@ document.body.appendChild(renderer.domElement)
 
 // ── Scene ─────────────────────────────────────────────────────────────────
 const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x87ceeb)  // sky blue
+scene.background = new THREE.Color(0x87ceeb)
 scene.fog = new THREE.Fog(0x87ceeb, 200, 600)
 
 // ── Camera ────────────────────────────────────────────────────────────────
 const camera = new THREE.PerspectiveCamera(
   75, window.innerWidth / window.innerHeight, 0.1, 1000)
-camera.position.set(32, 30, 80)
-camera.lookAt(32, 16, 32)
+camera.rotation.order = 'YXZ'
 
 // ── Lights ────────────────────────────────────────────────────────────────
 scene.add(new THREE.AmbientLight(0xffffff, 0.5))
@@ -32,25 +31,134 @@ window.addEventListener('resize', () => {
   renderer.setSize(window.innerWidth, window.innerHeight)
 })
 
-// ── Network + chunk state ─────────────────────────────────────────────────
+// ── Network ───────────────────────────────────────────────────────────────
 const client = new GameClient(`ws://${location.host}/ws`, scene)
-
 client.connect().catch((err) => {
   console.error('[main] Failed to connect to server', err)
 })
+
+// ── Ghost player state ────────────────────────────────────────────────────
+// Spawn position must match server addPlayer() call in main.cpp
+let posX = 32, posY = 20, posZ = 32
+let yaw = 0, pitch = -0.3   // slightly downward initial look
+const SPEED = 10.0           // m/s
+
+// ── Keyboard state ────────────────────────────────────────────────────────
+const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
+
+window.addEventListener('keydown', (e) => {
+  switch (e.code) {
+    case 'ArrowUp':                      keys.w     = true;  e.preventDefault(); break
+    case 'ArrowLeft':                    keys.a     = true;  e.preventDefault(); break
+    case 'ArrowDown':                    keys.s     = true;  e.preventDefault(); break
+    case 'ArrowRight':                   keys.d     = true;  e.preventDefault(); break
+    case 'Space':    e.preventDefault(); keys.space = true;  break
+    case 'ShiftLeft': case 'ShiftRight': keys.shift = true;  break
+  }
+})
+window.addEventListener('keyup', (e) => {
+  switch (e.code) {
+    case 'ArrowUp':                      keys.w     = false; break
+    case 'ArrowLeft':                    keys.a     = false; break
+    case 'ArrowDown':                    keys.s     = false; break
+    case 'ArrowRight':                   keys.d     = false; break
+    case 'Space':                        keys.space = false; break
+    case 'ShiftLeft': case 'ShiftRight': keys.shift = false; break
+  }
+})
+
+// ── Pointer lock (mouse look) ─────────────────────────────────────────────
+renderer.domElement.addEventListener('click', () => {
+  renderer.domElement.requestPointerLock()
+})
+
+document.addEventListener('mousemove', (e) => {
+  if (document.pointerLockElement !== renderer.domElement) return
+  yaw   -= e.movementX * 0.002
+  pitch -= e.movementY * 0.002
+  pitch  = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch))
+})
+
+// ── Velocity helper ───────────────────────────────────────────────────────
+/**
+ * Compute desired world-space velocity from current key state and camera orientation.
+ * W/S follow the full 3D camera direction (including pitch).
+ * A/D strafe horizontally (yaw only).
+ * Space/Shift move straight up/down in world space.
+ * Result is clamped to SPEED m/s.
+ * @returns {{vx:number, vy:number, vz:number}}
+ */
+function computeVelocity() {
+  // Camera forward in world space (pitch + yaw)
+  const fwdX = -Math.sin(yaw) * Math.cos(pitch)
+  const fwdY =  Math.sin(pitch)
+  const fwdZ = -Math.cos(yaw) * Math.cos(pitch)
+  // Right vector (horizontal only, derived from yaw)
+  const rgtX =  Math.cos(yaw)
+  const rgtZ = -Math.sin(yaw)
+
+  let vx = 0, vy = 0, vz = 0
+  if (keys.w)     { vx += fwdX; vy += fwdY; vz += fwdZ }
+  if (keys.s)     { vx -= fwdX; vy -= fwdY; vz -= fwdZ }
+  if (keys.a)     { vx -= rgtX;              vz -= rgtZ  }
+  if (keys.d)     { vx += rgtX;              vz += rgtZ  }
+  if (keys.space) { vy += 1 }
+  if (keys.shift) { vy -= 1 }
+
+  const len = Math.sqrt(vx * vx + vy * vy + vz * vz)
+  if (len > 1) { vx /= len; vy /= len; vz /= len }
+  return { vx: vx * SPEED, vy: vy * SPEED, vz: vz * SPEED }
+}
+
+// ── Input sending ─────────────────────────────────────────────────────────
+const _inputBuf  = new ArrayBuffer(12)
+const _inputView = new DataView(_inputBuf)
+
+/** @param {number} vx @param {number} vy @param {number} vz */
+function sendVelocity(vx, vy, vz) {
+  _inputView.setFloat32(0, vx, true)
+  _inputView.setFloat32(4, vy, true)
+  _inputView.setFloat32(8, vz, true)
+  client.sendInput(_inputBuf)
+}
 
 // ── HUD ───────────────────────────────────────────────────────────────────
 const hud = /** @type {HTMLElement} */ (document.getElementById('hud'))
 
 // ── Render loop ───────────────────────────────────────────────────────────
+let lastTime = performance.now()
+let lastVx = NaN, lastVy = NaN, lastVz = NaN  // NaN forces first send
+
 function animate() {
   requestAnimationFrame(animate)
+
+  const now = performance.now()
+  const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
+  lastTime  = now
+
+  const { vx, vy, vz } = computeVelocity()
+
+  // Send velocity to server only when it changes
+  if (vx !== lastVx || vy !== lastVy || vz !== lastVz) {
+    sendVelocity(vx, vy, vz)
+    lastVx = vx; lastVy = vy; lastVz = vz
+  }
+
+  // Integrate position locally (client-side prediction)
+  posX += vx * dt
+  posY += vy * dt
+  posZ += vz * dt
+
+  camera.position.set(posX, posY, posZ)
+  camera.rotation.y = yaw
+  camera.rotation.x = pitch
 
   client.rebuildDirtyChunks()
   renderer.render(scene, camera)
 
-  const p = camera.position
-  hud.textContent = `pos  ${p.x.toFixed(1)}  ${p.y.toFixed(1)}  ${p.z.toFixed(1)}`
+  hud.textContent =
+    `pos  ${posX.toFixed(1)}  ${posY.toFixed(1)}  ${posZ.toFixed(1)}` +
+    `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
 }
 
 animate()

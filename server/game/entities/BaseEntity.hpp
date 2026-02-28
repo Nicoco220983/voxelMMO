@@ -13,9 +13,8 @@ namespace voxelmmo {
  * @brief Lightweight helper to write values sequentially into a pre-allocated byte buffer.
  */
 struct BufWriter {
-    uint8_t*  buf;
-    size_t&   offset;
-    uint32_t  currentTick; ///< Server tick used to advance entity state before serialising.
+    uint8_t* buf;
+    size_t&  offset;
 
     /** @brief Append a trivially-copyable value and advance the offset. */
     template<typename T>
@@ -55,8 +54,8 @@ public:
      * @param buf    Destination buffer (caller ensures enough space).
      * @param offset Read/write cursor, advanced by this call.
      */
-    virtual void serializeSnapshot(uint8_t* buf, size_t& offset, uint32_t tickCount) const {
-        BufWriter w{buf, offset, tickCount};
+    virtual void serializeSnapshot(uint8_t* buf, size_t& offset) const {
+        BufWriter w{buf, offset};
         w.write(id);
         w.write(static_cast<uint8_t>(type));
         serializeAllComponents(w);
@@ -72,8 +71,8 @@ public:
      * @param offset    Read/write cursor, advanced by this call.
      * @param dirtyMask Bitmask of dirty component bits (snapshotDirtyFlags or tickDirtyFlags).
      */
-    virtual void serializeDelta(uint8_t* buf, size_t& offset, uint8_t dirtyMask, uint32_t tickCount) const {
-        BufWriter w{buf, offset, tickCount};
+    virtual void serializeDelta(uint8_t* buf, size_t& offset, uint8_t dirtyMask) const {
+        BufWriter w{buf, offset};
         w.write(id);
         w.write(static_cast<uint8_t>(type));
         serializeDirtyComponents(w, dirtyMask);
@@ -98,19 +97,12 @@ public:
     }
 
 protected:
-    /** @brief Write ALL component values preceded by a full component-flags byte.
-     *
-     *  Position/velocity are advanced to w.currentTick via closed-form kinematics
-     *  so the client can use the message-header tick as the prediction reference
-     *  without needing a separate tick field in the component wire format.
-     */
+    /** @brief Write ALL component values preceded by a full component-flags byte. */
     virtual void serializeAllComponents(BufWriter& w) const {
         const auto& dyn = registry.get<DynamicPositionComponent>(handle);
-        auto [px, py, pz] = DynamicPositionComponent::predictAt(dyn, w.currentTick);
-        const float pvy   = DynamicPositionComponent::predictVy(dyn, w.currentTick);
         w.write<uint8_t>(POSITION_BIT);
-        w.write(px);     w.write(py);     w.write(pz);
-        w.write(dyn.vx); w.write(pvy);   w.write(dyn.vz);
+        w.write(dyn.x);  w.write(dyn.y);  w.write(dyn.z);
+        w.write(dyn.vx); w.write(dyn.vy); w.write(dyn.vz);
         w.write<uint8_t>(dyn.grounded ? 1u : 0u);
     }
 
@@ -119,10 +111,8 @@ protected:
         w.write(dirtyMask);
         if (dirtyMask & POSITION_BIT) {
             const auto& dyn = registry.get<DynamicPositionComponent>(handle);
-            auto [px, py, pz] = DynamicPositionComponent::predictAt(dyn, w.currentTick);
-            const float pvy   = DynamicPositionComponent::predictVy(dyn, w.currentTick);
-            w.write(px);     w.write(py);     w.write(pz);
-            w.write(dyn.vx); w.write(pvy);   w.write(dyn.vz);
+            w.write(dyn.x);  w.write(dyn.y);  w.write(dyn.z);
+            w.write(dyn.vx); w.write(dyn.vy); w.write(dyn.vz);
             w.write<uint8_t>(dyn.grounded ? 1u : 0u);
         }
     }

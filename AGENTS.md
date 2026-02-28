@@ -44,19 +44,23 @@ A high performance online webgame massive multiplayer, on wide generated world.
       - WorldChunk world
       - set[EntityId] entities
       - ChunkState state # snapshot + snapshotDelta + tickDeltas + scratch
-      - buildSnapshot() # LZ4(voxels) zero-copy + entity section copy/compress
-      - buildSnapshotDelta() # raw → ChunkState, then maybe compress in-place
-      - buildTickDelta() # same
+      - static constexpr HEADER_SIZE = 13 # type(1) + ChunkId(8) + tick(4)
+      - buildSnapshot(reg, entityMap, tickCount) # LZ4(voxels) zero-copy + entity section copy/compress
+      - buildSnapshotDelta(reg, entityMap, tickCount) # raw → ChunkState, then maybe compress in-place
+      - buildTickDelta(reg, entityMap, tickCount) # same
     - file WorldChunk.hpp/cpp
       - vector[VoxelType] voxels
       - vector[[VoxelId,VoxelType]] voxelsSnapshotDeltas, voxelsTickDeltas
       - generate(), modifyVoxels(), serializeSnapshot/Delta/TickDelta(buf)
     - dir entities/
       - file BaseEntity.hpp    # serializeSnapshot(buf,off), serializeDelta(buf,off,mask)
+                               # writes dyn.x/y/z directly (always current — no advancement needed)
       - file PlayerEntity.hpp  # extends BaseEntity, adds ChunkId currentChunk
     - dir components/
       - file DirtyComponent.hpp     # snapshotDirtyFlags, tickDirtyFlags (1 bit/component)
-      - file DynamicPositionComponent.hpp  # POSITION_BIT, x/y/z + vx/vy/vz with modify()
+      - file DynamicPositionComponent.hpp  # POSITION_BIT, x/y/z+vx/vy/vz+grounded
+                                           # x/y/z always current on server (updated every tick)
+                                           # modify(dirty=false) advances silently, modify(dirty=true) sends delta
   - dir gateway/
     - file GatewayEngine.hpp/cpp # uWS server, stores uwsLoop ptr for cross-thread defer
     - file StateManager.hpp/cpp  # map[ChunkId, ChunkState], routes received messages
@@ -65,8 +69,14 @@ A high performance online webgame massive multiplayer, on wide generated world.
   - file jsconfig.json, vite.config.js, package.json
   - dir src/
     - file types.js      # JSDoc typedefs + enums + constants (mirrors server types)
-    - file GameClient.js # WebSocket wrapper, parses 9-byte header, dispatches
-    - file ChunkManager.js # voxel state + LZ4 decompression + Three.js mesh rebuild
+    - file utils.js      # lz4Decompress, BufReader (sequential binary deserialisation)
+    - file GameClient.js # WebSocket wrapper, parses 13-byte header (incl. tick), dispatches
+    - file Chunk.js      # per-chunk voxel state + LZ4 decompression + Three.js mesh rebuild
+    - dir components/
+      - DynamicPositionComponent.js  # mirrors server; tick set from messageTick (not wire)
+    - dir entities/
+      - BaseEntity.js    # fromRecord(reader, messageTick), applyDelta(reader, messageTick)
+      - PlayerEntity.js  # extends BaseEntity
     - file main.js       # Three.js scene, render loop, HUD
 - dir nginx/
   - file nginx.conf
@@ -82,9 +92,13 @@ A high performance online webgame massive multiplayer, on wide generated world.
 
 # Chunk State message wire format
 
+All messages share a 13-byte header:
+- uint8:  ChunkMessageType
+- int64:  ChunkId (little-endian)
+- uint32: tick (server tick when this message was built, little-endian)
+
 Snapshot (always SNAPSHOT_COMPRESSED):
-- uint8:  ChunkMessageType = SNAPSHOT_COMPRESSED
-- int64:  ChunkId
+- [13-byte header, type = SNAPSHOT_COMPRESSED]
 - uint8:  flags (bit 0 = entity section LZ4 compressed)
 - int32:  compressed_voxel_size; then LZ4(voxels[65536])
 - int32:  entity_section_stored_size
@@ -92,8 +106,17 @@ Snapshot (always SNAPSHOT_COMPRESSED):
   - else: raw entity_data (int32 count + records)
 
 Delta (SNAPSHOT_DELTA / TICK_DELTA, optionally _COMPRESSED):
-- uint8:  ChunkMessageType
-- int64:  ChunkId
+- [13-byte header]
 - if compressed: int32 uncompressed_payload_size + LZ4(payload)
-- else payload: int32 voxel_count + [(VoxelId uint16, VoxelType)]
-                int32 entity_count + [(DeltaType, EntityId, EntityType, ComponentFlags, ComponentStates...)]
+- else payload: int32 voxel_count + [(VoxelId uint16, VoxelType uint8)]
+                int32 entity_count + [(DeltaType uint8, EntityId uint16, EntityType uint8,
+                                       ComponentFlags uint8, ComponentStates...)]
+
+# DynamicPositionComponent wire format (when POSITION_BIT set)
+
+- float x, y, z   (exact current position — server advances every tick via stepPhysics)
+- float vx, vy, vz
+- uint8 grounded   (0 = airborne, gravity applies; 1 = on ground)
+
+Tick is NOT in the component stream — clients read it from the message header.
+predictAt() exists only on the client side for smooth rendering interpolation.

@@ -1,5 +1,6 @@
 #include "game/GameEngine.hpp"
 #include <cmath>
+#include <cstring>
 
 namespace voxelmmo {
 
@@ -9,12 +10,36 @@ void GameEngine::setOutputCallback(OutputCallback cb) {
     outputCallback = std::move(cb);
 }
 
+// TODO: remove it when migrated to sockets using writev
 void GameEngine::appendToBatch(const std::vector<uint8_t>& msg) {
     if (msg.empty()) return;
     const uint32_t len = static_cast<uint32_t>(msg.size());
     const auto* lenBytes = reinterpret_cast<const uint8_t*>(&len);
     batchBuf.insert(batchBuf.end(), lenBytes, lenBytes + 4);
     batchBuf.insert(batchBuf.end(), msg.begin(), msg.end());
+}
+
+// ── Player input ──────────────────────────────────────────────────────────
+
+void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_t size) {
+    if (size < 12) return;
+
+    float vx, vy, vz;
+    std::memcpy(&vx, data + 0, sizeof(float));
+    std::memcpy(&vy, data + 4, sizeof(float));
+    std::memcpy(&vz, data + 8, sizeof(float));
+
+    auto it = playerEntities.find(playerId);
+    if (it == playerEntities.end()) return;
+
+    const auto& dyn = registry.get<DynamicPositionComponent>(it->second);
+    // Position is always current; just apply the new velocity.
+    // grounded=true: ghost player is never subject to gravity.
+    DynamicPositionComponent::modify(registry, it->second,
+        dyn.x, dyn.y, dyn.z,
+        vx, vy, vz,
+        true,   // grounded
+        true);  // dirty — velocity changed, send delta to clients
 }
 
 // ── Gateway management ────────────────────────────────────────────────────
@@ -36,7 +61,7 @@ EntityId GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
                                 float sx, float sy, float sz)
 {
     const entt::entity ent = registry.create();
-    registry.emplace<DynamicPositionComponent>(ent, tickCount, sx, sy, sz, 0.0f, 0.0f, 0.0f, false);
+    registry.emplace<DynamicPositionComponent>(ent, sx, sy, sz, 0.0f, 0.0f, 0.0f, false);
     registry.emplace<DirtyComponent>(ent);
 
     const EntityId eid = nextEntityId++;
@@ -165,15 +190,37 @@ void GameEngine::stepPhysics() {
 
     auto view = registry.view<DynamicPositionComponent, DirtyComponent>();
     view.each([&](entt::entity ent, DynamicPositionComponent& dyn, DirtyComponent&) {
-        if (dyn.grounded) return;  // client predicts correctly; nothing to do
-
-        auto [px, py, pz] = DynamicPositionComponent::predictAt(dyn, tickCount);
-        if (py <= FLOOR_Y) {
-            // Entity has landed — snap to floor and stop vertical movement
-            DynamicPositionComponent::modify(registry, ent, tickCount,
-                px, FLOOR_Y, pz, dyn.vx, 0.0f, dyn.vz, true);
+        if (dyn.grounded) {
+            // No gravity. Advance position by velocity (covers ghost player and
+            // future ground entities). Skip if stationary.
+            if (dyn.vx == 0.0f && dyn.vy == 0.0f && dyn.vz == 0.0f) return;
+            DynamicPositionComponent::modify(registry, ent,
+                dyn.x + dyn.vx * TICK_DT,
+                dyn.y + dyn.vy * TICK_DT,
+                dyn.z + dyn.vz * TICK_DT,
+                dyn.vx, dyn.vy, dyn.vz,
+                true,   // still grounded
+                false); // not dirty — routine advance, client already knows velocity
+        } else {
+            // Apply gravity for one tick.
+            const float ny  = dyn.y  + dyn.vy * TICK_DT - 0.5f * GRAVITY * TICK_DT * TICK_DT;
+            const float nvy = dyn.vy - GRAVITY * TICK_DT;
+            if (ny <= FLOOR_Y) {
+                // Landed: snap to floor, zero vertical velocity, mark dirty.
+                DynamicPositionComponent::modify(registry, ent,
+                    dyn.x + dyn.vx * TICK_DT, FLOOR_Y, dyn.z + dyn.vz * TICK_DT,
+                    dyn.vx, 0.0f, dyn.vz,
+                    true,   // now grounded
+                    true);  // dirty — grounded state and vy changed
+            } else {
+                // Still airborne: advance silently, client applies the same equations.
+                DynamicPositionComponent::modify(registry, ent,
+                    dyn.x + dyn.vx * TICK_DT, ny, dyn.z + dyn.vz * TICK_DT,
+                    dyn.vx, nvy, dyn.vz,
+                    false,  // still airborne
+                    false); // not dirty — routine advance
+            }
         }
-        // else: still airborne — both sides predict identically, no update needed
     });
 }
 
