@@ -15,6 +15,7 @@ add_executable(voxelmmo
     server/main.cpp
     server/game/GameEngine.cpp
     server/game/WorldChunk.cpp
+    server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
     server/gateway/GatewayEngine.cpp
     server/gateway/StateManager.cpp
@@ -41,6 +42,7 @@ add_executable(voxelmmo_tests
     tests/server/test_serialization.cpp
     tests/server/test_chunk_streaming.cpp
     server/game/WorldChunk.cpp
+    server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
     server/game/GameEngine.cpp
 )
