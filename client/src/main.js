@@ -1,6 +1,7 @@
 // @ts-check
 import * as THREE     from 'three'
 import { GameClient } from './GameClient.js'
+import { SUBVOXEL_SIZE, TICK_RATE } from './types.js'
 
 // ── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -38,8 +39,10 @@ client.connect().catch((err) => {
 })
 
 // ── Ghost player state ────────────────────────────────────────────────────
-// Spawn position must match server addPlayer() call in main.cpp
-let posX = 32, posY = 20, posZ = 32
+// Spawn position in sub-voxels — must match server addPlayer() call in main.cpp
+let posX = 32 * SUBVOXEL_SIZE   // 8192
+let posY = 20 * SUBVOXEL_SIZE   // 5120
+let posZ = 32 * SUBVOXEL_SIZE   // 8192
 let yaw = 0, pitch = -0.3   // slightly downward initial look
 
 // ── Speed ramp ────────────────────────────────────────────────────────────
@@ -97,12 +100,12 @@ document.addEventListener('mousemove', (e) => {
 
 // ── Velocity helper ───────────────────────────────────────────────────────
 /**
- * Compute desired world-space velocity from current key state and camera orientation.
+ * Compute desired velocity from current key state and camera orientation.
  * W/S follow the full 3D camera direction (including pitch).
  * A/D strafe horizontally (yaw only).
  * Space/Shift move straight up/down in world space.
- * @param {number} speed  Current speed magnitude in m/s.
- * @returns {{vx:number, vy:number, vz:number}}
+ * @param {number} speed  Current speed magnitude in voxels/s (sent as float to server).
+ * @returns {{vx:number, vy:number, vz:number}}  Velocity in voxels/s.
  */
 function computeVelocity(speed) {
   // Camera forward in world space (pitch + yaw)
@@ -158,27 +161,30 @@ function animate() {
 
   const { vx, vy, vz } = computeVelocity(currentSpeed)
 
-  // Send velocity to server only when it changes
+  // Send velocity to server only when it changes (voxels/s as float32)
   if (vx !== lastVx || vy !== lastVy || vz !== lastVz) {
     sendVelocity(vx, vy, vz)
     lastVx = vx; lastVy = vy; lastVz = vz
   }
 
-  // Integrate position locally (client-side prediction)
-  posX += vx * dt
-  posY += vy * dt
-  posZ += vz * dt
+  // Integrate position locally in sub-voxels (client-side prediction).
+  // vx/vy/vz are voxels/s; multiply by SUBVOXEL_SIZE × dt to get sub-voxels.
+  posX += vx * SUBVOXEL_SIZE * dt
+  posY += vy * SUBVOXEL_SIZE * dt
+  posZ += vz * SUBVOXEL_SIZE * dt
 
-  camera.position.set(posX, posY, posZ)
+  // Divide by SUBVOXEL_SIZE to get voxel coordinates for Three.js.
+  camera.position.set(posX / SUBVOXEL_SIZE, posY / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   camera.rotation.y = yaw
   camera.rotation.x = pitch
 
-  client.pruneDistantChunks(posX, posZ)
+  client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   client.rebuildDirtyChunks()
   renderer.render(scene, camera)
 
+  const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
   hud.textContent =
-    `pos  ${posX.toFixed(1)}  ${posY.toFixed(1)}  ${posZ.toFixed(1)}` +
+    `pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
     `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°` +
     `   spd ${currentSpeed.toFixed(0)}`
 }

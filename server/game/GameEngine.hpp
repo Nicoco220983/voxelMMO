@@ -143,8 +143,8 @@ private:
 
     Chunk& activateChunk(ChunkId id);
 
-    /** @brief Return the chunk containing world position (x, y, z), or nullptr if not loaded. */
-    Chunk* chunkAt(float x, float y, float z) noexcept;
+    /** @brief Return the chunk containing sub-voxel position (px, py, pz), or nullptr if not loaded. */
+    Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;
     void   checkPlayersChunks();
     void   serializeSnapshot(GatewayId gwId);
     void   serializeSnapshotDelta();

@@ -16,14 +16,14 @@ inline constexpr uint8_t POSITION_BIT = 1 << 0;
  * use modify(dirty=true), which marks the component dirty and triggers a delta.
  *
  * Serialised layout (when POSITION_BIT is set):
- *   float x,y,z · float vx,vy,vz · uint8 grounded
+ *   int32 x,y,z · int32 vx,vy,vz · uint8 grounded
  * The reference tick is NOT serialised here — it is embedded in the chunk
  * message header and set on the client from there.
  */
 struct DynamicPositionComponent {
-    float x{0},  y{0},  z{0};   ///< World-space position (metres), always current.
-    float vx{0}, vy{0}, vz{0};  ///< Velocity (m/s).
-    bool grounded{false};        ///< When false, GRAVITY applies along -Y.
+    int32_t x{0},  y{0},  z{0};   ///< World-space position (sub-voxels), always current.
+    int32_t vx{0}, vy{0}, vz{0};  ///< Velocity (sub-voxels per tick).
+    bool grounded{false};          ///< When false, GRAVITY_DECREMENT applies along -Y per tick.
 
     /**
      * @brief Overwrite all fields.
@@ -31,9 +31,9 @@ struct DynamicPositionComponent {
      *               Pass false for routine per-tick position advances.
      */
     static void modify(entt::registry& reg, entt::entity ent,
-                       float nx,  float ny,  float nz,
-                       float nvx, float nvy, float nvz,
-                       bool  ngrounded, bool dirty) {
+                       int32_t nx,  int32_t ny,  int32_t nz,
+                       int32_t nvx, int32_t nvy, int32_t nvz,
+                       bool    ngrounded, bool dirty) {
         reg.get<DynamicPositionComponent>(ent) = {nx, ny, nz, nvx, nvy, nvz, ngrounded};
         if (dirty) reg.get<DirtyComponent>(ent).mark(POSITION_BIT);
     }

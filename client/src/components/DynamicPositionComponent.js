@@ -1,5 +1,5 @@
 // @ts-check
-import { TICK_RATE, GRAVITY } from '../types.js'
+import { GRAVITY_DECREMENT } from '../types.js'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
 
@@ -8,16 +8,17 @@ import { TICK_RATE, GRAVITY } from '../types.js'
  * @description 3-D position + velocity + physics flags in one component.
  * Mirrors server DynamicPositionComponent.
  *
- * Both sides use the same closed-form kinematics so the server only sends an
+ * Both sides use the same integer kinematics so the server only sends an
  * update when the prediction model changes (landing, jumping, player input):
  *
- *   dt  = (currentTick − tick) / TICK_RATE
- *   x'  = x + vx·dt
- *   y'  = y + vy·dt  −  (grounded ? 0 : ½·GRAVITY·dt²)
- *   z'  = z + vz·dt
+ *   n ticks elapsed = currentTick − tick
+ *   x' = x + vx·n
+ *   y' = y + vy·n − (grounded ? 0 : GRAVITY_DECREMENT·n·(n+1)/2)
+ *   z' = z + vz·n
+ *   Divide by SUBVOXEL_SIZE for Three.js world-space coordinates.
  *
  * Serialised layout (component data only):
- *   float x,y,z (advanced to message tick) · float vx,vy,vz · uint8 grounded
+ *   int32 x,y,z (sub-voxels, advanced to message tick) · int32 vx,vy,vz · uint8 grounded
  * The reference tick is NOT in the component stream — it comes from the
  * chunk message header and is passed in as messageTick.
  */
@@ -34,34 +35,36 @@ export class DynamicPositionComponent {
   grounded = false
 
   /**
-   * Deserialize from reader: x,y,z(f32) · vx,vy,vz(f32) · grounded(u8).
+   * Deserialize from reader: x,y,z(i32) · vx,vy,vz(i32) · grounded(u8).
    * Tick is NOT read from the stream — it is passed in from the message header.
    * @param {BufReader} reader
    * @param {number}    messageTick  Server tick from the chunk message header.
    */
   deserialize(reader, messageTick) {
     this.tick     = messageTick
-    this.x        = reader.readFloat32()
-    this.y        = reader.readFloat32()
-    this.z        = reader.readFloat32()
-    this.vx       = reader.readFloat32()
-    this.vy       = reader.readFloat32()
-    this.vz       = reader.readFloat32()
+    this.x        = reader.readInt32()
+    this.y        = reader.readInt32()
+    this.z        = reader.readInt32()
+    this.vx       = reader.readInt32()
+    this.vy       = reader.readInt32()
+    this.vz       = reader.readInt32()
     this.grounded = reader.readUint8() !== 0
   }
 
   /**
-   * Compute predicted world position at currentTick without mutating state.
+   * Compute predicted position at currentTick without mutating state.
+   * Returns sub-voxel coordinates — divide by SUBVOXEL_SIZE for Three.js.
    * @param {number} currentTick
    * @returns {{x: number, y: number, z: number}}
    */
   predictAt(currentTick) {
-    const dt = (currentTick - this.tick) / TICK_RATE
-    if (dt <= 0) return { x: this.x, y: this.y, z: this.z }
+    const n = currentTick - this.tick
+    if (n <= 0) return { x: this.x, y: this.y, z: this.z }
+    const gravY = this.grounded ? 0 : GRAVITY_DECREMENT * n * (n + 1) / 2
     return {
-      x: this.x + this.vx * dt,
-      y: this.y + this.vy * dt - (this.grounded ? 0 : 0.5 * GRAVITY * dt * dt),
-      z: this.z + this.vz * dt,
+      x: this.x + this.vx * n,
+      y: this.y + this.vy * n - gravY,
+      z: this.z + this.vz * n,
     }
   }
 }

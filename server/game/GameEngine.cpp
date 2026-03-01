@@ -29,10 +29,16 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     if (size < 12) return;
 
-    float vx, vy, vz;
-    std::memcpy(&vx, data + 0, sizeof(float));
-    std::memcpy(&vy, data + 4, sizeof(float));
-    std::memcpy(&vz, data + 8, sizeof(float));
+    // Receive 3 × float32 (voxels/s) from client — unchanged wire format.
+    float fvx, fvy, fvz;
+    std::memcpy(&fvx, data + 0, sizeof(float));
+    std::memcpy(&fvy, data + 4, sizeof(float));
+    std::memcpy(&fvz, data + 8, sizeof(float));
+
+    // Convert voxels/s → sub-voxels/tick.
+    const int32_t vx = static_cast<int32_t>(std::round(fvx * SUBVOXEL_SIZE * TICK_DT));
+    const int32_t vy = static_cast<int32_t>(std::round(fvy * SUBVOXEL_SIZE * TICK_DT));
+    const int32_t vz = static_cast<int32_t>(std::round(fvz * SUBVOXEL_SIZE * TICK_DT));
 
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return;
@@ -69,7 +75,11 @@ EntityId GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     const entt::entity ent = registry.create();
-    registry.emplace<DynamicPositionComponent>(ent, sx, sy, sz, 0.0f, 0.0f, 0.0f, false);
+    registry.emplace<DynamicPositionComponent>(ent,
+        static_cast<int32_t>(sx * SUBVOXEL_SIZE),
+        static_cast<int32_t>(sy * SUBVOXEL_SIZE),
+        static_cast<int32_t>(sz * SUBVOXEL_SIZE),
+        0, 0, 0, false);
     registry.emplace<DirtyComponent>(ent);
 
     const EntityId eid = nextEntityId++;
@@ -206,53 +216,34 @@ void GameEngine::serializeTickDelta() {
 // ── Physics ───────────────────────────────────────────────────────────────
 
 void GameEngine::stepPhysics() {
-    // Simple planar ground — TODO: replace with voxel collision
-    static constexpr float FLOOR_Y = static_cast<float>(CHUNK_SIZE_Y); // 16.0f
-
     auto view = registry.view<DynamicPositionComponent, DirtyComponent>();
     view.each([&](entt::entity ent, DynamicPositionComponent& dyn, DirtyComponent&) {
         if (dyn.grounded) {
             // No gravity. Advance position by velocity (covers ghost player and
             // future ground entities). Skip if stationary.
-            if (dyn.vx == 0.0f && dyn.vy == 0.0f && dyn.vz == 0.0f) return;
+            if (dyn.vx == 0 && dyn.vy == 0 && dyn.vz == 0) return;
             DynamicPositionComponent::modify(registry, ent,
-                dyn.x + dyn.vx * TICK_DT,
-                dyn.y + dyn.vy * TICK_DT,
-                dyn.z + dyn.vz * TICK_DT,
+                dyn.x + dyn.vx, dyn.y + dyn.vy, dyn.z + dyn.vz,
                 dyn.vx, dyn.vy, dyn.vz,
                 true,   // still grounded
                 false); // not dirty — routine advance, client already knows velocity
         } else {
-            // Apply gravity for one tick.
-            const float ny  = dyn.y  + dyn.vy * TICK_DT - 0.5f * GRAVITY * TICK_DT * TICK_DT;
-            const float nvy = dyn.vy - GRAVITY * TICK_DT;
-            if (ny <= FLOOR_Y) {
-                // Landed: snap to floor, zero vertical velocity, mark dirty.
-                DynamicPositionComponent::modify(registry, ent,
-                    dyn.x + dyn.vx * TICK_DT, FLOOR_Y, dyn.z + dyn.vz * TICK_DT,
-                    dyn.vx, 0.0f, dyn.vz,
-                    true,   // now grounded
-                    true);  // dirty — grounded state and vy changed
-            } else {
-                // Still airborne: advance silently, client applies the same equations.
-                DynamicPositionComponent::modify(registry, ent,
-                    dyn.x + dyn.vx * TICK_DT, ny, dyn.z + dyn.vz * TICK_DT,
-                    dyn.vx, nvy, dyn.vz,
-                    false,  // still airborne
-                    false); // not dirty — routine advance
-            }
+            // Apply gravity for one tick (floor collision handled in physics plan).
+            const int32_t nvy = dyn.vy - GRAVITY_DECREMENT;
+            const int32_t ny  = dyn.y  + nvy;
+            DynamicPositionComponent::modify(registry, ent,
+                dyn.x + dyn.vx, ny, dyn.z + dyn.vz,
+                dyn.vx, nvy, dyn.vz,
+                false,  // still airborne
+                false); // not dirty — routine advance
         }
     });
 }
 
 // ── Chunk lookup ──────────────────────────────────────────────────────────
 
-Chunk* GameEngine::chunkAt(float x, float y, float z) noexcept {
-    const ChunkId cid = chunkIdOf(
-        static_cast<int32_t>(std::floor(x)),
-        static_cast<int32_t>(std::floor(y)),
-        static_cast<int32_t>(std::floor(z)));
-    const auto it = chunks.find(cid);
+Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
+    const auto it = chunks.find(chunkIdOf(px, py, pz));
     return it != chunks.end() ? it->second.get() : nullptr;
 }
 
@@ -276,9 +267,9 @@ void GameEngine::checkPlayersChunks() {
             if (entIt == playerEntities.end()) continue;
 
             const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
-            const int32_t cx = static_cast<int32_t>(std::floor(dyn.x)) >> CHUNK_SHIFT_X;
-            const int8_t  cy = static_cast<int8_t>(static_cast<int32_t>(std::floor(dyn.y)) >> CHUNK_SHIFT_Y);
-            const int32_t cz = static_cast<int32_t>(std::floor(dyn.z)) >> CHUNK_SHIFT_Z;
+            const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
+            const int8_t  cy = static_cast<int8_t>(dyn.y >> CHUNK_SHIFT_Y);
+            const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
 
             for (int32_t dx = -WATCH_RADIUS; dx <= WATCH_RADIUS; ++dx) {
                 for (int8_t dy = -1; dy <= 1; ++dy) {

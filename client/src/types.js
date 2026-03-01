@@ -85,10 +85,16 @@ export const VoxelType = Object.freeze({
   GRASS: 3,
 })
 
+// ── Sub-voxel constants (must match server Types.hpp) ────────────────────────
+
+/** @type {number} */ export const SUBVOXEL_BITS = 8
+/** @type {number} */ export const SUBVOXEL_SIZE = 1 << SUBVOXEL_BITS   // 256
+
 // ── Physics constants (must match server Types.hpp) ──────────────────────────
 
-/** @type {number} */ export const TICK_RATE = 20      // ticks per second
-/** @type {number} */ export const GRAVITY   = 9.81    // m/s²
+/** @type {number} */ export const TICK_RATE         = 20      // ticks per second
+/** @type {number} */ export const GRAVITY           = 9.81    // m/s² (reference)
+/** @type {number} */ export const GRAVITY_DECREMENT = 6       // sub-voxels/tick² (mirrors server)
 
 // ── Component dirty-bit constants (must match server DynamicPositionComponent.hpp) ──
 

@@ -59,6 +59,8 @@ A high performance online webgame massive multiplayer, on wide generated world.
     - dir components/
       - file DirtyComponent.hpp     # snapshotDirtyFlags, tickDirtyFlags (1 bit/component)
       - file DynamicPositionComponent.hpp  # POSITION_BIT, x/y/z+vx/vy/vz+grounded
+                                           # x/y/z are int32_t sub-voxels (1 voxel = SUBVOXEL_SIZE = 256 units)
+                                           # vx/vy/vz are int32_t sub-voxels per tick
                                            # x/y/z always current on server (updated every tick)
                                            # modify(dirty=false) advances silently, modify(dirty=true) sends delta
   - dir gateway/
@@ -90,6 +92,17 @@ A high performance online webgame massive multiplayer, on wide generated world.
 - VoxelType: uint8 — EntityId: uint16 — PlayerId: uint32
 - Chunk voxels: 64×16×64 = 65 536 bytes
 
+# Position coordinate system
+
+Entity positions use **fixed-point integers**: 1 voxel = `SUBVOXEL_SIZE` (256) position units.
+- `SUBVOXEL_BITS = 8`, `SUBVOXEL_SIZE = 256`, `SUBVOXEL_MASK = 0xFF`
+- Position range: ±8 M voxels. Sub-voxel precision: 1/256 voxel ≈ 4 mm.
+- Velocity unit: sub-voxels per tick (`int32_t`). Physics step: `x += vx` per tick.
+- `GRAVITY_DECREMENT = 6` sub-vox/tick² = round(9.81 × TICK_DT² × SUBVOXEL_SIZE).
+- `CHUNK_SHIFT_Y/X/Z` are 12/14/14 (= log2(chunk_dim × SUBVOXEL_SIZE)), so `chunkIdOf()` takes sub-voxel positions directly.
+- Client input wire format unchanged: 3 × float32 voxels/s. Server converts to sub-voxels/tick on receive.
+- Client rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
+
 # Chunk State message wire format
 
 All messages share a 13-byte header:
@@ -114,9 +127,10 @@ Delta (SNAPSHOT_DELTA / TICK_DELTA, optionally _COMPRESSED):
 
 # DynamicPositionComponent wire format (when POSITION_BIT set)
 
-- float x, y, z   (exact current position — server advances every tick via stepPhysics)
-- float vx, vy, vz
-- uint8 grounded   (0 = airborne, gravity applies; 1 = on ground)
+- int32 x, y, z   (sub-voxel position — server advances every tick via stepPhysics)
+- int32 vx, vy, vz  (sub-voxels per tick)
+- uint8 grounded   (0 = airborne, GRAVITY_DECREMENT applied to vy each tick; 1 = on ground)
 
+Wire size: 25 bytes (same as the previous float layout — int32 = float = 4 bytes).
 Tick is NOT in the component stream — clients read it from the message header.
 predictAt() exists only on the client side for smooth rendering interpolation.

@@ -94,10 +94,15 @@ inline constexpr uint8_t CHUNK_SIZE_X = 64;   ///< uint6 range [0,63]
 inline constexpr uint8_t CHUNK_SIZE_Z = 64;   ///< uint6 range [0,63]
 inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z; // 65 536
 
-/// log2 of each chunk dimension — used for bit-shift chunk/voxel coordinate arithmetic.
-inline constexpr int CHUNK_SHIFT_Y = 4;  ///< log2(CHUNK_SIZE_Y)
-inline constexpr int CHUNK_SHIFT_X = 6;  ///< log2(CHUNK_SIZE_X)
-inline constexpr int CHUNK_SHIFT_Z = 6;  ///< log2(CHUNK_SIZE_Z)
+/// Sub-voxel precision: 1 voxel = 256 position units.
+inline constexpr int     SUBVOXEL_BITS = 8;
+inline constexpr int32_t SUBVOXEL_SIZE = 1 << SUBVOXEL_BITS;  ///< 256
+inline constexpr int32_t SUBVOXEL_MASK = SUBVOXEL_SIZE - 1;   ///< 0xFF
+
+/// Bit-shift from sub-voxel position to chunk coordinate = log2(chunk_dim × SUBVOXEL_SIZE).
+inline constexpr int CHUNK_SHIFT_Y = 12;  ///< log2(CHUNK_SIZE_Y × SUBVOXEL_SIZE) = log2(16 × 256)
+inline constexpr int CHUNK_SHIFT_X = 14;  ///< log2(CHUNK_SIZE_X × SUBVOXEL_SIZE) = log2(64 × 256)
+inline constexpr int CHUNK_SHIFT_Z = 14;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZE) = log2(64 × 256)
 
 /// Bitmasks for extracting local voxel coordinates within a chunk.
 inline constexpr int CHUNK_MASK_Y = CHUNK_SIZE_Y - 1;  ///< 0x0F
@@ -122,8 +127,10 @@ inline constexpr size_t LZ4_COMPRESSION_THRESHOLD = 256;
 
 // ── Physics constants ─────────────────────────────────────────────────────
 inline constexpr int32_t TICK_RATE = 20;                              ///< Ticks per second.
-inline constexpr float   TICK_DT   = 1.0f / static_cast<float>(TICK_RATE); ///< Seconds per tick.
-inline constexpr float   GRAVITY   = 9.81f;                           ///< Gravitational acceleration (m/s²).
+inline constexpr float   TICK_DT   = 1.0f / static_cast<float>(TICK_RATE); ///< Seconds per tick (kept for non-physics callers).
+inline constexpr float   GRAVITY   = 9.81f;                           ///< Gravitational acceleration (m/s², reference).
+/// Gravity applied to vy each tick (sub-vox/tick²) = round(9.81 × TICK_DT² × SUBVOXEL_SIZE).
+inline constexpr int32_t GRAVITY_DECREMENT = 6;
 
 } // namespace voxelmmo
 
