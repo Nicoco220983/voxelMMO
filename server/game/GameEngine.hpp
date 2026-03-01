@@ -7,6 +7,7 @@
 #include <set>
 #include <memory>
 #include <functional>
+#include <mutex>
 #include <cstdint>
 
 namespace voxelmmo {
@@ -124,6 +125,15 @@ private:
     int32_t  tickCount{0};
 
     OutputCallback outputCallback;
+
+    /**
+     * @brief Serialises all public API access between the game-loop thread and
+     * the gateway (uWS) thread.  Every public method that reads or writes game
+     * state must hold this mutex for its entire duration.
+     *
+     * Recursive because unregisterGateway() → removePlayer() both need the lock.
+     */
+    std::recursive_mutex mtx_;
 
     // TODO: remove it when migrated to sockets using writev
     /** @brief Reused batch buffer — cleared and refilled every serialize call. */

@@ -41,12 +41,24 @@ client.connect().catch((err) => {
 // Spawn position must match server addPlayer() call in main.cpp
 let posX = 32, posY = 20, posZ = 32
 let yaw = 0, pitch = -0.3   // slightly downward initial look
-const SPEED = 10.0           // m/s
+
+// ── Speed ramp ────────────────────────────────────────────────────────────
+const BASE_SPEED = 10.0   // m/s at rest
+const SPEED_STEP = 10.0   // m/s gained per second of continuous movement
+const MAX_SPEED  = 100.0  // m/s ceiling
+
+/** @type {number|null} performance.now() timestamp when movement keys first pressed */
+let keyHoldStart = null
 
 // ── Keyboard state ────────────────────────────────────────────────────────
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
 
+function isMoving() {
+  return keys.w || keys.a || keys.s || keys.d || keys.space || keys.shift
+}
+
 window.addEventListener('keydown', (e) => {
+  const wasMoving = isMoving()
   switch (e.code) {
     case 'ArrowUp':                      keys.w     = true;  e.preventDefault(); break
     case 'ArrowLeft':                    keys.a     = true;  e.preventDefault(); break
@@ -54,7 +66,9 @@ window.addEventListener('keydown', (e) => {
     case 'ArrowRight':                   keys.d     = true;  e.preventDefault(); break
     case 'Space':    e.preventDefault(); keys.space = true;  break
     case 'ShiftLeft': case 'ShiftRight': keys.shift = true;  break
+    default: return
   }
+  if (!wasMoving) keyHoldStart = performance.now()
 })
 window.addEventListener('keyup', (e) => {
   switch (e.code) {
@@ -64,7 +78,9 @@ window.addEventListener('keyup', (e) => {
     case 'ArrowRight':                   keys.d     = false; break
     case 'Space':                        keys.space = false; break
     case 'ShiftLeft': case 'ShiftRight': keys.shift = false; break
+    default: return
   }
+  if (!isMoving()) keyHoldStart = null
 })
 
 // ── Pointer lock (mouse look) ─────────────────────────────────────────────
@@ -85,10 +101,10 @@ document.addEventListener('mousemove', (e) => {
  * W/S follow the full 3D camera direction (including pitch).
  * A/D strafe horizontally (yaw only).
  * Space/Shift move straight up/down in world space.
- * Result is clamped to SPEED m/s.
+ * @param {number} speed  Current speed magnitude in m/s.
  * @returns {{vx:number, vy:number, vz:number}}
  */
-function computeVelocity() {
+function computeVelocity(speed) {
   // Camera forward in world space (pitch + yaw)
   const fwdX = -Math.sin(yaw) * Math.cos(pitch)
   const fwdY =  Math.sin(pitch)
@@ -107,7 +123,7 @@ function computeVelocity() {
 
   const len = Math.sqrt(vx * vx + vy * vy + vz * vz)
   if (len > 1) { vx /= len; vy /= len; vz /= len }
-  return { vx: vx * SPEED, vy: vy * SPEED, vz: vz * SPEED }
+  return { vx: vx * speed, vy: vy * speed, vz: vz * speed }
 }
 
 // ── Input sending ─────────────────────────────────────────────────────────
@@ -136,7 +152,10 @@ function animate() {
   const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
   lastTime  = now
 
-  const { vx, vy, vz } = computeVelocity()
+  const holdSecs = keyHoldStart !== null ? (now - keyHoldStart) / 1000 : 0
+  const currentSpeed = Math.min(BASE_SPEED + Math.floor(holdSecs) * SPEED_STEP, MAX_SPEED)
+
+  const { vx, vy, vz } = computeVelocity(currentSpeed)
 
   // Send velocity to server only when it changes
   if (vx !== lastVx || vy !== lastVy || vz !== lastVz) {
@@ -158,7 +177,8 @@ function animate() {
 
   hud.textContent =
     `pos  ${posX.toFixed(1)}  ${posY.toFixed(1)}  ${posZ.toFixed(1)}` +
-    `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
+    `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°` +
+    `   spd ${currentSpeed.toFixed(0)}`
 }
 
 animate()

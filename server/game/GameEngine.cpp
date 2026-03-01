@@ -26,6 +26,7 @@ void GameEngine::appendToBatch(const std::vector<uint8_t>& msg) {
 // ── Player input ──────────────────────────────────────────────────────────
 
 void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_t size) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
     if (size < 12) return;
 
     float vx, vy, vz;
@@ -49,10 +50,12 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
 // ── Gateway management ────────────────────────────────────────────────────
 
 void GameEngine::registerGateway(GatewayId gwId) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
     gateways.emplace(gwId, GatewayInfo{});
 }
 
 void GameEngine::unregisterGateway(GatewayId gwId) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = gateways.find(gwId);
     if (it == gateways.end()) return;
     for (PlayerId pid : it->second.players) removePlayer(pid);
@@ -64,6 +67,7 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
 EntityId GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
                                 float sx, float sy, float sz)
 {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
     const entt::entity ent = registry.create();
     registry.emplace<DynamicPositionComponent>(ent, sx, sy, sz, 0.0f, 0.0f, 0.0f, false);
     registry.emplace<DirtyComponent>(ent);
@@ -80,6 +84,7 @@ EntityId GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
 }
 
 void GameEngine::removePlayer(PlayerId playerId) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return;
     registry.destroy(it->second);
@@ -107,6 +112,7 @@ Chunk& GameEngine::activateChunk(ChunkId id) {
 // ── Serialisation helpers ─────────────────────────────────────────────────
 
 void GameEngine::sendSnapshot(GatewayId gwId) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
     // watchedChunks is populated by checkPlayersChunks(); run it now so a
     // snapshot requested immediately after addPlayer() is not empty.
     checkPlayersChunks();
@@ -242,6 +248,8 @@ void GameEngine::stepPhysics() {
 // ── Chunk membership ──────────────────────────────────────────────────────
 
 void GameEngine::checkPlayersChunks() {
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
+
     // Clear stale watching sets
     for (auto& [cid, chunk] : chunks) {
         chunk->presentPlayers.clear();
@@ -250,6 +258,7 @@ void GameEngine::checkPlayersChunks() {
 
     for (auto& [gwId, gwInfo] : gateways) {
         gwInfo.watchedChunks.clear();
+        batchBuf.clear();
 
         for (PlayerId pid : gwInfo.players) {
             auto entIt = playerEntities.find(pid);
@@ -273,6 +282,12 @@ void GameEngine::checkPlayersChunks() {
                         {
                             Chunk& chunk = activateChunk(cid);
                             chunk.watchingPlayers.insert(pid);
+
+                            // First time this gateway sees this chunk — send snapshot
+                            if (!gwInfo.lastStateTick.count(cid)) {
+                                appendToBatch(chunk.buildSnapshot(registry, entityMap, tick));
+                                gwInfo.lastStateTick[cid] = tick;
+                            }
                         }
                     }
                 }
@@ -284,12 +299,16 @@ void GameEngine::checkPlayersChunks() {
                 cit->second->presentPlayers.insert(pid);
             }
         }
+
+        if (!batchBuf.empty() && outputCallback)
+            outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
 }
 
 // ── Main tick ─────────────────────────────────────────────────────────────
 
 void GameEngine::tick() {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
     ++tickCount;
 
     stepPhysics();

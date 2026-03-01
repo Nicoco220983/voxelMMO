@@ -1,0 +1,219 @@
+#include <catch2/catch_test_macros.hpp>
+#include "common/ChunkState.hpp"
+#include "common/Types.hpp"
+#include "common/VoxelTypes.hpp"
+#include "game/WorldChunk.hpp"
+
+#include <cstring>
+#include <vector>
+
+using namespace voxelmmo;
+
+// ── Helpers ────────────────────────────────────────────────────────────────
+
+// Build a minimal 13-byte fake delta/snapshot header with the given tick value.
+static std::vector<uint8_t> fakeMsg(uint32_t tick, size_t totalSize = 13) {
+    std::vector<uint8_t> msg(totalSize, 0);
+    std::memcpy(msg.data() + 9, &tick, sizeof(uint32_t));
+    return msg;
+}
+
+// ── ChunkState tests ───────────────────────────────────────────────────────
+
+TEST_CASE("ChunkState - empty state: deltasNewerThan returns empty range", "[chunkstate]") {
+    ChunkState state;
+    auto [b, e] = state.deltasNewerThan(0);
+    REQUIRE(b == e);
+}
+
+TEST_CASE("ChunkState::receiveDelta - single delta", "[chunkstate]") {
+    ChunkState state;
+    auto msg = fakeMsg(5);
+    state.receiveDelta(msg.data(), msg.size());
+
+    REQUIRE(state.hasNewDelta);
+    REQUIRE(state.deltaOffsets.size() == 1);
+    REQUIRE(state.deltaOffsets[0].tick == 5);
+    REQUIRE(state.deltaOffsets[0].offset == 0);
+    REQUIRE(state.deltas.size() == 13);
+
+    // Nothing newer than tick 5
+    auto [b1, e1] = state.deltasNewerThan(5);
+    REQUIRE(b1 == e1);
+
+    // Everything newer than tick 4
+    auto [b2, e2] = state.deltasNewerThan(4);
+    REQUIRE(b2 == 0);
+    REQUIRE(e2 == 13);
+}
+
+TEST_CASE("ChunkState::receiveDelta - multiple deltas, deltasNewerThan filters", "[chunkstate]") {
+    ChunkState state;
+
+    auto d1 = fakeMsg(3, 20);  // 20-byte message at tick 3
+    auto d2 = fakeMsg(7, 15);  // 15-byte message at tick 7
+
+    state.receiveDelta(d1.data(), d1.size());
+    state.receiveDelta(d2.data(), d2.size());
+
+    REQUIRE(state.deltas.size() == 35);
+    REQUIRE(state.deltaOffsets.size() == 2);
+
+    // Newer than tick 3 → only d2 (offset 20, size 15)
+    auto [b, e] = state.deltasNewerThan(3);
+    REQUIRE(b == 20);
+    REQUIRE(e == 35);
+
+    // Newer than tick 7 → nothing
+    auto [b2, e2] = state.deltasNewerThan(7);
+    REQUIRE(b2 == e2);
+
+    // Newer than tick 0 → both
+    auto [b3, e3] = state.deltasNewerThan(0);
+    REQUIRE(b3 == 0);
+    REQUIRE(e3 == 35);
+}
+
+TEST_CASE("ChunkState::receiveSnapshot - stores data and clears deltas", "[chunkstate]") {
+    ChunkState state;
+
+    // Accumulate some deltas first
+    auto d = fakeMsg(2);
+    state.receiveDelta(d.data(), d.size());
+    REQUIRE(!state.deltas.empty());
+
+    // Now receive a snapshot at tick 10
+    auto snap = fakeMsg(10);
+    state.receiveSnapshot(snap.data(), snap.size());
+
+    REQUIRE(state.snapshotTick == 10);
+    REQUIRE(state.snapshot.size() == 13);
+    REQUIRE(state.deltas.empty());
+    REQUIRE(state.deltaOffsets.empty());
+    REQUIRE(!state.hasNewDelta);
+}
+
+TEST_CASE("ChunkState - delta data is preserved verbatim", "[chunkstate]") {
+    ChunkState state;
+
+    // Build a delta with a recognisable payload
+    std::vector<uint8_t> msg(20, 0xAB);
+    uint32_t tick = 99;
+    std::memcpy(msg.data() + 9, &tick, sizeof(uint32_t));
+
+    state.receiveDelta(msg.data(), msg.size());
+
+    REQUIRE(std::memcmp(state.deltas.data(), msg.data(), msg.size()) == 0);
+}
+
+// ── WorldChunk serialization tests ───────────────────────────────────────────
+
+TEST_CASE("WorldChunk::serializeSnapshot - size and count field", "[serialization]") {
+    WorldChunk chunk;
+    chunk.generate(0, 0, 0);
+
+    std::vector<uint8_t> buf(sizeof(int32_t) + CHUNK_VOXEL_COUNT);
+    size_t written = chunk.serializeSnapshot(buf.data());
+
+    REQUIRE(written == sizeof(int32_t) + CHUNK_VOXEL_COUNT);
+
+    int32_t count = 0;
+    std::memcpy(&count, buf.data(), sizeof(int32_t));
+    REQUIRE(count == static_cast<int32_t>(CHUNK_VOXEL_COUNT));
+}
+
+TEST_CASE("WorldChunk::serializeSnapshot - voxel data roundtrip", "[serialization]") {
+    WorldChunk chunk;
+    chunk.generate(3, 0, -5);
+
+    std::vector<uint8_t> buf(sizeof(int32_t) + CHUNK_VOXEL_COUNT);
+    chunk.serializeSnapshot(buf.data());
+
+    // Voxel bytes after the 4-byte count header must match the live voxels
+    REQUIRE(std::memcmp(buf.data() + sizeof(int32_t),
+                        chunk.voxels.data(),
+                        CHUNK_VOXEL_COUNT) == 0);
+}
+
+TEST_CASE("WorldChunk::modifyVoxels + serializeTickDelta roundtrip", "[serialization]") {
+    WorldChunk chunk;
+    chunk.generate(0, 0, 0);
+
+    const VoxelId vid0 = VoxelId::make(5, 10, 20);
+    const VoxelId vid1 = VoxelId::make(3,  7,  7);
+    chunk.modifyVoxels({{vid0, VoxelTypes::STONE}, {vid1, VoxelTypes::AIR}});
+
+    REQUIRE(chunk.voxelsTickDeltas.size() == 2);
+
+    // Buffer: int32 count + 2 × (uint16 VoxelId + uint8 VoxelType)
+    const size_t expectedSize = sizeof(int32_t) + 2 * (sizeof(uint16_t) + sizeof(uint8_t));
+    std::vector<uint8_t> buf(expectedSize);
+    size_t written = chunk.serializeTickDelta(buf.data());
+    REQUIRE(written == expectedSize);
+
+    int32_t count = 0;
+    std::memcpy(&count, buf.data(), sizeof(int32_t));
+    REQUIRE(count == 2);
+
+    // First entry
+    uint16_t p0 = 0;
+    std::memcpy(&p0, buf.data() + sizeof(int32_t), sizeof(uint16_t));
+    REQUIRE(p0 == vid0.packed);
+    REQUIRE(buf[sizeof(int32_t) + sizeof(uint16_t)] == VoxelTypes::STONE);
+
+    // Second entry
+    const size_t entry1 = sizeof(int32_t) + sizeof(uint16_t) + sizeof(uint8_t);
+    uint16_t p1 = 0;
+    std::memcpy(&p1, buf.data() + entry1, sizeof(uint16_t));
+    REQUIRE(p1 == vid1.packed);
+    REQUIRE(buf[entry1 + sizeof(uint16_t)] == VoxelTypes::AIR);
+}
+
+TEST_CASE("WorldChunk::clearTickDelta empties tick deltas, preserves snapshot deltas", "[serialization]") {
+    WorldChunk chunk;
+    chunk.generate(0, 0, 0);
+    chunk.modifyVoxels({{VoxelId::make(0, 0, 0), VoxelTypes::STONE}});
+
+    REQUIRE(!chunk.voxelsTickDeltas.empty());
+    REQUIRE(!chunk.voxelsSnapshotDeltas.empty());
+
+    chunk.clearTickDelta();
+    REQUIRE(chunk.voxelsTickDeltas.empty());
+    REQUIRE(!chunk.voxelsSnapshotDeltas.empty());  // snapshot delta still present
+}
+
+TEST_CASE("WorldChunk::clearSnapshotDelta empties snapshot deltas only", "[serialization]") {
+    WorldChunk chunk;
+    chunk.generate(0, 0, 0);
+    chunk.modifyVoxels({{VoxelId::make(1, 2, 3), VoxelTypes::GRASS}});
+
+    chunk.clearSnapshotDelta();
+    REQUIRE(chunk.voxelsSnapshotDeltas.empty());
+    REQUIRE(!chunk.voxelsTickDeltas.empty());  // tick delta still present
+}
+
+TEST_CASE("VoxelId packing roundtrip", "[types]") {
+    for (uint8_t y = 0; y < 16; ++y) {
+        for (uint8_t x : {uint8_t(0), uint8_t(1), uint8_t(31), uint8_t(63)}) {
+            for (uint8_t z : {uint8_t(0), uint8_t(1), uint8_t(31), uint8_t(63)}) {
+                const VoxelId vid = VoxelId::make(y, x, z);
+                REQUIRE(vid.y() == y);
+                REQUIRE(vid.x() == x);
+                REQUIRE(vid.z() == z);
+            }
+        }
+    }
+}
+
+TEST_CASE("ChunkId packing roundtrip", "[types]") {
+    for (int8_t y : {int8_t(-32), int8_t(-1), int8_t(0), int8_t(1), int8_t(31)}) {
+        for (int32_t x : {-268435456, -1, 0, 1, 268435455}) {
+            for (int32_t z : {-268435456, -1, 0, 1, 268435455}) {
+                const ChunkId cid = ChunkId::make(y, x, z);
+                REQUIRE(cid.y() == y);
+                REQUIRE(cid.x() == x);
+                REQUIRE(cid.z() == z);
+            }
+        }
+    }
+}

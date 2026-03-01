@@ -122,6 +122,17 @@ export class Chunk {
   }
 
   /**
+   * Returns the voxel type at local chunk coordinates.
+   * @param {number} x  Local x ∈ [0, CHUNK_SIZE_X)
+   * @param {number} y  Local y ∈ [0, CHUNK_SIZE_Y)
+   * @param {number} z  Local z ∈ [0, CHUNK_SIZE_Z)
+   * @returns {number} VoxelType byte (0 = AIR)
+   */
+  getVoxel(x, y, z) {
+    return this.#voxels[y * CHUNK_SIZE_X * CHUNK_SIZE_Z + x * CHUNK_SIZE_Z + z]
+  }
+
+  /**
    * (Re)build the Three.js mesh for this chunk using naive per-face meshing.
    * Adds the new mesh to scene and removes the previous one if any.
    * Clears the dirty flag when done.

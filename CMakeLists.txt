@@ -32,3 +32,23 @@ target_link_libraries(voxelmmo PRIVATE
 target_compile_options(voxelmmo PRIVATE
     $<$<CONFIG:Release>:-O3 -DNDEBUG>
 )
+
+# ── Tests (Catch2) ────────────────────────────────────────────────────────────
+find_package(Catch2 3 CONFIG REQUIRED)
+
+add_executable(voxelmmo_tests
+    tests/server/test_world_gen.cpp
+    tests/server/test_serialization.cpp
+    tests/server/test_chunk_streaming.cpp
+    server/game/WorldChunk.cpp
+    server/game/Chunk.cpp
+    server/game/GameEngine.cpp
+)
+
+target_include_directories(voxelmmo_tests PRIVATE server/)
+
+target_link_libraries(voxelmmo_tests PRIVATE
+    Catch2::Catch2WithMain
+    EnTT::EnTT
+    lz4::lz4
+)

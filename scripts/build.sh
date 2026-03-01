@@ -7,14 +7,27 @@ BUILD_DIR="$ROOT_DIR/build"
 
 export VCPKG_ROOT="${VCPKG_ROOT:-$HOME/vcpkg}"
 
-# ── Server (C++ via CMake + vcpkg) ────────────────────────────────────────
-echo "=== Building server ==="
-cmake -B "$BUILD_DIR" -S "$ROOT_DIR" \
-  -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
-  -G Ninja
+# ── Parse flags ───────────────────────────────────────────────────────────
+BUILD_TYPE=Release
+EXTRA_FLAGS=""
+for arg in "$@"; do
+  case "$arg" in
+    --debug)
+      BUILD_TYPE=Debug
+      EXTRA_FLAGS="-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined"
+      ;;
+  esac
+done
 
-cmake --build "$BUILD_DIR" --config Release
+# ── Server (C++ via CMake + vcpkg) ────────────────────────────────────────
+echo "=== Building server (${BUILD_TYPE}) ==="
+cmake -B "$BUILD_DIR" -S "$ROOT_DIR" \
+  -DCMAKE_BUILD_TYPE="$BUILD_TYPE" \
+  -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" \
+  -G Ninja \
+  ${EXTRA_FLAGS:+"$EXTRA_FLAGS"}
+
+cmake --build "$BUILD_DIR" --config "$BUILD_TYPE"
 
 # ── Client (Vite) ─────────────────────────────────────────────────────────
 echo "=== Building client ==="
