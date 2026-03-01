@@ -135,6 +135,7 @@ function sendVelocity(vx, vy, vz) {
   _inputView.setFloat32(0, vx, true)
   _inputView.setFloat32(4, vy, true)
   _inputView.setFloat32(8, vz, true)
+  console.debug('[input] tx velocity', vx.toFixed(2), vy.toFixed(2), vz.toFixed(2))
   client.sendInput(_inputBuf)
 }
 
