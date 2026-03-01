@@ -172,6 +172,7 @@ function animate() {
   camera.rotation.y = yaw
   camera.rotation.x = pitch
 
+  client.pruneDistantChunks(posX, posZ)
   client.rebuildDirtyChunks()
   renderer.render(scene, camera)
 

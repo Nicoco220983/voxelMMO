@@ -1,6 +1,6 @@
 // @ts-check
 import * as THREE from 'three'
-import { ChunkMessageType } from './types.js'
+import { ChunkMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
 import { Chunk } from './Chunk.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
@@ -99,8 +99,9 @@ export class GameClient {
    * the last call. Call once per animation frame.
    */
   rebuildDirtyChunks() {
+    let built = 0
     for (const chunk of this.#chunks.values()) {
-      if (chunk.dirty) chunk.rebuildMesh(this.#scene)
+      if (chunk.dirty) { chunk.rebuildMesh(this.#scene); if (++built >= 2) break }
     }
   }
 
@@ -110,6 +111,25 @@ export class GameClient {
       chunk.dispose(this.#scene)
     }
     this.#chunks.clear()
+  }
+
+  /**
+   * Dispose and unload chunks that are beyond maxRadius chunks from the player.
+   * @param {number} playerX
+   * @param {number} playerZ
+   * @param {number} [maxRadius=10]
+   */
+  pruneDistantChunks(playerX, playerZ, maxRadius = 10) {
+    const pcx = Math.floor(playerX / CHUNK_SIZE_X)
+    const pcz = Math.floor(playerZ / CHUNK_SIZE_Z)
+    for (const [chunkId, chunk] of this.#chunks) {
+      const cx = Number(BigInt.asIntN(29, chunkId >> 29n))
+      const cz = Number(BigInt.asIntN(29, chunkId))
+      if (Math.abs(cx - pcx) > maxRadius || Math.abs(cz - pcz) > maxRadius) {
+        chunk.dispose(this.#scene)
+        this.#chunks.delete(chunkId)
+      }
+    }
   }
 
   // ── private ──────────────────────────────────────────────────────────────

@@ -33,6 +33,12 @@ const FACE_VERTS = [
  */
 const FACE_SHADE = [0.75, 0.70, 1.00, 0.55, 0.80, 0.65] // +X -X +Y -Y +Z -Z
 
+/** Neighbour offsets per face — same order as FACE_VERTS / FACE_SHADE. */
+const FACE_DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
+
+/** Shared material — vertex colours carry all shading; no per-fragment lighting needed. */
+const CHUNK_MATERIAL = new THREE.MeshBasicMaterial({ vertexColors: true })
+
 /**
  * Deterministic brightness jitter in [0, 1] from integer world coordinates.
  * Uses a fast integer hash so adjacent voxels look slightly different.
@@ -177,11 +183,8 @@ export class Chunk {
                                                    cy * CHUNK_SIZE_Y + y,
                                                    cz * CHUNK_SIZE_Z + z)
 
-          /** @type {Array<[number,number,number]>} */
-          const NEIGHBOR = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
-
           for (let face = 0; face < 6; face++) {
-            const [dx, dy, dz] = NEIGHBOR[face]
+            const [dx, dy, dz] = FACE_DIRS[face]
             if (get(x + dx, y + dy, z + dz) !== 0) continue
 
             const shade = FACE_SHADE[face] * jitter
@@ -206,9 +209,8 @@ export class Chunk {
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors,    3))
     geo.setIndex(indices)
-    geo.computeVertexNormals()
 
-    this.#mesh = new THREE.Mesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }))
+    this.#mesh = new THREE.Mesh(geo, CHUNK_MATERIAL)
     this.#mesh.position.set(cx * CHUNK_SIZE_X, cy * CHUNK_SIZE_Y, cz * CHUNK_SIZE_Z)
     scene.add(this.#mesh)
   }
