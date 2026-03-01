@@ -245,6 +245,17 @@ void GameEngine::stepPhysics() {
     });
 }
 
+// ── Chunk lookup ──────────────────────────────────────────────────────────
+
+Chunk* GameEngine::chunkAt(float x, float y, float z) noexcept {
+    const ChunkId cid = chunkIdOf(
+        static_cast<int32_t>(std::floor(x)),
+        static_cast<int32_t>(std::floor(y)),
+        static_cast<int32_t>(std::floor(z)));
+    const auto it = chunks.find(cid);
+    return it != chunks.end() ? it->second.get() : nullptr;
+}
+
 // ── Chunk membership ──────────────────────────────────────────────────────
 
 void GameEngine::checkPlayersChunks() {
@@ -265,9 +276,9 @@ void GameEngine::checkPlayersChunks() {
             if (entIt == playerEntities.end()) continue;
 
             const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
-            const int32_t cx = static_cast<int32_t>(std::floor(dyn.x / CHUNK_SIZE_X));
-            const int8_t  cy = static_cast<int8_t> (std::floor(dyn.y / CHUNK_SIZE_Y));
-            const int32_t cz = static_cast<int32_t>(std::floor(dyn.z / CHUNK_SIZE_Z));
+            const int32_t cx = static_cast<int32_t>(std::floor(dyn.x)) >> CHUNK_SHIFT_X;
+            const int8_t  cy = static_cast<int8_t>(static_cast<int32_t>(std::floor(dyn.y)) >> CHUNK_SHIFT_Y);
+            const int32_t cz = static_cast<int32_t>(std::floor(dyn.z)) >> CHUNK_SHIFT_Z;
 
             for (int32_t dx = -WATCH_RADIUS; dx <= WATCH_RADIUS; ++dx) {
                 for (int8_t dy = -1; dy <= 1; ++dy) {

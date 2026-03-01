@@ -142,6 +142,9 @@ private:
     // ── Internal helpers ──────────────────────────────────────────────────
 
     Chunk& activateChunk(ChunkId id);
+
+    /** @brief Return the chunk containing world position (x, y, z), or nullptr if not loaded. */
+    Chunk* chunkAt(float x, float y, float z) noexcept;
     void   checkPlayersChunks();
     void   serializeSnapshot(GatewayId gwId);
     void   serializeSnapshotDelta();

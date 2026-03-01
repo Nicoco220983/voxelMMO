@@ -14,7 +14,7 @@ void WorldChunk::generate(int32_t cx, int8_t cy, int32_t cz) {
 
 void WorldChunk::modifyVoxels(const std::vector<std::pair<VoxelId, VoxelType>>& mods) {
     for (const auto& [vid, vtype] : mods) {
-        voxels[indexOf(vid)] = vtype;
+        voxels[vid.packed] = vtype;
         // TODO: check that vid is not already present
         voxelsSnapshotDeltas.emplace_back(vid, vtype);
         voxelsTickDeltas.emplace_back(vid, vtype);

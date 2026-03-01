@@ -50,6 +50,10 @@ struct ChunkId {
  * @brief Voxel identifier packed as uint4(y) | uint6(x) | uint6(z) into 16 bits.
  *
  * Bit layout: [15:12] y (4-bit) | [11:6] x (6-bit) | [5:0] z (6-bit)
+ *
+ * Because chunk dimensions are exactly 16×64×64, the packed value equals
+ * y*4096 + x*64 + z, which is the flat (y,x,z) row-major index into
+ * WorldChunk::voxels[].  Use vid.packed directly to index the array.
  */
 struct VoxelId {
     uint16_t packed{0};
@@ -89,6 +93,29 @@ inline constexpr uint8_t CHUNK_SIZE_Y = 16;   ///< uint4 range [0,15]
 inline constexpr uint8_t CHUNK_SIZE_X = 64;   ///< uint6 range [0,63]
 inline constexpr uint8_t CHUNK_SIZE_Z = 64;   ///< uint6 range [0,63]
 inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z; // 65 536
+
+/// log2 of each chunk dimension — used for bit-shift chunk/voxel coordinate arithmetic.
+inline constexpr int CHUNK_SHIFT_Y = 4;  ///< log2(CHUNK_SIZE_Y)
+inline constexpr int CHUNK_SHIFT_X = 6;  ///< log2(CHUNK_SIZE_X)
+inline constexpr int CHUNK_SHIFT_Z = 6;  ///< log2(CHUNK_SIZE_Z)
+
+/// Bitmasks for extracting local voxel coordinates within a chunk.
+inline constexpr int CHUNK_MASK_Y = CHUNK_SIZE_Y - 1;  ///< 0x0F
+inline constexpr int CHUNK_MASK_X = CHUNK_SIZE_X - 1;  ///< 0x3F
+inline constexpr int CHUNK_MASK_Z = CHUNK_SIZE_Z - 1;  ///< 0x3F
+
+/**
+ * @brief ChunkId for the chunk that contains integer world-voxel coordinate (ix, iy, iz).
+ *
+ * Uses arithmetic right-shift (guaranteed by C++20 two's complement) instead of
+ * division so negative coordinates floor correctly without a branch.
+ */
+inline constexpr ChunkId chunkIdOf(int32_t ix, int32_t iy, int32_t iz) noexcept {
+    return ChunkId::make(
+        static_cast<int8_t>(iy >> CHUNK_SHIFT_Y),
+        ix >> CHUNK_SHIFT_X,
+        iz >> CHUNK_SHIFT_Z);
+}
 
 /** @brief Minimum payload size (bytes) that triggers LZ4 compression. */
 inline constexpr size_t LZ4_COMPRESSION_THRESHOLD = 256;

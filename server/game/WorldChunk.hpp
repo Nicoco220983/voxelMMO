@@ -18,7 +18,8 @@ namespace voxelmmo {
 class WorldChunk {
 public:
 
-    /** @brief All voxels in row-major (y, x, z) order. Size = CHUNK_VOXEL_COUNT. */
+    /** @brief All voxels in row-major (y, x, z) order. Size = CHUNK_VOXEL_COUNT.
+     *         VoxelId::packed is a direct index into this array. */
     std::vector<VoxelType> voxels;
 
     /** @brief Accumulated voxel changes since the last snapshot was sent. */
@@ -67,12 +68,6 @@ public:
     /** @brief Clear tick delta accumulator (call at the end of every tick). */
     void clearTickDelta();
 
-    /** @brief Flat index into voxels[] from a VoxelId. */
-    static constexpr size_t indexOf(VoxelId vid) noexcept {
-        return static_cast<size_t>(vid.y()) * CHUNK_SIZE_X * CHUNK_SIZE_Z
-             + static_cast<size_t>(vid.x()) * CHUNK_SIZE_Z
-             + static_cast<size_t>(vid.z());
-    }
 };
 
 } // namespace voxelmmo
