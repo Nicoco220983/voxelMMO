@@ -78,6 +78,7 @@ void GatewayEngine::listen(int port) {
                         int /*code*/, std::string_view /*reason*/) {
             const PlayerId pid = ws->getUserData()->playerId;
             sockets.erase(pid);
+            stateManager.removePlayer(pid);
             std::cout << "[gateway] Player " << pid << " disconnected\n";
             if (disconnectCb) disconnectCb(pid);
         },

@@ -11,12 +11,16 @@ void GameEngine::setOutputCallback(OutputCallback cb) {
 }
 
 // TODO: remove it when migrated to sockets using writev
-void GameEngine::appendToBatch(const std::vector<uint8_t>& msg) {
-    if (msg.empty()) return;
-    const uint32_t len = static_cast<uint32_t>(msg.size());
+void GameEngine::appendToBatch(const uint8_t* data, size_t size) {
+    if (size == 0) return;
+    const uint32_t len = static_cast<uint32_t>(size);
     const auto* lenBytes = reinterpret_cast<const uint8_t*>(&len);
     batchBuf.insert(batchBuf.end(), lenBytes, lenBytes + 4);
-    batchBuf.insert(batchBuf.end(), msg.begin(), msg.end());
+    batchBuf.insert(batchBuf.end(), data, data + size);
+}
+
+void GameEngine::appendToBatch(const std::vector<uint8_t>& msg) {
+    appendToBatch(msg.data(), msg.size());
 }
 
 // ── Player input ──────────────────────────────────────────────────────────
@@ -112,11 +116,14 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
 void GameEngine::serializeSnapshot(GatewayId gwId) {
     auto it = gateways.find(gwId);
     if (it == gateways.end()) return;
+    auto& gwInfo = it->second;
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
     batchBuf.clear();
-    for (const ChunkId& cid : it->second.watchedChunks) {
+    for (const ChunkId& cid : gwInfo.watchedChunks) {
         auto cit = chunks.find(cid);
         if (cit == chunks.end()) continue;
-        appendToBatch(cit->second->buildSnapshot(registry, entityMap, static_cast<uint32_t>(tickCount)));
+        appendToBatch(cit->second->buildSnapshot(registry, entityMap, tick));
+        gwInfo.lastStateTick[cid] = tick;
     }
     if (!batchBuf.empty() && outputCallback)
         outputCallback(gwId, batchBuf.data(), batchBuf.size());
@@ -128,19 +135,24 @@ void GameEngine::serializeSnapshotDelta() {
     for (auto& [cid, chunk] : chunks) {
         chunk->buildSnapshotDelta(registry, entityMap, tick);
     }
-    // Dispatch one batch per gateway
+    // Dispatch one batch per gateway (only chunks that produced a new delta)
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf.clear();
         for (const ChunkId& cid : gwInfo.watchedChunks) {
             auto it = chunks.find(cid);
             if (it == chunks.end()) continue;
-            appendToBatch(it->second->state.snapshotDelta);
+            const auto& state = it->second->state;
+            if (!state.hasNewDelta) continue;
+            const size_t off = state.deltaOffsets.back().offset;
+            appendToBatch(state.deltas.data() + off, state.deltas.size() - off);
+            gwInfo.lastStateTick[cid] = state.deltaOffsets.back().tick;
         }
         if (!batchBuf.empty() && outputCallback)
             outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
-    // Clear snapshot-level dirty state
+    // Clear snapshot-level dirty state and hasNewDelta flags
     for (auto& [cid, chunk] : chunks) {
+        chunk->state.hasNewDelta = false;
         chunk->world.clearSnapshotDelta();
         for (EntityId eid : chunk->entities) {
             auto eit = entityMap.find(eid);
@@ -157,22 +169,25 @@ void GameEngine::serializeTickDelta() {
     for (auto& [cid, chunk] : chunks) {
         chunk->buildTickDelta(registry, entityMap, tick);
     }
-    // Dispatch one batch per gateway
+    // Dispatch one batch per gateway (only chunks that produced a new delta)
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf.clear();
         for (const ChunkId& cid : gwInfo.watchedChunks) {
             auto it = chunks.find(cid);
             if (it == chunks.end()) continue;
-            if (it->second->state.tickDeltas.empty()) continue;
-            appendToBatch(it->second->state.tickDeltas.back());
+            const auto& state = it->second->state;
+            if (!state.hasNewDelta) continue;
+            const size_t off = state.deltaOffsets.back().offset;
+            appendToBatch(state.deltas.data() + off, state.deltas.size() - off);
+            gwInfo.lastStateTick[cid] = state.deltaOffsets.back().tick;
         }
         if (!batchBuf.empty() && outputCallback)
             outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
-    // Clear tick-level dirty state and accumulated tick deltas
+    // Clear tick-level dirty state and hasNewDelta flags
     for (auto& [cid, chunk] : chunks) {
+        chunk->state.hasNewDelta = false;
         chunk->world.clearTickDelta();
-        chunk->state.tickDeltas.clear();
         for (EntityId eid : chunk->entities) {
             auto eit = entityMap.find(eid);
             if (eit != entityMap.end()) {

@@ -49,6 +49,7 @@ public:
      * Voxels are LZ4-compressed directly from world.voxels (zero copy for
      * the voxel section).  Entities are serialised raw into state.scratch,
      * then copied or LZ4-compressed into state.snapshot depending on size.
+     * Also clears state.deltas (the snapshot supersedes all previous deltas).
      *
      * @return const-ref to state.snapshot (always non-empty after this call).
      */
@@ -58,28 +59,27 @@ public:
         uint32_t tickCount);
 
     /**
-     * @brief Build a snapshot delta and store it in state.snapshotDelta.
+     * @brief Build a snapshot delta and append it to state.deltas.
      *
-     * Payload is serialised raw directly into state.snapshotDelta, then
-     * compressed in-place via state.scratch if it exceeds the threshold.
+     * Payload is built into a local staging buffer, optionally LZ4-compressed
+     * via state.scratch, then appended to the unified state.deltas buffer.
+     * Sets state.hasNewDelta = true iff anything was appended.
      *
-     * @return const-ref to state.snapshotDelta.
-     *         Empty if both voxel and entity deltas are empty.
+     * @return true if a delta was appended; false if nothing changed.
      */
-    const std::vector<uint8_t>& buildSnapshotDelta(
+    bool buildSnapshotDelta(
         entt::registry& reg,
         const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
         uint32_t tickCount);
 
     /**
-     * @brief Build a tick delta and append it to state.tickDeltas.
+     * @brief Build a tick delta and append it to state.deltas.
      *
-     * Same compression strategy as buildSnapshotDelta.
+     * Same strategy as buildSnapshotDelta.
      *
-     * @return const-ref to state.tickDeltas.back().
-     *         state.tickDeltas is unchanged (no new entry) if both deltas are empty.
+     * @return true if a delta was appended; false if nothing changed.
      */
-    const std::vector<uint8_t>& buildTickDelta(
+    bool buildTickDelta(
         entt::registry& reg,
         const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
         uint32_t tickCount);

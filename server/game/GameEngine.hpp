@@ -15,8 +15,9 @@ namespace voxelmmo {
  * @brief Metadata the GameEngine tracks for each connected gateway.
  */
 struct GatewayInfo {
-    std::set<PlayerId> players;      ///< Players routed through this gateway.
-    std::set<ChunkId>  watchedChunks; ///< Chunks the gateway currently needs state for.
+    std::set<PlayerId>                    players;        ///< Players routed through this gateway.
+    std::set<ChunkId>                     watchedChunks;  ///< Chunks the gateway currently needs state for.
+    std::unordered_map<ChunkId, uint32_t> lastStateTick; ///< Tick of the last state (snapshot or delta) sent per chunk.
 };
 
 /**
@@ -137,7 +138,9 @@ private:
     void   serializeTickDelta();
     void   stepPhysics();
 
-    /** @brief Append a length-prefixed message to batchBuf. No-op if msg is empty. */
+    /** @brief Append a length-prefixed message to batchBuf. No-op if size is 0. */
+    void   appendToBatch(const uint8_t* data, size_t size);
+    /** @brief Convenience overload for a full vector. */
     void   appendToBatch(const std::vector<uint8_t>& msg);
 };
 
