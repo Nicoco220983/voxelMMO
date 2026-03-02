@@ -1,6 +1,7 @@
 #pragma once
 #include "DirtyComponent.hpp"
 #include "common/Types.hpp"
+#include "common/BufWriter.hpp"
 #include <entt/entt.hpp>
 
 namespace voxelmmo {
@@ -24,6 +25,19 @@ struct DynamicPositionComponent {
     int32_t x{0},  y{0},  z{0};   ///< World-space position (sub-voxels), always current.
     int32_t vx{0}, vy{0}, vz{0};  ///< Velocity (sub-voxels per tick).
     bool grounded{false};          ///< When false, GRAVITY_DECREMENT applies along -Y per tick.
+    bool moved{true};              ///< Set whenever position changes; cleared by checkEntitiesChunks().
+
+    /**
+     * @brief Serialize the raw position fields (no component-flags byte).
+     *
+     * Wire layout: int32 x,y,z | int32 vx,vy,vz | uint8 grounded
+     * The caller is responsible for writing the component-flags byte beforehand.
+     */
+    void serializeFields(BufWriter& w) const noexcept {
+        w.write(x);  w.write(y);  w.write(z);
+        w.write(vx); w.write(vy); w.write(vz);
+        w.write<uint8_t>(grounded ? 1u : 0u);
+    }
 
     /**
      * @brief Overwrite all fields.
@@ -34,7 +48,8 @@ struct DynamicPositionComponent {
                        int32_t nx,  int32_t ny,  int32_t nz,
                        int32_t nvx, int32_t nvy, int32_t nvz,
                        bool    ngrounded, bool dirty) {
-        reg.get<DynamicPositionComponent>(ent) = {nx, ny, nz, nvx, nvy, nvz, ngrounded};
+        auto& c = reg.get<DynamicPositionComponent>(ent);
+        c = {nx, ny, nz, nvx, nvy, nvz, ngrounded, /*moved=*/true};
         if (dirty) reg.get<DirtyComponent>(ent).mark(POSITION_BIT);
     }
 };

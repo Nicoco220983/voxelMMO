@@ -1,6 +1,10 @@
 #pragma once
 #include "Chunk.hpp"
-#include "game/entities/PlayerEntity.hpp"
+#include "game/components/EntityTypeComponent.hpp"
+#include "game/components/PlayerComponent.hpp"
+#include "game/components/ChunkMemberComponent.hpp"
+#include "game/components/DirtyComponent.hpp"
+#include "game/components/DynamicPositionComponent.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 #include <unordered_map>
@@ -55,10 +59,9 @@ public:
      * @param gwId     Gateway the player connected through.
      * @param playerId Persistent player identifier.
      * @param sx/sy/sz Spawn world coordinates.
-     * @return Assigned EntityId.
      */
-    EntityId addPlayer(GatewayId gwId, PlayerId playerId,
-                       float sx, float sy, float sz);
+    void addPlayer(GatewayId gwId, PlayerId playerId,
+                   float sx, float sy, float sz);
 
     /** @brief Destroy a player entity and remove it from all chunk sets. */
     void removePlayer(PlayerId playerId);
@@ -116,12 +119,10 @@ public:
 private:
     entt::registry  registry;
 
-    std::unordered_map<ChunkId,   std::unique_ptr<Chunk>>         chunks;
-    std::unordered_map<GatewayId, GatewayInfo>                    gateways;
-    std::unordered_map<PlayerId,  entt::entity>                   playerEntities;
-    std::unordered_map<EntityId,  std::unique_ptr<BaseEntity>> entityMap;
+    std::unordered_map<ChunkId,   std::unique_ptr<Chunk>>  chunks;
+    std::unordered_map<GatewayId, GatewayInfo>             gateways;
+    std::unordered_map<PlayerId,  entt::entity>            playerEntities;
 
-    EntityId nextEntityId{1};
     int32_t  tickCount{0};
 
     OutputCallback outputCallback;
@@ -145,7 +146,17 @@ private:
 
     /** @brief Return the chunk containing sub-voxel position (px, py, pz), or nullptr if not loaded. */
     Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;
-    void   checkPlayersChunks();
+
+    /**
+     * @brief Update chunk membership (Chunk::entities, presentPlayers, watchingPlayers) for
+     *        any entity whose DynamicPositionComponent::moved flag is set, then rebuild each
+     *        gateway's watchedChunks set and dispatch snapshots for newly-activated chunks.
+     *
+     * Per-chunk lists are never cleared wholesale — only changed when an entity crosses
+     * a chunk boundary, making this O(moved_entities × ACTIVATION_RADIUS²) instead of
+     * O(all_chunks + all_entities) per tick.
+     */
+    void   checkEntitiesChunks();
     void   serializeSnapshot(GatewayId gwId);
     void   serializeSnapshotDelta();
     void   serializeTickDelta();

@@ -8,129 +8,109 @@ A high performance online webgame massive multiplayer, on wide generated world.
 - Client: vanilla JS (JSDoc typed, `// @ts-check`), Three.js, lz4js — bundled with Vite
 - nginx: static files + WebSocket proxy to gateway port 8080
 
-# High level architecture
+# Architecture
 
-- Authoritative server using entt C++ ECS
-- Game logic / player communication separation: GameEngine vs GatewayEngine (may run on separate servers, communicate via Unix socket or TCP)
-- Game is entirely chunked. Chunks activated/deactivated when a player comes close. Dynamically generated at first activation.
-- Each Chunk owns a ChunkState (snapshot + deltas + scratch). Serialisation is per-chunk and independent, ready for parallel execution.
-- Snapshot: voxels LZ4-compressed zero-copy from world.voxels. Entity section serialised to scratch then copied or compressed into snapshot.
-- Deltas: raw payload written directly into ChunkState, then compressed in-place via scratch if above threshold.
-- ChunkState is shared between game side (Chunk::state) and gateway side (StateManager) — same structure, same wire format.
-- Client: Three.js with naive voxel meshing, client-side LZ4 decompression via lz4js.
-- 3 levels of chunk state message: snapshot, snapshot delta, tick delta.
+- Authoritative server with entt C++ ECS. No game logic in the gateway.
+- GameEngine (game loop) and GatewayEngine (uWS) are decoupled; can run on separate servers.
+- World is fully chunked. Chunks activate on first player approach, generate terrain on activation.
+- Each Chunk owns a ChunkState (snapshot + deltas + scratch); serialisation is per-chunk and parallelisable.
+- 3 message levels per chunk: snapshot → snapshot delta → tick delta. See `docs/wire-format.md`.
+
+# Core principles
+
+- **Pure ECS**: all entity state lives in entt components. No parallel data structures mirroring the registry.
+- **Fixed-point positions**: `int32_t` sub-voxels, 1 voxel = `SUBVOXEL_SIZE` (256) units. No floats in game state.
+  - `CHUNK_SHIFT_Y/X/Z = 12/14/14` → chunk coord = position >> shift (works directly on sub-voxel values).
+  - Client sends `3 × float32` voxels/s; server converts to sub-voxels/tick on receive.
+  - Rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
+- **Dirty flags**: `DirtyComponent` carries `snapshotDirtyFlags` and `tickDirtyFlags` (1 bit per component).
+  `modify(dirty=true)` marks both; cleared after the matching delta is sent.
+- **ChunkEntityId** (uint16): per-chunk wire id, assigned on entry, freed on departure. Not a stable entity id.
+- **Serialisation ownership**: each component's `serializeFields(BufWriter&)` writes its own bytes only.
+  The caller (Chunk) writes the component-flags byte and decides which components to include.
+
+# Key types
+
+| Type | Repr | Notes |
+|------|------|-------|
+| ChunkId | int64 packed | sint6(y) · sint29(x) · sint29(z) |
+| VoxelId | uint16 packed | uint4(y) · uint6(x) · uint6(z) |
+| VoxelType | uint8 | 0 = air |
+| ChunkEntityId | uint16 | per-chunk, per-residence |
+| PlayerId | uint32 | persistent |
+| GatewayId | uint32 | |
+
+Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 
 # Code structure
 
-- dir server/
-  - file main.cpp # runs GameEngine thread + GatewayEngine (uWS) main thread
-  - dir common/
-    - file Types.hpp # ChunkId, VoxelId, VoxelType, EntityId, PlayerId, GatewayId, chunk dimensions
-    - file MessageTypes.hpp # ChunkMessageType, DeltaType, EntityType enums
-    - file ChunkState.hpp # shared snapshot/delta cache used by Chunk and StateManager
-    - file VoxelTypes.hpp
-  - dir game/
-    - file GameEngine.hpp/cpp
-      - class GameEngine
-        - map[GatewayId, GatewayInfo{set[PlayerId], set[ChunkId]}] gateways
-        - map[ChunkId, Chunk] chunks
-        - checkPlayersChunks() # populates watchedChunks + activates chunks
-        - serializeSnapshot(GatewayId) # calls chunk.buildSnapshot(), dispatches
-        - serializeSnapshotDelta() # builds each chunk once, dispatches to all gateways
-        - serializeTickDelta() # same pattern
-    - file Chunk.hpp/cpp
-      - ChunkId id
-      - set[PlayerId] presentPlayers, watchingPlayers
-      - WorldChunk world
-      - set[EntityId] entities
-      - ChunkState state # snapshot + snapshotDelta + tickDeltas + scratch
-      - static constexpr HEADER_SIZE = 13 # type(1) + ChunkId(8) + tick(4)
-      - buildSnapshot(reg, entityMap, tickCount) # LZ4(voxels) zero-copy + entity section copy/compress
-      - buildSnapshotDelta(reg, entityMap, tickCount) # raw → ChunkState, then maybe compress in-place
-      - buildTickDelta(reg, entityMap, tickCount) # same
-    - file WorldChunk.hpp/cpp
-      - vector[VoxelType] voxels
-      - vector[[VoxelId,VoxelType]] voxelsSnapshotDeltas, voxelsTickDeltas
-      - generate(), modifyVoxels(), serializeSnapshot/Delta/TickDelta(buf)
-    - dir entities/
-      - file BaseEntity.hpp    # serializeSnapshot(buf,off), serializeDelta(buf,off,mask)
-                               # writes dyn.x/y/z directly (always current — no advancement needed)
-      - file PlayerEntity.hpp  # extends BaseEntity, adds ChunkId currentChunk
-    - dir components/
-      - file DirtyComponent.hpp     # snapshotDirtyFlags, tickDirtyFlags (1 bit/component)
-      - file DynamicPositionComponent.hpp  # POSITION_BIT, x/y/z+vx/vy/vz+grounded
-                                           # x/y/z are int32_t sub-voxels (1 voxel = SUBVOXEL_SIZE = 256 units)
-                                           # vx/vy/vz are int32_t sub-voxels per tick
-                                           # x/y/z always current on server (updated every tick)
-                                           # modify(dirty=false) advances silently, modify(dirty=true) sends delta
-  - dir gateway/
-    - file GatewayEngine.hpp/cpp # uWS server, stores uwsLoop ptr for cross-thread defer
-    - file StateManager.hpp/cpp  # map[ChunkId, ChunkState], routes received messages
-- dir client/
-  - file index.html
-  - file jsconfig.json, vite.config.js, package.json
-  - dir src/
-    - file types.js      # JSDoc typedefs + enums + constants (mirrors server types)
-    - file utils.js      # lz4Decompress, BufReader (sequential binary deserialisation)
-    - file GameClient.js # WebSocket wrapper, parses 13-byte header (incl. tick), dispatches
-    - file Chunk.js      # per-chunk voxel state + LZ4 decompression + Three.js mesh rebuild
-    - dir components/
-      - DynamicPositionComponent.js  # mirrors server; tick set from messageTick (not wire)
-    - dir entities/
-      - BaseEntity.js    # fromRecord(reader, messageTick), applyDelta(reader, messageTick)
-      - PlayerEntity.js  # extends BaseEntity
-    - file main.js       # Three.js scene, render loop, HUD
-- dir nginx/
-  - file nginx.conf
-- dir scripts/
-  - file install.sh, build.sh, start.sh
+**server/common/**
+- `Types.hpp` — ChunkId, VoxelId, VoxelType, ChunkEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*
+- `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType enums
+- `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
+- `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
 
-# Types
+**server/game/GameEngine.hpp/cpp**
+- `entt::registry registry` — single source of truth for all entity state
+- `map[ChunkId, Chunk] chunks`, `map[GatewayId, GatewayInfo] gateways`, `map[PlayerId, entt::entity] playerEntities`
+- `addPlayer()` — creates entity, emplaces 5 components: DynamicPosition, Dirty, EntityType, Player, ChunkMember
+- `removePlayer()` — cleans chunk membership via ChunkMemberComponent, then destroys entity
+- `tick()` → `stepPhysics()` → `checkEntitiesChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
+- `checkEntitiesChunks()` — phase A: moves entities between chunks on `dyn.moved`; phase B: rebuilds watchedChunks, dispatches snapshots for newly seen chunks
 
-- ChunkId: sint6(y) × sint29(x) × sint29(z) packed into int64
-- VoxelId: uint4(y) × uint6(x) × uint6(z) packed into uint16
-- VoxelType: uint8 — EntityId: uint16 — PlayerId: uint32
-- Chunk voxels: 64×16×64 = 65 536 bytes
+**server/game/Chunk.hpp/cpp**
+- `map[entt::entity, ChunkEntityId] entities` — chunk membership + wire id assignment (`nextChunkEntityId_`)
+- `buildSnapshot(reg, tick)` — LZ4(voxels) zero-copy + entity section into scratch, compress if above threshold
+- `buildSnapshotDelta / buildTickDelta` — staging buffer → optional LZ4 → appended to state.deltas
 
-# Position coordinate system
+**server/game/WorldChunk.hpp/cpp**
+- `voxels[65536]` — flat Y×X×Z voxel array
+- `voxelsSnapshotDeltas`, `voxelsTickDeltas` — changed-voxel lists, cleared after each delta send
+- `generate(cx, cy, cz)` — procedural terrain generation
 
-Entity positions use **fixed-point integers**: 1 voxel = `SUBVOXEL_SIZE` (256) position units.
-- `SUBVOXEL_BITS = 8`, `SUBVOXEL_SIZE = 256`, `SUBVOXEL_MASK = 0xFF`
-- Position range: ±8 M voxels. Sub-voxel precision: 1/256 voxel ≈ 4 mm.
-- Velocity unit: sub-voxels per tick (`int32_t`). Physics step: `x += vx` per tick.
-- `GRAVITY_DECREMENT = 6` sub-vox/tick² = round(9.81 × TICK_DT² × SUBVOXEL_SIZE).
-- `CHUNK_SHIFT_Y/X/Z` are 12/14/14 (= log2(chunk_dim × SUBVOXEL_SIZE)), so `chunkIdOf()` takes sub-voxel positions directly.
-- Client input wire format unchanged: 3 × float32 voxels/s. Server converts to sub-voxels/tick on receive.
-- Client rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
+**server/game/components/**
+- `DirtyComponent` — `snapshotDirtyFlags`, `tickDirtyFlags`; `mark(bit)`, `clearSnapshot()`, `clearTick()`
+- `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded, moved; `modify()`; `serializeFields(BufWriter&)`
+- `EntityTypeComponent` — `EntityType type`; emplaced on every entity at creation
+- `PlayerComponent` — `PlayerId playerId`; emplaced on player entities only
+- `ChunkMemberComponent` — `currentChunkId`, `chunkAssigned`; managed by checkEntitiesChunks()
 
-# Chunk State message wire format
+**server/gateway/**
+- `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameBatch()` forwards to clients
+- `StateManager` — `map[ChunkId, ChunkState]`; routes chunk state messages to watching players
 
-All messages share a 13-byte header:
-- uint8:  ChunkMessageType
-- int64:  ChunkId (little-endian)
-- uint32: tick (server tick when this message was built, little-endian)
+**client/src/**
+- `types.js` — mirrors server enums + constants (ChunkMessageType, EntityType, SUBVOXEL_SIZE …)
+- `utils.js` — `lz4Decompress`, `BufReader` (sequential binary read)
+- `GameClient.js` — WebSocket; parses 13-byte header; dispatches to Chunk instances
+- `Chunk.js` — per-chunk voxel state, LZ4 decompression, Three.js mesh rebuild
+- `components/DynamicPositionComponent.js` — mirrors server; `predictAt(tick)` for client-side interpolation
+- `entities/BaseEntity.js`, `PlayerEntity.js` — `fromRecord()`, `applyDelta()`
+- `main.js` — Three.js scene, render loop, HUD
 
-Snapshot (always SNAPSHOT_COMPRESSED):
-- [13-byte header, type = SNAPSHOT_COMPRESSED]
-- uint8:  flags (bit 0 = entity section LZ4 compressed)
-- int32:  compressed_voxel_size; then LZ4(voxels[65536])
-- int32:  entity_section_stored_size
-  - if flags&1: int32 entity_uncompressed_size + LZ4(entity_data)
-  - else: raw entity_data (int32 count + records)
+**docs/**
+- `wire-format.md` — chunk message binary layout (keep in sync with Chunk.cpp)
 
-Delta (SNAPSHOT_DELTA / TICK_DELTA, optionally _COMPRESSED):
-- [13-byte header]
-- if compressed: int32 uncompressed_payload_size + LZ4(payload)
-- else payload: int32 voxel_count + [(VoxelId uint16, VoxelType uint8)]
-                int32 entity_count + [(DeltaType uint8, EntityId uint16, EntityType uint8,
-                                       ComponentFlags uint8, ComponentStates...)]
+# AI agent workflow
 
-# DynamicPositionComponent wire format (when POSITION_BIT set)
+> Keep **both** `AGENTS.md` ≤ 2.5 K tokens.
+> Trim stale content before adding new content.
 
-- int32 x, y, z   (sub-voxel position — server advances every tick via stepPhysics)
-- int32 vx, vy, vz  (sub-voxels per tick)
-- uint8 grounded   (0 = airborne, GRAVITY_DECREMENT applied to vy each tick; 1 = on ground)
+## Build
 
-Wire size: 25 bytes (same as the previous float layout — int32 = float = 4 bytes).
-Tick is NOT in the component stream — clients read it from the message header.
-predictAt() exists only on the client side for smooth rendering interpolation.
+```bash
+bash scripts/build.sh           # Release — server (C++) + client (Vite)
+bash scripts/build.sh --debug   # Debug + ASan/UBSan
+```
+
+## Test
+
+```bash
+bash scripts/test.sh            # C++ unit tests (Catch2) + JS tests (vitest)
+```
+
+## Checklist after any structural change
+
+1. `bash scripts/build.sh` — must compile cleanly with zero warnings.
+2. `bash scripts/test.sh` — all tests must pass.
+3. Update `AGENTS.md` (types, component list, architecture notes) and `docs/` as needed.

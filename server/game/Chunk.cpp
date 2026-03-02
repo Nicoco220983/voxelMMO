@@ -1,4 +1,7 @@
 #include "game/Chunk.hpp"
+#include "game/components/DirtyComponent.hpp"
+#include "game/components/DynamicPositionComponent.hpp"
+#include "game/components/EntityTypeComponent.hpp"
 #include <lz4.h>
 #include <algorithm>
 #include <cstring>
@@ -46,10 +49,7 @@ void Chunk::maybeCompressDelta(std::vector<uint8_t>& buf, ChunkMessageType compr
 
 // ── Snapshot ──────────────────────────────────────────────────────────────
 
-const std::vector<uint8_t>& Chunk::buildSnapshot(
-    entt::registry& reg,
-    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
-    uint32_t tickCount)
+const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t tickCount)
 {
     auto& buf = state.snapshot;
     buf.clear();
@@ -81,10 +81,14 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(
     size_t entityOff = sizeof(int32_t);  // leave room for count prefix
     int32_t entityCount = 0;
 
-    for (EntityId eid : entities) {
-        auto it = entityMap.find(eid);
-        if (it == entityMap.end()) continue;
-        it->second->serializeSnapshot(scratch.data(), entityOff);
+    BufWriter w{scratch.data(), entityOff};
+    for (auto& [ent, ceid] : entities) {
+        const auto& dyn   = reg.get<DynamicPositionComponent>(ent);
+        const auto& etype = reg.get<EntityTypeComponent>(ent);
+        w.write(ceid);
+        w.write(static_cast<uint8_t>(etype.type));
+        w.write<uint8_t>(POSITION_BIT);
+        dyn.serializeFields(w);
         ++entityCount;
     }
     scratch.resize(entityOff);
@@ -134,17 +138,13 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(
 
 // ── Snapshot delta ────────────────────────────────────────────────────────
 
-bool Chunk::buildSnapshotDelta(
-    entt::registry& reg,
-    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
-    uint32_t tickCount)
+bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
 {
     // Early exit: nothing to send
     if (world.voxelsSnapshotDeltas.empty()) {
         const bool anyDirty = std::any_of(entities.begin(), entities.end(),
-            [&](EntityId eid) {
-                auto it = entityMap.find(eid);
-                return it != entityMap.end() && it->second->isSnapshotDirty();
+            [&](const auto& kv) {
+                return reg.get<DirtyComponent>(kv.first).isSnapshotDirty();
             });
         if (!anyDirty) return false;
     }
@@ -172,15 +172,19 @@ bool Chunk::buildSnapshotDelta(
     const size_t entityCountOff = off;
     off += sizeof(int32_t);
     int32_t entityCount = 0;
-    for (EntityId eid : entities) {
-        auto it = entityMap.find(eid);
-        if (it == entityMap.end()) continue;
-        const BaseEntity& entity = *it->second;
-        if (!entity.isSnapshotDirty()) continue;
-        const uint8_t mask = reg.get<DirtyComponent>(entity.handle).snapshotDirtyFlags;
-        staging[off++] = static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
-        entity.serializeDelta(staging.data(), off, mask);
-        ++entityCount;
+    {
+        BufWriter w{staging.data(), off};
+        for (auto& [ent, ceid] : entities) {
+            const uint8_t mask = reg.get<DirtyComponent>(ent).snapshotDirtyFlags;
+            if (!mask) continue;
+            w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
+            w.write(ceid);
+            w.write(static_cast<uint8_t>(reg.get<EntityTypeComponent>(ent).type));
+            w.write(mask);
+            if (mask & POSITION_BIT)
+                reg.get<DynamicPositionComponent>(ent).serializeFields(w);
+            ++entityCount;
+        }
     }
     std::memcpy(staging.data() + entityCountOff, &entityCount, sizeof(int32_t));
     staging.resize(off);
@@ -196,17 +200,13 @@ bool Chunk::buildSnapshotDelta(
 
 // ── Tick delta ────────────────────────────────────────────────────────────
 
-bool Chunk::buildTickDelta(
-    entt::registry& reg,
-    const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
-    uint32_t tickCount)
+bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
 {
     // Early exit: nothing to send
     if (world.voxelsTickDeltas.empty()) {
         const bool anyDirty = std::any_of(entities.begin(), entities.end(),
-            [&](EntityId eid) {
-                auto it = entityMap.find(eid);
-                return it != entityMap.end() && it->second->isTickDirty();
+            [&](const auto& kv) {
+                return reg.get<DirtyComponent>(kv.first).isTickDirty();
             });
         if (!anyDirty) return false;
     }
@@ -234,15 +234,19 @@ bool Chunk::buildTickDelta(
     const size_t entityCountOff = off;
     off += sizeof(int32_t);
     int32_t entityCount = 0;
-    for (EntityId eid : entities) {
-        auto it = entityMap.find(eid);
-        if (it == entityMap.end()) continue;
-        const BaseEntity& entity = *it->second;
-        if (!entity.isTickDirty()) continue;
-        const uint8_t mask = reg.get<DirtyComponent>(entity.handle).tickDirtyFlags;
-        staging[off++] = static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
-        entity.serializeDelta(staging.data(), off, mask);
-        ++entityCount;
+    {
+        BufWriter w{staging.data(), off};
+        for (auto& [ent, ceid] : entities) {
+            const uint8_t mask = reg.get<DirtyComponent>(ent).tickDirtyFlags;
+            if (!mask) continue;
+            w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
+            w.write(ceid);
+            w.write(static_cast<uint8_t>(reg.get<EntityTypeComponent>(ent).type));
+            w.write(mask);
+            if (mask & POSITION_BIT)
+                reg.get<DynamicPositionComponent>(ent).serializeFields(w);
+            ++entityCount;
+        }
     }
     std::memcpy(staging.data() + entityCountOff, &entityCount, sizeof(int32_t));
     staging.resize(off);

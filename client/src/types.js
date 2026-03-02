@@ -18,8 +18,8 @@
  */
 
 /**
- * Entity identifier (uint16).
- * @typedef {number} EntityId
+ * Per-chunk wire entity id (uint16, unique within one chunk's lifetime).
+ * @typedef {number} ChunkEntityId
  */
 
 /**

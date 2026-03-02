@@ -21,8 +21,8 @@ int main() {
     game.registerGateway(0);
 
     gateway.setPlayerConnectCallback([&](voxelmmo::PlayerId pid) {
-        const voxelmmo::EntityId eid = game.addPlayer(0, pid, 32.0f, 20.0f, 32.0f);
-        std::cout << "[main] Player " << pid << " → entity " << eid << "\n";
+        game.addPlayer(0, pid, 32.0f, 20.0f, 32.0f);
+        std::cout << "[main] Player " << pid << " connected\n";
         game.sendSnapshot(0);
     });
 

@@ -79,8 +79,8 @@ struct VoxelId {
 /** @brief Voxel type byte. */
 using VoxelType = uint8_t;
 
-/** @brief Entity identifier (uint16, max 65 535 entities per chunk). */
-using EntityId = uint16_t;
+/** @brief Per-chunk wire entity id (uint16, unique within one chunk's lifetime). */
+using ChunkEntityId = uint16_t;
 
 /** @brief Persistent player identifier (uint32). */
 using PlayerId = uint32_t;

@@ -1,6 +1,5 @@
 #pragma once
 #include "WorldChunk.hpp"
-#include "game/entities/BaseEntity.hpp"
 #include "common/Types.hpp"
 #include "common/MessageTypes.hpp"
 #include "common/ChunkState.hpp"
@@ -36,10 +35,21 @@ public:
 
     WorldChunk world;
 
-    std::set<EntityId> entities;
+    /**
+     * @brief Maps entt entity handle → per-chunk wire entity id.
+     *
+     * The ChunkEntityId is assigned when an entity enters this chunk (monotonically
+     * increasing from nextChunkEntityId_) and is valid only for the lifetime of that
+     * entity's residence in the chunk.  The client sees DELETE + NEW when an entity
+     * crosses a chunk boundary.
+     */
+    std::unordered_map<entt::entity, ChunkEntityId> entities;
 
     /** @brief Serialised state cache (snapshot, deltas, scratch). */
     ChunkState state;
+
+    /** @brief Monotonically increasing counter; assigned to each entity when it enters this chunk. */
+    ChunkEntityId nextChunkEntityId_{1};
 
     explicit Chunk(ChunkId chunkId);
 
@@ -53,10 +63,7 @@ public:
      *
      * @return const-ref to state.snapshot (always non-empty after this call).
      */
-    const std::vector<uint8_t>& buildSnapshot(
-        entt::registry& reg,
-        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
-        uint32_t tickCount);
+    const std::vector<uint8_t>& buildSnapshot(entt::registry& reg, uint32_t tickCount);
 
     /**
      * @brief Build a snapshot delta and append it to state.deltas.
@@ -67,10 +74,7 @@ public:
      *
      * @return true if a delta was appended; false if nothing changed.
      */
-    bool buildSnapshotDelta(
-        entt::registry& reg,
-        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
-        uint32_t tickCount);
+    bool buildSnapshotDelta(entt::registry& reg, uint32_t tickCount);
 
     /**
      * @brief Build a tick delta and append it to state.deltas.
@@ -79,10 +83,7 @@ public:
      *
      * @return true if a delta was appended; false if nothing changed.
      */
-    bool buildTickDelta(
-        entt::registry& reg,
-        const std::unordered_map<EntityId, std::unique_ptr<BaseEntity>>& entityMap,
-        uint32_t tickCount);
+    bool buildTickDelta(entt::registry& reg, uint32_t tickCount);
 
     /** @brief Byte length of the always-uncompressed message header. */
     static constexpr size_t HEADER_SIZE = 1 + sizeof(int64_t) + sizeof(uint32_t); // type(1) + ChunkId(8) + tick(4)
