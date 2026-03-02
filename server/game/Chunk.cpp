@@ -136,15 +136,21 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
     return buf;
 }
 
-// ── Snapshot delta ────────────────────────────────────────────────────────
+// ── Delta (shared implementation) ─────────────────────────────────────────
 
-bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
+bool Chunk::buildDeltaImpl(
+    entt::registry& reg,
+    uint32_t tickCount,
+    const std::vector<std::pair<VoxelId, VoxelType>>& voxelDeltas,
+    uint8_t DirtyComponent::* flagsField,
+    ChunkMessageType rawType,
+    ChunkMessageType compressedType)
 {
     // Early exit: nothing to send
-    if (world.voxelsSnapshotDeltas.empty()) {
+    if (voxelDeltas.empty()) {
         const bool anyDirty = std::any_of(entities.begin(), entities.end(),
             [&](const auto& kv) {
-                return reg.get<DirtyComponent>(kv.first).isSnapshotDirty();
+                return reg.get<DirtyComponent>(kv.first).*flagsField != 0;
             });
         if (!anyDirty) return false;
     }
@@ -152,17 +158,17 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
     // Build into a local staging buffer
     std::vector<uint8_t> staging;
     const size_t maxSize = HEADER_SIZE
-        + sizeof(int32_t) + world.voxelsSnapshotDeltas.size() * (sizeof(uint16_t) + sizeof(uint8_t))
+        + sizeof(int32_t) + voxelDeltas.size() * (sizeof(uint16_t) + sizeof(uint8_t))
         + sizeof(int32_t) + entities.size() * 64;
     staging.resize(maxSize);
 
-    size_t off = writeHeader(staging.data(), ChunkMessageType::SNAPSHOT_DELTA, tickCount);
+    size_t off = writeHeader(staging.data(), rawType, tickCount);
 
     // Voxel delta section
-    const int32_t voxelCount = static_cast<int32_t>(world.voxelsSnapshotDeltas.size());
+    const int32_t voxelCount = static_cast<int32_t>(voxelDeltas.size());
     std::memcpy(staging.data() + off, &voxelCount, sizeof(int32_t));
     off += sizeof(int32_t);
-    for (const auto& [vid, vtype] : world.voxelsSnapshotDeltas) {
+    for (const auto& [vid, vtype] : voxelDeltas) {
         std::memcpy(staging.data() + off, &vid.packed, sizeof(uint16_t));
         off += sizeof(uint16_t);
         staging[off++] = vtype;
@@ -175,7 +181,7 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
     {
         BufWriter w{staging.data(), off};
         for (auto& [ent, ceid] : entities) {
-            const uint8_t mask = reg.get<DirtyComponent>(ent).snapshotDirtyFlags;
+            const uint8_t mask = reg.get<DirtyComponent>(ent).*flagsField;
             if (!mask) continue;
             w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
             w.write(ceid);
@@ -189,7 +195,7 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
     std::memcpy(staging.data() + entityCountOff, &entityCount, sizeof(int32_t));
     staging.resize(off);
 
-    maybeCompressDelta(staging, ChunkMessageType::SNAPSHOT_DELTA_COMPRESSED);
+    maybeCompressDelta(staging, compressedType);
 
     // Append to the unified delta buffer
     state.deltaOffsets.push_back({tickCount, state.deltas.size()});
@@ -198,66 +204,26 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
     return true;
 }
 
+// ── Snapshot delta ────────────────────────────────────────────────────────
+
+bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
+{
+    return buildDeltaImpl(reg, tickCount,
+        world.voxelsSnapshotDeltas,
+        &DirtyComponent::snapshotDirtyFlags,
+        ChunkMessageType::SNAPSHOT_DELTA,
+        ChunkMessageType::SNAPSHOT_DELTA_COMPRESSED);
+}
+
 // ── Tick delta ────────────────────────────────────────────────────────────
 
 bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
 {
-    // Early exit: nothing to send
-    if (world.voxelsTickDeltas.empty()) {
-        const bool anyDirty = std::any_of(entities.begin(), entities.end(),
-            [&](const auto& kv) {
-                return reg.get<DirtyComponent>(kv.first).isTickDirty();
-            });
-        if (!anyDirty) return false;
-    }
-
-    // Build into a local staging buffer
-    std::vector<uint8_t> staging;
-    const size_t maxSize = HEADER_SIZE
-        + sizeof(int32_t) + world.voxelsTickDeltas.size() * (sizeof(uint16_t) + sizeof(uint8_t))
-        + sizeof(int32_t) + entities.size() * 64;
-    staging.resize(maxSize);
-
-    size_t off = writeHeader(staging.data(), ChunkMessageType::TICK_DELTA, tickCount);
-
-    // Voxel delta section
-    const int32_t voxelCount = static_cast<int32_t>(world.voxelsTickDeltas.size());
-    std::memcpy(staging.data() + off, &voxelCount, sizeof(int32_t));
-    off += sizeof(int32_t);
-    for (const auto& [vid, vtype] : world.voxelsTickDeltas) {
-        std::memcpy(staging.data() + off, &vid.packed, sizeof(uint16_t));
-        off += sizeof(uint16_t);
-        staging[off++] = vtype;
-    }
-
-    // Entity delta section
-    const size_t entityCountOff = off;
-    off += sizeof(int32_t);
-    int32_t entityCount = 0;
-    {
-        BufWriter w{staging.data(), off};
-        for (auto& [ent, ceid] : entities) {
-            const uint8_t mask = reg.get<DirtyComponent>(ent).tickDirtyFlags;
-            if (!mask) continue;
-            w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
-            w.write(ceid);
-            w.write(static_cast<uint8_t>(reg.get<EntityTypeComponent>(ent).type));
-            w.write(mask);
-            if (mask & POSITION_BIT)
-                reg.get<DynamicPositionComponent>(ent).serializeFields(w);
-            ++entityCount;
-        }
-    }
-    std::memcpy(staging.data() + entityCountOff, &entityCount, sizeof(int32_t));
-    staging.resize(off);
-
-    maybeCompressDelta(staging, ChunkMessageType::TICK_DELTA_COMPRESSED);
-
-    // Append to the unified delta buffer
-    state.deltaOffsets.push_back({tickCount, state.deltas.size()});
-    state.deltas.insert(state.deltas.end(), staging.begin(), staging.end());
-    state.hasNewDelta = true;
-    return true;
+    return buildDeltaImpl(reg, tickCount,
+        world.voxelsTickDeltas,
+        &DirtyComponent::tickDirtyFlags,
+        ChunkMessageType::TICK_DELTA,
+        ChunkMessageType::TICK_DELTA_COMPRESSED);
 }
 
 } // namespace voxelmmo

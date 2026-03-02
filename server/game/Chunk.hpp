@@ -3,6 +3,7 @@
 #include "common/Types.hpp"
 #include "common/MessageTypes.hpp"
 #include "common/ChunkState.hpp"
+#include "game/components/DirtyComponent.hpp"
 #include <entt/entt.hpp>
 #include <set>
 #include <memory>
@@ -99,6 +100,22 @@ private:
      *        and update the type byte to the *_COMPRESSED variant.
      */
     void maybeCompressDelta(std::vector<uint8_t>& buf, ChunkMessageType compressedType);
+
+    /**
+     * @brief Shared implementation for buildSnapshotDelta and buildTickDelta.
+     *
+     * @param voxelDeltas  The per-granularity changed-voxel list.
+     * @param flagsField   Pointer-to-member selecting snapshotDirtyFlags or tickDirtyFlags.
+     * @param rawType      Message type written into the header (uncompressed variant).
+     * @param compressedType  Message type to use if LZ4 compression is applied.
+     */
+    bool buildDeltaImpl(
+        entt::registry& reg,
+        uint32_t tickCount,
+        const std::vector<std::pair<VoxelId, VoxelType>>& voxelDeltas,
+        uint8_t DirtyComponent::* flagsField,
+        ChunkMessageType rawType,
+        ChunkMessageType compressedType);
 };
 
 } // namespace voxelmmo
