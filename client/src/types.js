@@ -42,6 +42,7 @@ export const ChunkMessageType = Object.freeze({
   SNAPSHOT_DELTA_COMPRESSED: 3,
   TICK_DELTA:                4,
   TICK_DELTA_COMPRESSED:     5,
+  SELF_ENTITY:               6,  // type(1)+ChunkId(8)+tick(4)+ChunkEntityId(2) = 15 bytes
 })
 
 /**

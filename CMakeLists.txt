@@ -42,6 +42,7 @@ add_executable(voxelmmo_tests
     tests/server/test_world_gen.cpp
     tests/server/test_serialization.cpp
     tests/server/test_chunk_streaming.cpp
+    tests/server/test_physics.cpp
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp

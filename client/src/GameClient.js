@@ -3,6 +3,8 @@ import * as THREE from 'three'
 import { ChunkMessageType, ClientMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
 import { Chunk } from './Chunk.js'
 
+/** @typedef {import('./entities/BaseEntity.js').BaseEntity} BaseEntity */
+
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
 /** @type {Record<number, string>} */
@@ -39,6 +41,28 @@ export class GameClient {
 
   /** @type {Map<ChunkIdPacked, Chunk>} */
   #chunks = new Map()
+
+  /** @type {number} Server tick from the most-recently received message. */
+  #latestServerTick = 0
+
+  /** @type {bigint|null} ChunkId of the chunk containing the local player entity. */
+  #selfChunkId = null
+
+  /** @type {number|null} ChunkEntityId of the local player entity. */
+  #selfEntityId = null
+
+  /** @returns {number} */
+  get latestServerTick() { return this.#latestServerTick }
+
+  /**
+   * Returns the local player's own entity as tracked by the server, or null until
+   * a SELF_ENTITY message has been received and the entity's chunk snapshot is loaded.
+   * @returns {BaseEntity|null}
+   */
+  get selfEntity() {
+    if (this.#selfChunkId === null || this.#selfEntityId === null) return null
+    return this.#chunks.get(this.#selfChunkId)?.entities.get(this.#selfEntityId) ?? null
+  }
 
   /**
    * @param {string}      url    Full WebSocket URL, e.g. "ws://localhost:8080".
@@ -105,6 +129,19 @@ export class GameClient {
   disconnect() {
     this.#socket?.close()
     this.#socket = null
+  }
+
+  /**
+   * Iterate all entities across all known chunks.
+   * Each entry is { chunkId, entity } — use the composite key for stable mesh tracking.
+   * @returns {IterableIterator<{chunkId: bigint, entity: BaseEntity}>}
+   */
+  * allEntities() {
+    for (const [chunkId, chunk] of this.#chunks) {
+      for (const entity of chunk.entities.values()) {
+        yield { chunkId, entity }
+      }
+    }
   }
 
   /**
@@ -184,9 +221,10 @@ export class GameClient {
   #dispatch(view) {
     if (view.byteLength < 13) return
 
-    const msgType    = view.getUint8(0)
-    const chunkId    = view.getBigInt64(1, /* littleEndian */ true)
+    const msgType     = view.getUint8(0)
+    const chunkId     = view.getBigInt64(1, /* littleEndian */ true)
     const messageTick = view.getUint32(9, /* littleEndian */ true)
+    if (messageTick > this.#latestServerTick) this.#latestServerTick = messageTick
 
     const cy = Number(BigInt.asIntN(6,  chunkId >> 58n))
     const cx = Number(BigInt.asIntN(29, chunkId >> 29n))
@@ -205,6 +243,12 @@ export class GameClient {
       case ChunkMessageType.SNAPSHOT_DELTA_COMPRESSED:
       case ChunkMessageType.TICK_DELTA_COMPRESSED:
         this.#chunks.get(chunkId)?.applyVoxelDelta(view, true, messageTick)
+        break
+      case ChunkMessageType.SELF_ENTITY:
+        if (view.byteLength >= 15) {
+          this.#selfChunkId  = chunkId
+          this.#selfEntityId = view.getUint16(13, true)
+        }
         break
     }
   }

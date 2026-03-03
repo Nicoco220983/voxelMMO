@@ -58,6 +58,20 @@ let yaw = 0, pitch = -0.3   // slightly downward initial look
 let predVy = 0              // local predicted Y velocity (sub-voxels/tick), PLAYER only
 let predGrounded = false    // local predicted grounded state
 
+// ── Tick tracking ─────────────────────────────────────────────────────────
+// currentTick is a float that mirrors the server's tick counter.
+// It is synced to the first incoming server message then advances with wall time.
+let currentTick = 0
+let tickSynced  = false
+
+// ── Remote entity meshes ──────────────────────────────────────────────────
+// Keyed by  "<chunkId>-<entityId>"  for uniqueness across chunks.
+// Box dimensions mirror server BoundingBoxComponent (PLAYER_BBOX: 0.8 × 1.8 × 0.8 voxels).
+const ENTITY_GEO = new THREE.BoxGeometry(0.8, 1.8, 0.8)
+const ENTITY_MAT = new THREE.MeshBasicMaterial({ color: 0xff4400 })
+/** @type {Map<string, THREE.Mesh>} */
+const entityMeshes = new Map()
+
 // ── Keyboard state ────────────────────────────────────────────────────────
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
 
@@ -142,55 +156,74 @@ function animate() {
   const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
   lastTime  = now
 
+  // Sync currentTick to server on first message, then advance with wall time
+  if (!tickSynced && client.latestServerTick > 0) {
+    currentTick = client.latestServerTick
+    tickSynced  = true
+  } else {
+    currentTick += dt * TICK_RATE
+  }
+
   const buttons = computeButtons()
   sendInputIfChanged(buttons, yaw, pitch)
 
-  // ── Client-side prediction (visual; server deltas are authoritative) ──
-  if (_entityType === EntityType.GHOST_PLAYER) {
-    // 3-D flight: mirror server InputSystem GHOST logic
-    const cy = Math.cos(yaw),   sy = Math.sin(yaw)
-    const cp = Math.cos(pitch),  sp = Math.sin(pitch)
-    let dx = 0, dy = 0, dz = 0
-    if (buttons & InputButton.FORWARD)  { dx += -sy*cp; dy += sp; dz += -cy*cp }
-    if (buttons & InputButton.BACKWARD) { dx -= -sy*cp; dy -= sp; dz -= -cy*cp }
-    if (buttons & InputButton.LEFT)     { dx -= cy;               dz -= -sy     }
-    if (buttons & InputButton.RIGHT)    { dx += cy;               dz += -sy     }
-    if (buttons & InputButton.JUMP)     { dy += 1 }
-    if (buttons & InputButton.DESCEND)  { dy -= 1 }
-    const len = Math.sqrt(dx*dx + dy*dy + dz*dz)
-    const s   = len > 0.001 ? GHOST_MOVE_SPEED_VOXELS / len : 0
-    posX += dx * s * SUBVOXEL_SIZE * dt
-    posY += dy * s * SUBVOXEL_SIZE * dt
-    posZ += dz * s * SUBVOXEL_SIZE * dt
-
+  // ── Position update: server-authoritative when self entity is known ──────
+  const selfEnt = client.selfEntity
+  if (selfEnt) {
+    // Use the server's last-known state forward-predicted to currentTick.
+    // This gives proper voxel collision, gravity, and grounded detection.
+    const pos = selfEnt.predictAt(currentTick)
+    posX = pos.x
+    posY = pos.y
+    posZ = pos.z
+    predGrounded = selfEnt.motion.grounded
   } else {
-    // Horizontal-only movement; Y uses approximate local gravity (no collision)
-    const cy = Math.cos(yaw), sy = Math.sin(yaw)
-    let dx = 0, dz = 0
-    if (buttons & InputButton.FORWARD)  { dx += -sy; dz += -cy }
-    if (buttons & InputButton.BACKWARD) { dx -= -sy; dz -= -cy }
-    if (buttons & InputButton.LEFT)     { dx -= cy;  dz -= -sy  }
-    if (buttons & InputButton.RIGHT)    { dx += cy;  dz += -sy  }
-    const hlen = Math.sqrt(dx*dx + dz*dz)
-    const hs   = hlen > 0.001 ? PLAYER_WALK_SPEED_VOXELS / hlen : 0
-    posX += dx * hs * SUBVOXEL_SIZE * dt
-    posZ += dz * hs * SUBVOXEL_SIZE * dt
+    // Fallback local prediction (used before the first SELF_ENTITY message arrives).
+    if (_entityType === EntityType.GHOST_PLAYER) {
+      // 3-D flight: mirror server InputSystem GHOST logic
+      const cy = Math.cos(yaw),   sy = Math.sin(yaw)
+      const cp = Math.cos(pitch),  sp = Math.sin(pitch)
+      let dx = 0, dy = 0, dz = 0
+      if (buttons & InputButton.FORWARD)  { dx += -sy*cp; dy += sp; dz += -cy*cp }
+      if (buttons & InputButton.BACKWARD) { dx -= -sy*cp; dy -= sp; dz -= -cy*cp }
+      if (buttons & InputButton.LEFT)     { dx -= cy;               dz -= -sy     }
+      if (buttons & InputButton.RIGHT)    { dx += cy;               dz += -sy     }
+      if (buttons & InputButton.JUMP)     { dy += 1 }
+      if (buttons & InputButton.DESCEND)  { dy -= 1 }
+      const len = Math.sqrt(dx*dx + dy*dy + dz*dz)
+      const s   = len > 0.001 ? GHOST_MOVE_SPEED_VOXELS / len : 0
+      posX += dx * s * SUBVOXEL_SIZE * dt
+      posY += dy * s * SUBVOXEL_SIZE * dt
+      posZ += dz * s * SUBVOXEL_SIZE * dt
+    } else {
+      // Horizontal-only movement; Y uses approximate local gravity (no collision)
+      const cy = Math.cos(yaw), sy = Math.sin(yaw)
+      let dx = 0, dz = 0
+      if (buttons & InputButton.FORWARD)  { dx += -sy; dz += -cy }
+      if (buttons & InputButton.BACKWARD) { dx -= -sy; dz -= -cy }
+      if (buttons & InputButton.LEFT)     { dx -= cy;  dz -= -sy  }
+      if (buttons & InputButton.RIGHT)    { dx += cy;  dz += -sy  }
+      const hlen = Math.sqrt(dx*dx + dz*dz)
+      const hs   = hlen > 0.001 ? PLAYER_WALK_SPEED_VOXELS / hlen : 0
+      posX += dx * hs * SUBVOXEL_SIZE * dt
+      posZ += dz * hs * SUBVOXEL_SIZE * dt
 
-    // Jump impulse
-    if ((buttons & InputButton.JUMP) && predGrounded) {
-      predVy = PLAYER_JUMP_VY_VOXELS * SUBVOXEL_SIZE / TICK_RATE
-      predGrounded = false
-    }
+      // Jump impulse
+      if ((buttons & InputButton.JUMP) && predGrounded) {
+        predVy = PLAYER_JUMP_VY_VOXELS * SUBVOXEL_SIZE / TICK_RATE
+        predGrounded = false
+      }
 
-    // Apply local gravity (approximate; server corrects via authoritative deltas)
-    predVy = Math.max(predVy - GRAVITY_DECREMENT, -128 * SUBVOXEL_SIZE / TICK_RATE)
-    posY  += predVy * dt
+      // Apply local gravity (approximate; server corrects via authoritative deltas)
+      predVy = Math.max(predVy - GRAVITY_DECREMENT, -128 * SUBVOXEL_SIZE / TICK_RATE)
+      posY  += predVy * dt
 
-    // Approximate ground clamp (no collision data on client)
-    if (posY < 8 * SUBVOXEL_SIZE) {
-      posY = 8 * SUBVOXEL_SIZE
-      predVy = 0
-      predGrounded = true
+      // Approximate ground clamp (no collision data on client)
+      if (posY < 8 * SUBVOXEL_SIZE) {
+        posY = 8 * SUBVOXEL_SIZE
+        predVy = 0
+        predGrounded = true
+      }
     }
   }
 
@@ -198,6 +231,31 @@ function animate() {
   camera.position.set(posX / SUBVOXEL_SIZE, posY / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   camera.rotation.y = yaw
   camera.rotation.x = pitch
+
+  // ── Remote entity rendering ───────────────────────────────────────────
+  // Each entity is predicted forward from its last server state using
+  // the same kinematic formula as the server (position + velocity*n - gravity).
+  // The local player's own entity will also appear here (no self-ID yet).
+  /** @type {Set<string>} */
+  const seenKeys = new Set()
+  for (const { chunkId, entity } of client.allEntities()) {
+    const key = chunkId.toString() + '-' + entity.id
+    seenKeys.add(key)
+    let mesh = entityMeshes.get(key)
+    if (!mesh) {
+      mesh = new THREE.Mesh(ENTITY_GEO, ENTITY_MAT)
+      scene.add(mesh)
+      entityMeshes.set(key, mesh)
+    }
+    const pos = entity.predictAt(currentTick)
+    mesh.position.set(pos.x / SUBVOXEL_SIZE, pos.y / SUBVOXEL_SIZE, pos.z / SUBVOXEL_SIZE)
+  }
+  for (const [key, mesh] of entityMeshes) {
+    if (!seenKeys.has(key)) {
+      scene.remove(mesh)
+      entityMeshes.delete(key)
+    }
+  }
 
   client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   client.rebuildDirtyChunks()

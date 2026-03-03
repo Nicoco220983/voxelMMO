@@ -357,6 +357,9 @@ void GameEngine::checkEntitiesChunks() {
     // cleared wholesale.  We only touch them when an entity crosses a chunk
     // boundary, identified by the DynamicPositionComponent::moved flag.
 
+    struct SelfMsg { GatewayId gwId; ChunkId chunkId; uint16_t entityId; };
+    std::vector<SelfMsg> selfMsgs;
+
     auto view = registry.view<DynamicPositionComponent, ChunkMemberComponent>();
     view.each([&](entt::entity ent, DynamicPositionComponent& dyn, ChunkMemberComponent& cm) {
         if (!dyn.moved) return;
@@ -406,6 +409,14 @@ void GameEngine::checkEntitiesChunks() {
                     static_cast<int8_t>(cy + dy), cx + dx, cz + dz);
                 activateChunk(cid).watchingPlayers.insert(pid);
             }
+            // Tell the gateway which entity is "self" for this player
+            const uint16_t ceid = static_cast<uint16_t>(nc.nextChunkEntityId_ - 1);
+            for (auto& [gwId2, gwInfo2] : gateways) {
+                if (gwInfo2.players.count(pid)) {
+                    selfMsgs.push_back({gwId2, newChunk, ceid});
+                    break;
+                }
+            }
         }
 
         cm.currentChunkId = newChunk;
@@ -451,6 +462,18 @@ void GameEngine::checkEntitiesChunks() {
                     }
                 }
             }
+        }
+
+        // Append SELF_ENTITY messages for any player in this gateway who entered a new chunk
+        for (const auto& sm : selfMsgs) {
+            if (sm.gwId != gwId) continue;
+            uint8_t msg[15];
+            msg[0] = static_cast<uint8_t>(ChunkMessageType::SELF_ENTITY);
+            std::memcpy(msg + 1, &sm.chunkId.packed, 8);
+            const uint32_t tickU32 = static_cast<uint32_t>(tick);
+            std::memcpy(msg + 9, &tickU32, 4);
+            std::memcpy(msg + 13, &sm.entityId, 2);
+            appendToBatch(msg, 15);
         }
 
         if (!batchBuf.empty() && outputCallback)

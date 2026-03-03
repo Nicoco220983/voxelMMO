@@ -1,7 +1,8 @@
 // @ts-check
 import * as THREE from 'three'
-import { lz4Decompress } from './utils.js'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType } from './types.js'
+import { lz4Decompress, BufReader } from './utils.js'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, DeltaType } from './types.js'
+import { BaseEntity } from './entities/BaseEntity.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
@@ -68,6 +69,12 @@ export class Chunk {
   /** @type {boolean} True when voxels changed and mesh needs rebuild. */
   dirty = false
 
+  /** @type {Map<number, BaseEntity>} ChunkEntityId → entity, populated from server messages. */
+  #entities = new Map()
+
+  /** @returns {Map<number, BaseEntity>} */
+  get entities() { return this.#entities }
+
   /** @param {ChunkIdPacked} chunkId */
   constructor(chunkId) {
     this.chunkId = chunkId
@@ -89,9 +96,27 @@ export class Chunk {
     this.#voxels.set(lz4Decompress(raw.subarray(off, off + cvs), CHUNK_VOXEL_COUNT))
     off += cvs
 
-    // Entity section — skip for now
+    // Entity section
     const ess = view.getInt32(off, true); off += 4
-    off += (flags & 0x01) ? ess : ess  // both branches same skip; entity TODO
+    this.#entities.clear()
+    if (ess >= 4) {
+      let entityData
+      if (flags & 0x01) {
+        // Compressed: int32 entity_uncompressed_size + LZ4(entity_data)
+        const uncompSize = view.getInt32(off, true)
+        entityData = lz4Decompress(raw.subarray(off + 4, off + ess), uncompSize)
+      } else {
+        entityData = raw.subarray(off, off + ess)
+      }
+      const entView = new DataView(entityData.buffer, entityData.byteOffset, entityData.byteLength)
+      const reader  = new BufReader(entView)
+      const count   = reader.readInt32()
+      for (let i = 0; i < count; i++) {
+        const entity = BaseEntity.fromRecord(reader, messageTick)
+        this.#entities.set(entity.id, entity)
+      }
+    }
+    off += ess
 
     this.dirty = true
   }
@@ -124,6 +149,29 @@ export class Chunk {
       const vz =  vidPacked        & 0x3f
       this.#voxels[vy * CHUNK_SIZE_X * CHUNK_SIZE_Z + vx * CHUNK_SIZE_Z + vz] = vtype
     }
+
+    // Entity section (present in real server deltas; guard against test-only messages)
+    if (pOff + 4 <= pView.byteLength) {
+      const reader      = new BufReader(pView, pOff)
+      const entityCount = reader.readInt32()
+      for (let i = 0; i < entityCount; i++) {
+        const deltaType  = reader.readUint8()
+        const entityId   = reader.readUint16()
+        const entityType = reader.readUint8()
+        if (deltaType === DeltaType.DELETE) {
+          this.#entities.delete(entityId)
+        } else {
+          // NEW_ENTITY or UPDATE_ENTITY — upsert then apply component delta
+          let entity = this.#entities.get(entityId)
+          if (!entity) {
+            entity = new BaseEntity(entityId, entityType)
+            this.#entities.set(entityId, entity)
+          }
+          entity.applyDelta(reader, messageTick)
+        }
+      }
+    }
+
     this.dirty = true
   }
 
