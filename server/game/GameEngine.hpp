@@ -5,6 +5,7 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/InputComponent.hpp"
 #include "common/Types.hpp"
+#include "common/NetworkProtocol.hpp"
 #include <entt/entt.hpp>
 #include <unordered_map>
 #include <set>
@@ -186,11 +187,6 @@ private:
     void   serializeSnapshotDelta();
     void   serializeTickDelta();
     void   stepPhysics();
-
-    /** @brief Append a length-prefixed message to batchBuf. No-op if size is 0. */
-    void   appendToBatch(const uint8_t* data, size_t size);
-    /** @brief Convenience overload for a full vector. */
-    void   appendToBatch(const std::vector<uint8_t>& msg);
 };
 
 } // namespace voxelmmo

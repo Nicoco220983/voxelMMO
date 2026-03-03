@@ -2,7 +2,6 @@
 #include "game/systems/InputSystem.hpp"
 #include "common/MessageTypes.hpp"
 #include <cmath>
-#include <cstring>
 
 namespace voxelmmo {
 
@@ -10,19 +9,6 @@ GameEngine::GameEngine() = default;
 
 void GameEngine::setOutputCallback(OutputCallback cb) {
     outputCallback = std::move(cb);
-}
-
-// TODO: remove it when migrated to sockets using writev
-void GameEngine::appendToBatch(const uint8_t* data, size_t size) {
-    if (size == 0) return;
-    const uint32_t len = static_cast<uint32_t>(size);
-    const auto* lenBytes = reinterpret_cast<const uint8_t*>(&len);
-    batchBuf.insert(batchBuf.end(), lenBytes, lenBytes + 4);
-    batchBuf.insert(batchBuf.end(), data, data + size);
-}
-
-void GameEngine::appendToBatch(const std::vector<uint8_t>& msg) {
-    appendToBatch(msg.data(), msg.size());
 }
 
 // ── Player input ──────────────────────────────────────────────────────────
@@ -34,25 +20,26 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
     switch (static_cast<ClientMessageType>(data[0])) {
 
     case ClientMessageType::INPUT: {
-        if (size < 10) return;
+        auto msg = NetworkProtocol::parseInput(data, size);
+        if (!msg) return;
         auto it = playerEntities.find(playerId);
         if (it == playerEntities.end()) return;
-        auto& inp = registry.get<InputComponent>(it->second);
-        inp.buttons = data[1];
-        std::memcpy(&inp.yaw,   data + 2, sizeof(float));
-        std::memcpy(&inp.pitch, data + 6, sizeof(float));
+        auto& inp  = registry.get<InputComponent>(it->second);
+        inp.buttons = msg->buttons;
+        inp.yaw     = msg->yaw;
+        inp.pitch   = msg->pitch;
         break;
     }
 
     case ClientMessageType::JOIN: {
-        if (size < 2) return;
-        const auto type = static_cast<EntityType>(data[1]);
+        auto msg = NetworkProtocol::parseJoin(data, size);
+        if (!msg) return;
         // Must be a pending player (not yet spawned).
         auto pit = pendingPlayers.find(playerId);
         if (pit == pendingPlayers.end()) return;
         const PendingPlayer p = pit->second;
         pendingPlayers.erase(pit);
-        addPlayer(p.gwId, playerId, p.sx, p.sy, p.sz, type);
+        addPlayer(p.gwId, playerId, p.sx, p.sy, p.sz, msg->entityType);
         sendSnapshot(p.gwId);
         break;
     }
@@ -179,7 +166,7 @@ void GameEngine::serializeSnapshot(GatewayId gwId) {
     for (const ChunkId& cid : gwInfo.watchedChunks) {
         auto cit = chunks.find(cid);
         if (cit == chunks.end()) continue;
-        appendToBatch(cit->second->buildSnapshot(registry, tick));
+        NetworkProtocol::appendFramed(batchBuf, cit->second->buildSnapshot(registry, tick));
         gwInfo.lastStateTick[cid] = tick;
     }
     if (!batchBuf.empty() && outputCallback)
@@ -201,7 +188,7 @@ void GameEngine::serializeSnapshotDelta() {
             const auto& state = it->second->state;
             if (!state.hasNewDelta) continue;
             const size_t off = state.deltaOffsets.back().offset;
-            appendToBatch(state.deltas.data() + off, state.deltas.size() - off);
+            NetworkProtocol::appendFramed(batchBuf, state.deltas.data() + off, state.deltas.size() - off);
             gwInfo.lastStateTick[cid] = state.deltaOffsets.back().tick;
         }
         if (!batchBuf.empty() && outputCallback)
@@ -232,7 +219,7 @@ void GameEngine::serializeTickDelta() {
             const auto& state = it->second->state;
             if (!state.hasNewDelta) continue;
             const size_t off = state.deltaOffsets.back().offset;
-            appendToBatch(state.deltas.data() + off, state.deltas.size() - off);
+            NetworkProtocol::appendFramed(batchBuf, state.deltas.data() + off, state.deltas.size() - off);
             gwInfo.lastStateTick[cid] = state.deltaOffsets.back().tick;
         }
         if (!batchBuf.empty() && outputCallback)
@@ -370,7 +357,7 @@ void GameEngine::checkEntitiesChunks() {
                         {
                             Chunk& chunk = activateChunk(cid);
                             if (!gwInfo.lastStateTick.count(cid)) {
-                                appendToBatch(chunk.buildSnapshot(registry, tick));
+                                NetworkProtocol::appendFramed(batchBuf, chunk.buildSnapshot(registry, tick));
                                 gwInfo.lastStateTick[cid] = tick;
                             }
                         }
@@ -382,13 +369,8 @@ void GameEngine::checkEntitiesChunks() {
         // Append SELF_ENTITY messages for any player in this gateway who entered a new chunk
         for (const auto& sm : selfMsgs) {
             if (sm.gwId != gwId) continue;
-            uint8_t msg[15];
-            msg[0] = static_cast<uint8_t>(ChunkMessageType::SELF_ENTITY);
-            std::memcpy(msg + 1, &sm.chunkId.packed, 8);
-            const uint32_t tickU32 = static_cast<uint32_t>(tick);
-            std::memcpy(msg + 9, &tickU32, 4);
-            std::memcpy(msg + 13, &sm.entityId, 2);
-            appendToBatch(msg, 15);
+            const auto msg = NetworkProtocol::buildSelfEntityMessage(sm.chunkId, tick, sm.entityId);
+            NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
         }
 
         if (!batchBuf.empty() && outputCallback)

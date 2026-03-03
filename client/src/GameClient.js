@@ -1,6 +1,7 @@
 // @ts-check
 import * as THREE from 'three'
-import { ChunkMessageType, ClientMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
+import { ChunkMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
+import { NetworkProtocol } from './NetworkProtocol.js'
 import { Chunk } from './Chunk.js'
 
 /** @typedef {import('./entities/BaseEntity.js').BaseEntity} BaseEntity */
@@ -118,11 +119,7 @@ export class GameClient {
    * @param {number} entityType  EntityType value (e.g. EntityType.GHOST_PLAYER).
    */
   sendJoin(entityType) {
-    const buf = new ArrayBuffer(2)
-    const v   = new DataView(buf)
-    v.setUint8(0, ClientMessageType.JOIN)
-    v.setUint8(1, entityType)
-    this.#socket?.send(buf)
+    this.#socket?.send(NetworkProtocol.serializeJoin(entityType))
   }
 
   /** Close the WebSocket connection. */
@@ -203,13 +200,8 @@ export class GameClient {
    * @param {ArrayBuffer} buf
    */
   #handleMessage(buf) {
-    const view = new DataView(buf)
-    let off = 0
-    while (off + 4 <= buf.byteLength) {
-      const len = view.getUint32(off, true); off += 4
-      if (off + len > buf.byteLength) break
-      this.#dispatch(new DataView(buf, off, len))
-      off += len
+    for (const msgView of NetworkProtocol.parseBatch(buf)) {
+      this.#dispatch(msgView)
     }
   }
 
@@ -219,16 +211,12 @@ export class GameClient {
    * @param {DataView} view  View over exactly one message (byteOffset may be non-zero).
    */
   #dispatch(view) {
-    if (view.byteLength < 13) return
+    const header = NetworkProtocol.parseHeader(view)
+    if (!header) return
 
-    const msgType     = view.getUint8(0)
-    const chunkId     = view.getBigInt64(1, /* littleEndian */ true)
-    const messageTick = view.getUint32(9, /* littleEndian */ true)
+    const { msgType, chunkId, messageTick, cx, cy, cz } = header
     if (messageTick > this.#latestServerTick) this.#latestServerTick = messageTick
 
-    const cy = Number(BigInt.asIntN(6,  chunkId >> 58n))
-    const cx = Number(BigInt.asIntN(29, chunkId >> 29n))
-    const cz = Number(BigInt.asIntN(29, chunkId))
     console.debug('[GameClient] rx', MSG_TYPE_NAMES[msgType] ?? msgType,
       `chunk(${cx},${cy},${cz})`, view.byteLength + 'B')
 

@@ -1,8 +1,9 @@
 // @ts-check
 import * as THREE     from 'three'
 import { GameClient } from './GameClient.js'
+import { NetworkProtocol } from './NetworkProtocol.js'
 import {
-  SUBVOXEL_SIZE, TICK_RATE, EntityType, ClientMessageType, InputButton,
+  SUBVOXEL_SIZE, TICK_RATE, EntityType, InputButton,
   GHOST_MOVE_SPEED_VOXELS, PLAYER_WALK_SPEED_VOXELS, PLAYER_JUMP_VY_VOXELS,
   GRAVITY_DECREMENT,
 } from './types.js'
@@ -111,9 +112,6 @@ document.addEventListener('mousemove', (e) => {
 })
 
 // ── Input sending ─────────────────────────────────────────────────────────
-const _inputBuf  = new ArrayBuffer(10)
-const _inputView = new DataView(_inputBuf)
-_inputView.setUint8(0, ClientMessageType.INPUT)   // type prefix, set once
 
 /** @type {number} */ let lastButtons = -1  // force first send (NaN-like)
 /** @type {number} */ let lastYaw     = NaN
@@ -134,10 +132,7 @@ function computeButtons() {
 /** Send INPUT frame only when state changed. */
 function sendInputIfChanged(buttons, yawVal, pitchVal) {
   if (buttons === lastButtons && yawVal === lastYaw && pitchVal === lastPitch) return
-  _inputView.setUint8(1, buttons)
-  _inputView.setFloat32(2, yawVal,   true)
-  _inputView.setFloat32(6, pitchVal, true)
-  client.sendInput(_inputBuf)
+  client.sendInput(NetworkProtocol.serializeInput(buttons, yawVal, pitchVal))
   lastButtons = buttons; lastYaw = yawVal; lastPitch = pitchVal
 }
 
