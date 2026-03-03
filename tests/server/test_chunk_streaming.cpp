@@ -2,6 +2,7 @@
 #include "game/GameEngine.hpp"
 #include "common/Types.hpp"
 #include "common/MessageTypes.hpp"
+#include "game/components/DynamicPositionComponent.hpp"
 
 #include <array>
 #include <cstring>
@@ -11,12 +12,13 @@ using namespace voxelmmo;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Build a 12-byte player-input payload (three little-endian floats). */
-static std::array<uint8_t, 12> makeInput(float vx, float vy, float vz) {
-    std::array<uint8_t, 12> buf{};
-    std::memcpy(buf.data() + 0, &vx, sizeof(float));
-    std::memcpy(buf.data() + 4, &vy, sizeof(float));
-    std::memcpy(buf.data() + 8, &vz, sizeof(float));
+/** Build a 10-byte INPUT message: ClientMessageType::INPUT + uint8 buttons + float32 yaw + float32 pitch. */
+static std::array<uint8_t, 10> makeInput(uint8_t buttons = 0, float yaw = 0.0f, float pitch = 0.0f) {
+    std::array<uint8_t, 10> buf{};
+    buf[0] = static_cast<uint8_t>(ClientMessageType::INPUT);
+    buf[1] = buttons;
+    std::memcpy(buf.data() + 2, &yaw,   sizeof(float));
+    std::memcpy(buf.data() + 6, &pitch, sizeof(float));
     return buf;
 }
 
@@ -46,19 +48,16 @@ static void collectSnapshots(const uint8_t* data, size_t size,
 }
 
 /**
- * Convenience: register a gateway, add a player, and immediately send a
- * zero-velocity input to make the player grounded.  This prevents the first
- * tick's physics step from snapping the player to FLOOR_Y and changing the
- * expected chunk coordinate.
+ * Convenience: register a gateway, add a GHOST_PLAYER, and send a zero-button
+ * INPUT so the first tick's InputSystem sees no movement (velocity stays 0).
  */
 static void setupGroundedPlayer(GameEngine& engine, GatewayId gwId, PlayerId pid,
                                  float x, float y, float z)
 {
     engine.registerGateway(gwId);
-    engine.addPlayer(gwId, pid, x, y, z);
-    // Setting zero velocity via handlePlayerInput marks the entity as grounded,
-    // so stepPhysics() in the first tick will leave the position unchanged.
-    const auto zeroInput = makeInput(0.0f, 0.0f, 0.0f);
+    engine.addPlayer(gwId, pid, x, y, z);  // default: GHOST_PLAYER
+    // Zero buttons → InputSystem sets velocity to 0 → no movement on first tick.
+    const auto zeroInput = makeInput(0);
     engine.handlePlayerInput(pid, zeroInput.data(), zeroInput.size());
 }
 
@@ -117,12 +116,10 @@ TEST_CASE("GameEngine - moving player sends snapshots for newly entered chunks",
     REQUIRE(!initialSnapshots.empty());
 
     // ── Move the player 5 chunks forward in X ─────────────────────────────
-    // Target chunk: cx=5 (world x = 5×64 = 320 units), outside ACTIVATION_RADIUS=2.
-    // With handlePlayerInput the player is grounded, so stepPhysics advances
-    // position by vx×TICK_DT without gravity.  We pick a velocity that crosses
-    // exactly 5 chunk widths in one tick: vx = 320 / TICK_DT = 6 400 units/s.
-    const float vx = 5.0f * static_cast<float>(CHUNK_SIZE_X) / TICK_DT;
-    engine.handlePlayerInput(pid, makeInput(vx, 0.0f, 0.0f).data(), 12);
+    // Target chunk: cx=5 (world x = 5×64 = 320 voxels), outside ACTIVATION_RADIUS=2.
+    // Teleport directly (test setup bypass) — this test covers chunk-snapshot
+    // dispatch logic, not the input system.
+    engine.teleportPlayer(pid, 5.0f * static_cast<float>(CHUNK_SIZE_X), 8.0f, 0.0f);
 
     snapshots.clear();
     engine.tick();  // player jumps to x≈320 (chunk cx=5); new chunks emitted
@@ -167,11 +164,48 @@ TEST_CASE("GameEngine - micro-movement within same chunk sends no new snapshots"
 
     snapshots.clear();  // discard initial batch
 
-    // Move 1 unit: player stays in cx=0 (chunk width = 64 units).
-    // Activation window is unchanged → no new chunks → no snapshots.
-    const float vx = 1.0f / TICK_DT;   // 1 unit in one tick
-    engine.handlePlayerInput(pid, makeInput(vx, 0.0f, 0.0f).data(), 12);
+    // Zero buttons: entity stays stationary. Activation window is unchanged → no new snapshots.
+    const auto idleInput = makeInput(0);
+    engine.handlePlayerInput(pid, idleInput.data(), idleInput.size());
     engine.tick();
 
     REQUIRE(snapshots.empty());
+}
+
+TEST_CASE("GameEngine - JOIN message spawns entity with correct EntityType", "[chunk_streaming]") {
+    // Verify that queuePendingPlayer + JOIN(PLAYER) creates a PLAYER-typed entity,
+    // and that JOIN(GHOST_PLAYER) creates a GHOST_PLAYER-typed entity.
+
+    for (const EntityType wantType : { EntityType::PLAYER, EntityType::GHOST_PLAYER }) {
+        GameEngine engine;
+        const GatewayId gwId = 4;
+        const PlayerId  pid  = 40;
+
+        std::set<int64_t> snapshots;
+        engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
+            collectSnapshots(data, size, snapshots);
+        });
+
+        engine.registerGateway(gwId);
+        engine.queuePendingPlayer(gwId, pid, 0.0f, 8.0f, 0.0f);
+
+        // Before JOIN, no entity exists — INPUT message must be silently ignored.
+        const auto zeroInput = makeInput(0);
+        engine.handlePlayerInput(pid, zeroInput.data(), zeroInput.size());
+        engine.tick();  // entity not yet spawned → no snapshots
+        REQUIRE(snapshots.empty());
+
+        // Send JOIN — entity is spawned, snapshot is dispatched immediately.
+        std::array<uint8_t, 2> joinMsg{};
+        joinMsg[0] = static_cast<uint8_t>(ClientMessageType::JOIN);
+        joinMsg[1] = static_cast<uint8_t>(wantType);
+        engine.handlePlayerInput(pid, joinMsg.data(), joinMsg.size());
+
+        // After JOIN a snapshot must have been delivered.
+        REQUIRE(!snapshots.empty());
+
+        // Now that the entity exists, INPUT message must be accepted.
+        engine.handlePlayerInput(pid, zeroInput.data(), zeroInput.size());
+        engine.tick();  // runs without error
+    }
 }

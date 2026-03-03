@@ -1,4 +1,6 @@
 #include "game/GameEngine.hpp"
+#include "game/systems/InputSystem.hpp"
+#include "common/MessageTypes.hpp"
 #include <cmath>
 #include <cstring>
 
@@ -27,30 +29,35 @@ void GameEngine::appendToBatch(const std::vector<uint8_t>& msg) {
 
 void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_t size) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
-    if (size < 12) return;
+    if (size < 1) return;
 
-    // Receive 3 × float32 (voxels/s) from client — unchanged wire format.
-    float fvx, fvy, fvz;
-    std::memcpy(&fvx, data + 0, sizeof(float));
-    std::memcpy(&fvy, data + 4, sizeof(float));
-    std::memcpy(&fvz, data + 8, sizeof(float));
+    switch (static_cast<ClientMessageType>(data[0])) {
 
-    // Convert voxels/s → sub-voxels/tick.
-    const int32_t vx = static_cast<int32_t>(std::round(fvx * SUBVOXEL_SIZE * TICK_DT));
-    const int32_t vy = static_cast<int32_t>(std::round(fvy * SUBVOXEL_SIZE * TICK_DT));
-    const int32_t vz = static_cast<int32_t>(std::round(fvz * SUBVOXEL_SIZE * TICK_DT));
+    case ClientMessageType::INPUT: {
+        if (size < 10) return;
+        auto it = playerEntities.find(playerId);
+        if (it == playerEntities.end()) return;
+        auto& inp = registry.get<InputComponent>(it->second);
+        inp.buttons = data[1];
+        std::memcpy(&inp.yaw,   data + 2, sizeof(float));
+        std::memcpy(&inp.pitch, data + 6, sizeof(float));
+        break;
+    }
 
-    auto it = playerEntities.find(playerId);
-    if (it == playerEntities.end()) return;
+    case ClientMessageType::JOIN: {
+        if (size < 2) return;
+        const auto type = static_cast<EntityType>(data[1]);
+        // Must be a pending player (not yet spawned).
+        auto pit = pendingPlayers.find(playerId);
+        if (pit == pendingPlayers.end()) return;
+        const PendingPlayer p = pit->second;
+        pendingPlayers.erase(pit);
+        addPlayer(p.gwId, playerId, p.sx, p.sy, p.sz, type);
+        sendSnapshot(p.gwId);
+        break;
+    }
 
-    const auto& dyn = registry.get<DynamicPositionComponent>(it->second);
-    // Position is always current; just apply the new velocity.
-    // grounded=true: ghost player is never subject to gravity.
-    DynamicPositionComponent::modify(registry, it->second,
-        dyn.x, dyn.y, dyn.z,
-        vx, vy, vz,
-        true,   // grounded
-        true);  // dirty — velocity changed, send delta to clients
+    } // switch
 }
 
 // ── Gateway management ────────────────────────────────────────────────────
@@ -70,26 +77,42 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
 
 // ── Player management ─────────────────────────────────────────────────────
 
-void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
-                            float sx, float sy, float sz)
+void GameEngine::queuePendingPlayer(GatewayId gwId, PlayerId playerId,
+                                     float sx, float sy, float sz)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
+    pendingPlayers[playerId] = {gwId, sx, sy, sz};
+    if (auto it = gateways.find(gwId); it != gateways.end())
+        it->second.players.insert(playerId);
+}
+
+void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
+                            float sx, float sy, float sz, EntityType type)
+{
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
+    const auto fit = playerFactories.find(type);
+    if (fit == playerFactories.end()) return;
     const entt::entity ent = registry.create();
-    registry.emplace<DynamicPositionComponent>(ent,
+    fit->second(registry, ent,
         static_cast<int32_t>(sx * SUBVOXEL_SIZE),
         static_cast<int32_t>(sy * SUBVOXEL_SIZE),
         static_cast<int32_t>(sz * SUBVOXEL_SIZE),
-        0, 0, 0, false);
-    registry.emplace<DirtyComponent>(ent);
-    registry.emplace<EntityTypeComponent>(ent, EntityType::PLAYER);
-    registry.emplace<PlayerComponent>(ent, playerId);
-    registry.emplace<ChunkMemberComponent>(ent);
-
+        playerId);
     playerEntities[playerId] = ent;
-
-    if (auto it = gateways.find(gwId); it != gateways.end()) {
+    if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
-    }
+}
+
+void GameEngine::teleportPlayer(PlayerId playerId, float sx, float sy, float sz) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
+    auto it = playerEntities.find(playerId);
+    if (it == playerEntities.end()) return;
+    const auto& dyn = registry.get<DynamicPositionComponent>(it->second);
+    DynamicPositionComponent::modify(registry, it->second,
+        static_cast<int32_t>(sx * SUBVOXEL_SIZE),
+        static_cast<int32_t>(sy * SUBVOXEL_SIZE),
+        static_cast<int32_t>(sz * SUBVOXEL_SIZE),
+        dyn.vx, dyn.vy, dyn.vz, dyn.grounded, /*dirty=*/true);
 }
 
 void GameEngine::removePlayer(PlayerId playerId) {
@@ -228,28 +251,92 @@ void GameEngine::serializeTickDelta() {
 // ── Physics ───────────────────────────────────────────────────────────────
 
 void GameEngine::stepPhysics() {
-    auto view = registry.view<DynamicPositionComponent, DirtyComponent>();
-    view.each([&](entt::entity ent, DynamicPositionComponent& dyn, DirtyComponent&) {
-        if (dyn.grounded) {
-            // No gravity. Advance position by velocity (covers ghost player and
-            // future ground entities). Skip if stationary.
-            if (dyn.vx == 0 && dyn.vy == 0 && dyn.vz == 0) return;
+    Physics::VoxelContext ctx{chunks};
+
+    // Chunk-first iteration: pre-warm the voxel cache with each chunk so that
+    // entities near the chunk centre avoid a hash-map lookup per voxel.
+    for (auto& [chunkId, chunkPtr] : chunks) {
+        ctx.lastChunk   = chunkPtr.get();
+        ctx.lastChunkId = chunkId;
+
+        for (auto& [ent, _ceid] : chunkPtr->entities) {
+            if (!registry.all_of<DynamicPositionComponent,
+                                 BoundingBoxComponent,
+                                 PhysicsModeComponent>(ent)) continue;
+
+            // Snapshot current state (copies values before modify() overwrites them).
+            const DynamicPositionComponent dyn  = registry.get<DynamicPositionComponent>(ent);
+            const BoundingBoxComponent&    bbox = registry.get<BoundingBoxComponent>(ent);
+            const PhysicsMode              mode = registry.get<PhysicsModeComponent>(ent).mode;
+
+            // ── GHOST: no gravity, no collision ──────────────────────────
+            if (mode == PhysicsMode::GHOST) {
+                if (dyn.vx == 0 && dyn.vy == 0 && dyn.vz == 0) continue;
+                DynamicPositionComponent::modify(registry, ent,
+                    dyn.x + dyn.vx, dyn.y + dyn.vy, dyn.z + dyn.vz,
+                    dyn.vx, dyn.vy, dyn.vz,
+                    /*grounded=*/ true,
+                    /*dirty=*/    false);
+                continue;
+            }
+
+            // ── Build AABB (shared by FLYING and FULL) ───────────────────
+            Physics::AABB aabb{
+                dyn.x - bbox.hx, dyn.y - bbox.hy, dyn.z - bbox.hz,
+                dyn.x + bbox.hx, dyn.y + bbox.hy, dyn.z + bbox.hz
+            };
+
+            // ── FLYING: no gravity, with collision ───────────────────────
+            if (mode == PhysicsMode::FLYING) {
+                if (dyn.vx == 0 && dyn.vy == 0 && dyn.vz == 0) continue;
+
+                const int32_t resolvedDy = Physics::sweepY(aabb, dyn.vy, ctx);
+                aabb.minY += resolvedDy; aabb.maxY += resolvedDy;
+                const int32_t resolvedDx = Physics::sweepX(aabb, dyn.vx, ctx);
+                aabb.minX += resolvedDx; aabb.maxX += resolvedDx;
+                const int32_t resolvedDz = Physics::sweepZ(aabb, dyn.vz, ctx);
+
+                const int32_t nvx = (resolvedDx == 0 && dyn.vx != 0) ? 0 : dyn.vx;
+                const int32_t nvy = (resolvedDy == 0 && dyn.vy != 0) ? 0 : dyn.vy;
+                const int32_t nvz = (resolvedDz == 0 && dyn.vz != 0) ? 0 : dyn.vz;
+                const bool collided = (nvx != dyn.vx) || (nvy != dyn.vy) || (nvz != dyn.vz);
+
+                DynamicPositionComponent::modify(registry, ent,
+                    dyn.x + resolvedDx, dyn.y + resolvedDy, dyn.z + resolvedDz,
+                    nvx, nvy, nvz,
+                    /*grounded=*/ false, collided);
+                continue;
+            }
+
+            // ── FULL: gravity + collision ─────────────────────────────────
+            // Gravity applied every tick unconditionally (no branch on grounded).
+            // sweepY determines grounded output each tick — stable on flat ground,
+            // naturally falls off ledges.
+            const int32_t gravVy = std::max(dyn.vy - GRAVITY_DECREMENT, -TERMINAL_VELOCITY);
+
+            const int32_t resolvedDy = Physics::sweepY(aabb, gravVy, ctx);
+            const bool    grounded   = (gravVy < 0 && resolvedDy > gravVy);
+            aabb.minY += resolvedDy; aabb.maxY += resolvedDy;
+
+            const int32_t resolvedDx = Physics::sweepX(aabb, dyn.vx, ctx);
+            aabb.minX += resolvedDx; aabb.maxX += resolvedDx;
+
+            const int32_t resolvedDz = Physics::sweepZ(aabb, dyn.vz, ctx);
+
+            const int32_t nvx = (resolvedDx == 0 && dyn.vx != 0) ? 0 : dyn.vx;
+            const int32_t nvz = (resolvedDz == 0 && dyn.vz != 0) ? 0 : dyn.vz;
+            const int32_t nvy = grounded ? 0 : resolvedDy;
+
+            const bool collided = (grounded != dyn.grounded)
+                               || (nvx != dyn.vx)
+                               || (nvz != dyn.vz)
+                               || (nvy < 0 && resolvedDy != gravVy);
+
             DynamicPositionComponent::modify(registry, ent,
-                dyn.x + dyn.vx, dyn.y + dyn.vy, dyn.z + dyn.vz,
-                dyn.vx, dyn.vy, dyn.vz,
-                true,   // still grounded
-                false); // not dirty — routine advance, client already knows velocity
-        } else {
-            // Apply gravity for one tick (floor collision handled in physics plan).
-            const int32_t nvy = dyn.vy - GRAVITY_DECREMENT;
-            const int32_t ny  = dyn.y  + nvy;
-            DynamicPositionComponent::modify(registry, ent,
-                dyn.x + dyn.vx, ny, dyn.z + dyn.vz,
-                dyn.vx, nvy, dyn.vz,
-                false,  // still airborne
-                false); // not dirty — routine advance
+                dyn.x + resolvedDx, dyn.y + resolvedDy, dyn.z + resolvedDz,
+                nvx, nvy, nvz, grounded, collided);
         }
-    });
+    }
 }
 
 // ── Chunk lookup ──────────────────────────────────────────────────────────
@@ -377,6 +464,7 @@ void GameEngine::tick() {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     ++tickCount;
 
+    InputSystem::apply(registry);
     stepPhysics();
     checkEntitiesChunks();
 

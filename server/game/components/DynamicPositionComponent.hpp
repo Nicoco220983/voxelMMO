@@ -24,7 +24,9 @@ inline constexpr uint8_t POSITION_BIT = 1 << 0;
 struct DynamicPositionComponent {
     int32_t x{0},  y{0},  z{0};   ///< World-space position (sub-voxels), always current.
     int32_t vx{0}, vy{0}, vz{0};  ///< Velocity (sub-voxels per tick).
-    bool grounded{false};          ///< When false, GRAVITY_DECREMENT applies along -Y per tick.
+    bool grounded{false};          ///< Physics output: true = entity rests on solid ground.
+                                   ///< Client uses this to suppress quadratic gravity prediction.
+                                   ///< GHOST entities always output true; FLYING always false.
     bool moved{true};              ///< Set whenever position changes; cleared by checkEntitiesChunks().
 
     /**

@@ -120,6 +120,10 @@ static float computeHeight(float wx, float wz) noexcept {
 
 namespace voxelmmo {
 
+int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
+    return static_cast<int32_t>(computeHeight(wx, wz));
+}
+
 void WorldGenerator::generate(std::vector<VoxelType>& voxels,
                                int32_t cx, int8_t cy, int32_t cz) const
 {

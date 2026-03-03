@@ -28,8 +28,24 @@ enum class DeltaType : uint8_t {
 
 /** @brief Registered entity types. */
 enum class EntityType : uint8_t {
-    PLAYER = 0,
-    // Add more types here; update client types.ts accordingly.
+    PLAYER       = 0,  ///< Full-physics player (gravity + collision)
+    GHOST_PLAYER = 1,  ///< Ghost player (noclip, no gravity)
+};
+
+/** @brief First byte of every client → server binary WebSocket frame. */
+enum class ClientMessageType : uint8_t {
+    INPUT = 0,  ///< uint8 buttons | float32 yaw | float32 pitch — 9-byte payload (total 10 bytes)
+    JOIN  = 1,  ///< uint8 EntityType — 1-byte payload (total 2 bytes)
+};
+
+/** @brief Bitmask flags for the INPUT message buttons field. */
+enum class InputButton : uint8_t {
+    FORWARD  = 1 << 0,
+    BACKWARD = 1 << 1,
+    LEFT     = 1 << 2,
+    RIGHT    = 1 << 3,
+    JUMP     = 1 << 4,
+    DESCEND  = 1 << 5,
 };
 
 } // namespace voxelmmo

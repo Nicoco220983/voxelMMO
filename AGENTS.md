@@ -21,7 +21,7 @@ A high performance online webgame massive multiplayer, on wide generated world.
 - **Pure ECS**: all entity state lives in entt components. No parallel data structures mirroring the registry.
 - **Fixed-point positions**: `int32_t` sub-voxels, 1 voxel = `SUBVOXEL_SIZE` (256) units. No floats in game state.
   - `CHUNK_SHIFT_Y/X/Z = 12/14/14` → chunk coord = position >> shift (works directly on sub-voxel values).
-  - Client sends `3 × float32` voxels/s; server converts to sub-voxels/tick on receive.
+  - Client sends button bitmask + yaw/pitch; server `InputSystem` converts to velocity each tick.
   - Rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
 - **Dirty flags**: `DirtyComponent` carries `snapshotDirtyFlags` and `tickDirtyFlags` (1 bit per component).
   `modify(dirty=true)` marks both; cleared after the matching delta is sent.
@@ -45,17 +45,24 @@ Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 # Code structure
 
 **server/common/**
-- `Types.hpp` — ChunkId, VoxelId, VoxelType, ChunkEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*
-- `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType enums
+- `Types.hpp` — ChunkId, VoxelId, VoxelType, ChunkEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`
+- `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType (PLAYER=0, GHOST_PLAYER=1), ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
 - `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
 - `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
+
+**server/game/entities/**
+- `PlayerEntity.hpp` — `spawn()` factory for PLAYER (PhysicsMode::FULL, grounded=false)
+- `GhostPlayerEntity.hpp` — `spawn()` factory for GHOST_PLAYER (PhysicsMode::GHOST, grounded=true)
+- `EntityFactory.hpp` — `playerFactories` map (`EntityType → PlayerSpawnFn`); pulled in by `GameEngine.hpp`
 
 **server/game/GameEngine.hpp/cpp**
 - `entt::registry registry` — single source of truth for all entity state
 - `map[ChunkId, Chunk] chunks`, `map[GatewayId, GatewayInfo] gateways`, `map[PlayerId, entt::entity] playerEntities`
-- `addPlayer()` — creates entity, emplaces 5 components: DynamicPosition, Dirty, EntityType, Player, ChunkMember
+- `queuePendingPlayer()` — called on WebSocket connect; parks player in `pendingPlayers` until JOIN arrives
+- `addPlayer()` — delegates to `playerFactories` map; accepts optional `EntityType` (default `GHOST_PLAYER`); used directly by tests
 - `removePlayer()` — cleans chunk membership via ChunkMemberComponent, then destroys entity
-- `tick()` → `stepPhysics()` → `checkEntitiesChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
+- `teleportPlayer()` — directly sets player position (for test setup / admin use)
+- `tick()` → `InputSystem::apply()` → `stepPhysics()` → `checkEntitiesChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
 - `checkEntitiesChunks()` — phase A: moves entities between chunks on `dyn.moved`; phase B: rebuilds watchedChunks, dispatches snapshots for newly seen chunks
 
 **server/game/Chunk.hpp/cpp**
@@ -72,8 +79,13 @@ Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 - `DirtyComponent` — `snapshotDirtyFlags`, `tickDirtyFlags`; `mark(bit)`, `clearSnapshot()`, `clearTick()`
 - `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded, moved; `modify()`; `serializeFields(BufWriter&)`
 - `EntityTypeComponent` — `EntityType type`; emplaced on every entity at creation
+- `InputComponent` — `buttons` (uint8 bitmask), `yaw`, `pitch` (float radians); updated by handlePlayerInput(); read by InputSystem
 - `PlayerComponent` — `PlayerId playerId`; emplaced on player entities only
 - `ChunkMemberComponent` — `currentChunkId`, `chunkAssigned`; managed by checkEntitiesChunks()
+- `PhysicsModeComponent` — `PhysicsMode mode` (GHOST/FLYING/FULL); server-only, not serialised
+
+**server/game/systems/**
+- `InputSystem.hpp` — `apply(registry)`: translates InputComponent (buttons+yaw+pitch) → DynamicPositionComponent velocity per EntityType; called at top of `tick()` before `stepPhysics()`
 
 **server/gateway/**
 - `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameBatch()` forwards to clients

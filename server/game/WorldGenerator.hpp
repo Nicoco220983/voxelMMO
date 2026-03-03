@@ -40,6 +40,15 @@ public:
      */
     void generate(std::vector<VoxelType>& voxels,
                   int32_t cx, int8_t cy, int32_t cz) const;
+
+    /**
+     * @brief Return the surface world-Y voxel at world position (wx, wz).
+     *
+     * Matches the height used by generate(): result is in [4, 30].
+     * The surface voxel (GRASS) occupies world-Y = surfaceY(wx, wz);
+     * the voxel above it is AIR.
+     */
+    int32_t surfaceY(float wx, float wz) const noexcept;
 };
 
 } // namespace voxelmmo

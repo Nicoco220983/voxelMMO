@@ -14,6 +14,7 @@ find_package(unofficial-uwebsockets    CONFIG REQUIRED)
 add_executable(voxelmmo
     server/main.cpp
     server/game/GameEngine.cpp
+    server/game/Physics.cpp
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
@@ -45,6 +46,7 @@ add_executable(voxelmmo_tests
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
     server/game/GameEngine.cpp
+    server/game/Physics.cpp
 )
 
 target_include_directories(voxelmmo_tests PRIVATE server/)

@@ -1,6 +1,6 @@
 // @ts-check
 import * as THREE from 'three'
-import { ChunkMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
+import { ChunkMessageType, ClientMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
 import { Chunk } from './Chunk.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
@@ -86,6 +86,19 @@ export class GameClient {
     if (this.#socket?.readyState === WebSocket.OPEN) {
       this.#socket.send(data)
     }
+  }
+
+  /**
+   * Send a JOIN message declaring the entity type for this client.
+   * Must be called once after connect(), before sending velocity input.
+   * @param {number} entityType  EntityType value (e.g. EntityType.GHOST_PLAYER).
+   */
+  sendJoin(entityType) {
+    const buf = new ArrayBuffer(2)
+    const v   = new DataView(buf)
+    v.setUint8(0, ClientMessageType.JOIN)
+    v.setUint8(1, entityType)
+    this.#socket?.send(buf)
   }
 
   /** Close the WebSocket connection. */

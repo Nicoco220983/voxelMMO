@@ -1,10 +1,9 @@
 #pragma once
 #include "Chunk.hpp"
-#include "game/components/EntityTypeComponent.hpp"
-#include "game/components/PlayerComponent.hpp"
-#include "game/components/ChunkMemberComponent.hpp"
-#include "game/components/DirtyComponent.hpp"
+#include "game/Physics.hpp"
+#include "game/entities/EntityFactory.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
+#include "game/components/InputComponent.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 #include <unordered_map>
@@ -55,16 +54,39 @@ public:
     // ── Player management ─────────────────────────────────────────────────
 
     /**
-     * @brief Spawn a new player entity.
+     * @brief Queue a pending player entry (called on WebSocket connect).
+     *
+     * The entity is not yet spawned.  The gateway should forward the client's
+     * JOIN message to handlePlayerInput(), which will spawn the entity with
+     * the requested EntityType and send the initial snapshot.
+     */
+    void queuePendingPlayer(GatewayId gwId, PlayerId playerId,
+                            float sx, float sy, float sz);
+
+    /**
+     * @brief Spawn a new player entity with the given type.
+     *
+     * Delegates to playerFactories[type].  Default type is GHOST_PLAYER for
+     * backward compatibility with tests that call addPlayer() directly.
+     *
      * @param gwId     Gateway the player connected through.
      * @param playerId Persistent player identifier.
-     * @param sx/sy/sz Spawn world coordinates.
+     * @param sx/sy/sz Spawn world coordinates (voxels).
+     * @param type     Entity type (selects physics mode).
      */
     void addPlayer(GatewayId gwId, PlayerId playerId,
-                   float sx, float sy, float sz);
+                   float sx, float sy, float sz,
+                   EntityType type = EntityType::GHOST_PLAYER);
 
     /** @brief Destroy a player entity and remove it from all chunk sets. */
     void removePlayer(PlayerId playerId);
+
+    /**
+     * @brief Directly set a player's world position (voxel coordinates).
+     * Intended for test setup and administrative use.
+     * No-op if the player does not exist.
+     */
+    void teleportPlayer(PlayerId playerId, float sx, float sy, float sz);
 
     // ── Main loop ─────────────────────────────────────────────────────────
 
@@ -72,15 +94,15 @@ public:
     void tick();
 
     /**
-     * @brief Process a raw player-input message (may be called from the gateway thread).
+     * @brief Process a raw client message (may be called from the gateway thread).
      *
-     * Input wire format: float vx · float vy · float vz (12 bytes, little-endian).
-     * The entity's position is advanced to the current tick before the new velocity
-     * is applied, keeping prediction consistent on both sides.
+     * Wire format: uint8 ClientMessageType | payload.
+     *   INPUT (0x00): uint8 buttons | float32 yaw | float32 pitch — 9-byte payload (total 10 bytes).
+     *   JOIN  (0x01): uint8 EntityType                            —  1-byte payload (total  2 bytes).
      *
      * @param playerId  Player whose entity to update.
      * @param data      Raw message bytes.
-     * @param size      Must be ≥ 12; extra bytes are ignored.
+     * @param size      Must be ≥ 1.
      */
     void handlePlayerInput(PlayerId playerId, const uint8_t* data, size_t size);
 
@@ -122,6 +144,9 @@ private:
     std::unordered_map<ChunkId,   std::unique_ptr<Chunk>>  chunks;
     std::unordered_map<GatewayId, GatewayInfo>             gateways;
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
+
+    struct PendingPlayer { GatewayId gwId; float sx, sy, sz; };
+    std::unordered_map<PlayerId, PendingPlayer>            pendingPlayers;
 
     int32_t  tickCount{0};
 

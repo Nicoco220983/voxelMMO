@@ -87,3 +87,48 @@ Total: 25 bytes. Tick is NOT here — read from the message header.
 `ChunkEntityId` (uint16) is per-chunk and per-residence: assigned when an
 entity enters a chunk (monotonically increasing from 1), freed implicitly on
 departure. The client sees DELETE in the old chunk and NEW in the new one.
+
+## Client → Server (binary WebSocket frames)
+
+All frames start with a `ClientMessageType` byte.
+
+### INPUT (type = 0x00) — 10 bytes total
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | uint8 | type = 0x00 |
+| 1 | uint8 | InputButton bitmask |
+| 2 | float32 LE | yaw (radians, camera horizontal) |
+| 6 | float32 LE | pitch (radians, camera vertical) |
+
+The server's `InputSystem::apply()` translates buttons + yaw/pitch → velocity each tick before physics.
+
+#### InputButton bitmask
+
+| Bit | Name | PLAYER effect | GHOST_PLAYER effect |
+|-----|------|---------------|---------------------|
+| 0 | FORWARD | Move forward (yaw, horizontal) | Move forward (yaw+pitch, 3D) |
+| 1 | BACKWARD | Move backward | Move backward |
+| 2 | LEFT | Strafe left | Strafe left |
+| 3 | RIGHT | Strafe right | Strafe right |
+| 4 | JUMP | Jump impulse when grounded | Ascend |
+| 5 | DESCEND | (ignored) | Descend |
+
+### JOIN (type = 0x01) — 2 bytes total
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | uint8 | type = 0x01 |
+| 1 | uint8 | EntityType (0 = PLAYER, 1 = GHOST_PLAYER) |
+
+Must be the first message sent after the WebSocket connection is open.
+The server spawns the entity and sends the initial snapshot in response.
+
+URL param: `?mode=ghost` → GHOST_PLAYER; default (bare URL) → PLAYER.
+
+#### EntityType values
+
+| Value | Name | Physics |
+|-------|------|---------|
+| 0 | PLAYER | Full: gravity + swept AABB collision |
+| 1 | GHOST_PLAYER | Ghost: velocity-only, no gravity, no collision |

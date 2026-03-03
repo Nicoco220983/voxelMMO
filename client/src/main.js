@@ -1,7 +1,11 @@
 // @ts-check
 import * as THREE     from 'three'
 import { GameClient } from './GameClient.js'
-import { SUBVOXEL_SIZE, TICK_RATE } from './types.js'
+import {
+  SUBVOXEL_SIZE, TICK_RATE, EntityType, ClientMessageType, InputButton,
+  GHOST_MOVE_SPEED_VOXELS, PLAYER_WALK_SPEED_VOXELS, PLAYER_JUMP_VY_VOXELS,
+  GRAVITY_DECREMENT,
+} from './types.js'
 
 // ── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true })
@@ -33,57 +37,51 @@ window.addEventListener('resize', () => {
 })
 
 // ── Network ───────────────────────────────────────────────────────────────
+// ?mode=ghost → GHOST_PLAYER (noclip); default (bare URL) → PLAYER (full physics)
+const _mode = new URLSearchParams(location.search).get('mode')
+const _entityType = _mode === 'ghost' ? EntityType.GHOST_PLAYER : EntityType.PLAYER
+
 const client = new GameClient(`ws://${location.host}/ws`, scene)
-client.connect().catch((err) => {
+client.connect().then(() => {
+  client.sendJoin(_entityType)
+}).catch((err) => {
   console.error('[main] Failed to connect to server', err)
 })
 
-// ── Ghost player state ────────────────────────────────────────────────────
-// Spawn position in sub-voxels — must match server addPlayer() call in main.cpp
+// ── Local player state ────────────────────────────────────────────────────
+// Approximate spawn position for client-side prediction; server corrects via deltas.
+// Server computes exact Y = surfaceY(32, 32) + 2; surface ∈ [4, 30] so Y ∈ [6, 32].
 let posX = 32 * SUBVOXEL_SIZE   // 8192
-let posY = 20 * SUBVOXEL_SIZE   // 5120
+let posY = 22 * SUBVOXEL_SIZE   // 5632  (approx surfaceY + 2)
 let posZ = 32 * SUBVOXEL_SIZE   // 8192
 let yaw = 0, pitch = -0.3   // slightly downward initial look
-
-// ── Speed ramp ────────────────────────────────────────────────────────────
-const BASE_SPEED = 10.0   // m/s at rest
-const SPEED_STEP = 10.0   // m/s gained per second of continuous movement
-const MAX_SPEED  = 100.0  // m/s ceiling
-
-/** @type {number|null} performance.now() timestamp when movement keys first pressed */
-let keyHoldStart = null
+let predVy = 0              // local predicted Y velocity (sub-voxels/tick), PLAYER only
+let predGrounded = false    // local predicted grounded state
 
 // ── Keyboard state ────────────────────────────────────────────────────────
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
 
-function isMoving() {
-  return keys.w || keys.a || keys.s || keys.d || keys.space || keys.shift
-}
-
 window.addEventListener('keydown', (e) => {
-  const wasMoving = isMoving()
   switch (e.code) {
-    case 'ArrowUp':                      keys.w     = true;  e.preventDefault(); break
-    case 'ArrowLeft':                    keys.a     = true;  e.preventDefault(); break
-    case 'ArrowDown':                    keys.s     = true;  e.preventDefault(); break
-    case 'ArrowRight':                   keys.d     = true;  e.preventDefault(); break
+    case 'KeyW': case 'ArrowUp':                      keys.w     = true;  e.preventDefault(); break
+    case 'KeyA': case 'ArrowLeft':                    keys.a     = true;  e.preventDefault(); break
+    case 'KeyS': case 'ArrowDown':                    keys.s     = true;  e.preventDefault(); break
+    case 'KeyD': case 'ArrowRight':                   keys.d     = true;  e.preventDefault(); break
     case 'Space':    e.preventDefault(); keys.space = true;  break
     case 'ShiftLeft': case 'ShiftRight': keys.shift = true;  break
     default: return
   }
-  if (!wasMoving) keyHoldStart = performance.now()
 })
 window.addEventListener('keyup', (e) => {
   switch (e.code) {
-    case 'ArrowUp':                      keys.w     = false; break
-    case 'ArrowLeft':                    keys.a     = false; break
-    case 'ArrowDown':                    keys.s     = false; break
-    case 'ArrowRight':                   keys.d     = false; break
+    case 'KeyW': case 'ArrowUp':                      keys.w     = false; break
+    case 'KeyA': case 'ArrowLeft':                    keys.a     = false; break
+    case 'KeyS': case 'ArrowDown':                    keys.s     = false; break
+    case 'KeyD': case 'ArrowRight':                   keys.d     = false; break
     case 'Space':                        keys.space = false; break
     case 'ShiftLeft': case 'ShiftRight': keys.shift = false; break
     default: return
   }
-  if (!isMoving()) keyHoldStart = null
 })
 
 // ── Pointer lock (mouse look) ─────────────────────────────────────────────
@@ -98,56 +96,44 @@ document.addEventListener('mousemove', (e) => {
   pitch  = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch))
 })
 
-// ── Velocity helper ───────────────────────────────────────────────────────
-/**
- * Compute desired velocity from current key state and camera orientation.
- * W/S follow the full 3D camera direction (including pitch).
- * A/D strafe horizontally (yaw only).
- * Space/Shift move straight up/down in world space.
- * @param {number} speed  Current speed magnitude in voxels/s (sent as float to server).
- * @returns {{vx:number, vy:number, vz:number}}  Velocity in voxels/s.
- */
-function computeVelocity(speed) {
-  // Camera forward in world space (pitch + yaw)
-  const fwdX = -Math.sin(yaw) * Math.cos(pitch)
-  const fwdY =  Math.sin(pitch)
-  const fwdZ = -Math.cos(yaw) * Math.cos(pitch)
-  // Right vector (horizontal only, derived from yaw)
-  const rgtX =  Math.cos(yaw)
-  const rgtZ = -Math.sin(yaw)
+// ── Input sending ─────────────────────────────────────────────────────────
+const _inputBuf  = new ArrayBuffer(10)
+const _inputView = new DataView(_inputBuf)
+_inputView.setUint8(0, ClientMessageType.INPUT)   // type prefix, set once
 
-  let vx = 0, vy = 0, vz = 0
-  if (keys.w)     { vx += fwdX; vy += fwdY; vz += fwdZ }
-  if (keys.s)     { vx -= fwdX; vy -= fwdY; vz -= fwdZ }
-  if (keys.a)     { vx -= rgtX;              vz -= rgtZ  }
-  if (keys.d)     { vx += rgtX;              vz += rgtZ  }
-  if (keys.space) { vy += 1 }
-  if (keys.shift) { vy -= 1 }
+/** @type {number} */ let lastButtons = -1  // force first send (NaN-like)
+/** @type {number} */ let lastYaw     = NaN
+/** @type {number} */ let lastPitch   = NaN
 
-  const len = Math.sqrt(vx * vx + vy * vy + vz * vz)
-  if (len > 1) { vx /= len; vy /= len; vz /= len }
-  return { vx: vx * speed, vy: vy * speed, vz: vz * speed }
+/** Compute button bitmask from current key state. @returns {number} */
+function computeButtons() {
+  let b = 0
+  if (keys.w)     b |= InputButton.FORWARD
+  if (keys.s)     b |= InputButton.BACKWARD
+  if (keys.a)     b |= InputButton.LEFT
+  if (keys.d)     b |= InputButton.RIGHT
+  if (keys.space) b |= InputButton.JUMP
+  if (keys.shift) b |= InputButton.DESCEND
+  return b
 }
 
-// ── Input sending ─────────────────────────────────────────────────────────
-const _inputBuf  = new ArrayBuffer(12)
-const _inputView = new DataView(_inputBuf)
-
-/** @param {number} vx @param {number} vy @param {number} vz */
-function sendVelocity(vx, vy, vz) {
-  _inputView.setFloat32(0, vx, true)
-  _inputView.setFloat32(4, vy, true)
-  _inputView.setFloat32(8, vz, true)
-  console.debug('[input] tx velocity', vx.toFixed(2), vy.toFixed(2), vz.toFixed(2))
+/** Send INPUT frame only when state changed. */
+function sendInputIfChanged(buttons, yawVal, pitchVal) {
+  if (buttons === lastButtons && yawVal === lastYaw && pitchVal === lastPitch) return
+  _inputView.setUint8(1, buttons)
+  _inputView.setFloat32(2, yawVal,   true)
+  _inputView.setFloat32(6, pitchVal, true)
   client.sendInput(_inputBuf)
+  lastButtons = buttons; lastYaw = yawVal; lastPitch = pitchVal
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────
 const hud = /** @type {HTMLElement} */ (document.getElementById('hud'))
 
 // ── Render loop ───────────────────────────────────────────────────────────
+const TICK_DT = 1 / TICK_RATE
+
 let lastTime = performance.now()
-let lastVx = NaN, lastVy = NaN, lastVz = NaN  // NaN forces first send
 
 function animate() {
   requestAnimationFrame(animate)
@@ -156,22 +142,57 @@ function animate() {
   const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
   lastTime  = now
 
-  const holdSecs = keyHoldStart !== null ? (now - keyHoldStart) / 1000 : 0
-  const currentSpeed = Math.min(BASE_SPEED + Math.floor(holdSecs) * SPEED_STEP, MAX_SPEED)
+  const buttons = computeButtons()
+  sendInputIfChanged(buttons, yaw, pitch)
 
-  const { vx, vy, vz } = computeVelocity(currentSpeed)
+  // ── Client-side prediction (visual; server deltas are authoritative) ──
+  if (_entityType === EntityType.GHOST_PLAYER) {
+    // 3-D flight: mirror server InputSystem GHOST logic
+    const cy = Math.cos(yaw),   sy = Math.sin(yaw)
+    const cp = Math.cos(pitch),  sp = Math.sin(pitch)
+    let dx = 0, dy = 0, dz = 0
+    if (buttons & InputButton.FORWARD)  { dx += -sy*cp; dy += sp; dz += -cy*cp }
+    if (buttons & InputButton.BACKWARD) { dx -= -sy*cp; dy -= sp; dz -= -cy*cp }
+    if (buttons & InputButton.LEFT)     { dx -= cy;               dz -= -sy     }
+    if (buttons & InputButton.RIGHT)    { dx += cy;               dz += -sy     }
+    if (buttons & InputButton.JUMP)     { dy += 1 }
+    if (buttons & InputButton.DESCEND)  { dy -= 1 }
+    const len = Math.sqrt(dx*dx + dy*dy + dz*dz)
+    const s   = len > 0.001 ? GHOST_MOVE_SPEED_VOXELS / len : 0
+    posX += dx * s * SUBVOXEL_SIZE * dt
+    posY += dy * s * SUBVOXEL_SIZE * dt
+    posZ += dz * s * SUBVOXEL_SIZE * dt
 
-  // Send velocity to server only when it changes (voxels/s as float32)
-  if (vx !== lastVx || vy !== lastVy || vz !== lastVz) {
-    sendVelocity(vx, vy, vz)
-    lastVx = vx; lastVy = vy; lastVz = vz
+  } else {
+    // Horizontal-only movement; Y uses approximate local gravity (no collision)
+    const cy = Math.cos(yaw), sy = Math.sin(yaw)
+    let dx = 0, dz = 0
+    if (buttons & InputButton.FORWARD)  { dx += -sy; dz += -cy }
+    if (buttons & InputButton.BACKWARD) { dx -= -sy; dz -= -cy }
+    if (buttons & InputButton.LEFT)     { dx -= cy;  dz -= -sy  }
+    if (buttons & InputButton.RIGHT)    { dx += cy;  dz += -sy  }
+    const hlen = Math.sqrt(dx*dx + dz*dz)
+    const hs   = hlen > 0.001 ? PLAYER_WALK_SPEED_VOXELS / hlen : 0
+    posX += dx * hs * SUBVOXEL_SIZE * dt
+    posZ += dz * hs * SUBVOXEL_SIZE * dt
+
+    // Jump impulse
+    if ((buttons & InputButton.JUMP) && predGrounded) {
+      predVy = PLAYER_JUMP_VY_VOXELS * SUBVOXEL_SIZE / TICK_RATE
+      predGrounded = false
+    }
+
+    // Apply local gravity (approximate; server corrects via authoritative deltas)
+    predVy = Math.max(predVy - GRAVITY_DECREMENT, -128 * SUBVOXEL_SIZE / TICK_RATE)
+    posY  += predVy * dt
+
+    // Approximate ground clamp (no collision data on client)
+    if (posY < 8 * SUBVOXEL_SIZE) {
+      posY = 8 * SUBVOXEL_SIZE
+      predVy = 0
+      predGrounded = true
+    }
   }
-
-  // Integrate position locally in sub-voxels (client-side prediction).
-  // vx/vy/vz are voxels/s; multiply by SUBVOXEL_SIZE × dt to get sub-voxels.
-  posX += vx * SUBVOXEL_SIZE * dt
-  posY += vy * SUBVOXEL_SIZE * dt
-  posZ += vz * SUBVOXEL_SIZE * dt
 
   // Divide by SUBVOXEL_SIZE to get voxel coordinates for Three.js.
   camera.position.set(posX / SUBVOXEL_SIZE, posY / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
@@ -183,10 +204,10 @@ function animate() {
   renderer.render(scene, camera)
 
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
+  const modeName = _entityType === EntityType.GHOST_PLAYER ? 'ghost' : 'walk'
   hud.textContent =
-    `pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
-    `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°` +
-    `   spd ${currentSpeed.toFixed(0)}`
+    `[${modeName}]  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
+    `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
 }
 
 animate()

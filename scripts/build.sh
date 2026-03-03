@@ -29,9 +29,10 @@ cmake -B "$BUILD_DIR" -S "$ROOT_DIR" \
 
 cmake --build "$BUILD_DIR" --config "$BUILD_TYPE"
 
-# ── Client (Vite) ─────────────────────────────────────────────────────────
+# ── Client (Vite + vitest deps) ───────────────────────────────────────────
 echo "=== Building client ==="
 cd "$ROOT_DIR/client"
+npm install
 npm run build
 
 echo ""

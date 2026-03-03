@@ -1,4 +1,5 @@
 #include "game/GameEngine.hpp"
+#include "game/WorldGenerator.hpp"
 #include "gateway/GatewayEngine.hpp"
 #include <iostream>
 #include <thread>
@@ -20,10 +21,17 @@ int main() {
     // ── Wire GatewayEngine → GameEngine ──────────────────────────────────
     game.registerGateway(0);
 
-    gateway.setPlayerConnectCallback([&](voxelmmo::PlayerId pid) {
-        game.addPlayer(0, pid, 32.0f, 20.0f, 32.0f);
-        std::cout << "[main] Player " << pid << " connected\n";
-        game.sendSnapshot(0);
+    // Compute spawn Y once: one voxel above the terrain surface at (32, 32).
+    // surfaceY ∈ [4, 30]; +2 places the player centre at surfaceY+2 so the
+    // AABB bottom (centre − PLAYER_BBOX_HY ≈ 0.9 vox) clears the surface.
+    static constexpr float SPAWN_X = 32.0f, SPAWN_Z = 32.0f;
+    const float spawnY = static_cast<float>(
+        voxelmmo::WorldGenerator{}.surfaceY(SPAWN_X, SPAWN_Z) + 2);
+
+    gateway.setPlayerConnectCallback([&, spawnY](voxelmmo::PlayerId pid) {
+        game.queuePendingPlayer(0, pid, SPAWN_X, spawnY, SPAWN_Z);
+        std::cout << "[main] Player " << pid << " connected (pending JOIN)\n";
+        // Entity is spawned when the client sends JOIN; sendSnapshot() is called then.
     });
 
     gateway.setPlayerDisconnectCallback([&](voxelmmo::PlayerId pid) {
