@@ -1,6 +1,6 @@
 #pragma once
 #include "Chunk.hpp"
-#include "game/Physics.hpp"
+#include "game/systems/PhysicsSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/InputComponent.hpp"
