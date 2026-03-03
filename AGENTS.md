@@ -45,10 +45,12 @@ Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 # Code structure
 
 **server/common/**
-- `Types.hpp` — ChunkId, VoxelId, VoxelType, ChunkEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`
+- `Types.hpp` — ChunkId, VoxelId, VoxelType, ChunkEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
 - `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType (PLAYER=0, GHOST_PLAYER=1), ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
 - `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
 - `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
+- `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendFramed)
+- `VoxelTypes.hpp` — named voxel type constants (AIR=0, STONE=1, DIRT=2, GRASS=3)
 
 **server/game/entities/**
 - `PlayerEntity.hpp` — `spawn()` factory for PLAYER (PhysicsMode::FULL, grounded=false)
@@ -62,8 +64,13 @@ Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 - `addPlayer()` — delegates to `playerFactories` map; accepts optional `EntityType` (default `GHOST_PLAYER`); used directly by tests
 - `removePlayer()` — cleans chunk membership via ChunkMemberComponent, then destroys entity
 - `teleportPlayer()` — directly sets player position (for test setup / admin use)
-- `tick()` → `InputSystem::apply()` → `stepPhysics()` → `checkEntitiesChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
+- `tick()` → `InputSystem::apply()` → `PhysicsSystem::apply()` → `checkEntitiesChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
 - `checkEntitiesChunks()` — phase A: moves entities between chunks on `dyn.moved`; phase B: rebuilds watchedChunks, dispatches snapshots for newly seen chunks
+
+**server/game/WorldGenerator.hpp/cpp**
+- Stateless procedural terrain generator using multi-frequency simplex noise
+- `generate(voxels, cx, cy, cz)` — fills voxel buffer for chunk
+- `surfaceY(wx, wz)` — surface height at world position (matches generation logic)
 
 **server/game/Chunk.hpp/cpp**
 - `map[entt::entity, ChunkEntityId] entities` — chunk membership + wire id assignment (`nextChunkEntityId_`)
@@ -73,7 +80,6 @@ Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 **server/game/WorldChunk.hpp/cpp**
 - `voxels[65536]` — flat Y×X×Z voxel array
 - `voxelsSnapshotDeltas`, `voxelsTickDeltas` — changed-voxel lists, cleared after each delta send
-- `generate(cx, cy, cz)` — procedural terrain generation
 
 **server/game/components/**
 - `DirtyComponent` — `snapshotDirtyFlags`, `tickDirtyFlags`; `mark(bit)`, `clearSnapshot()`, `clearTick()`
@@ -83,9 +89,11 @@ Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 - `PlayerComponent` — `PlayerId playerId`; emplaced on player entities only
 - `ChunkMemberComponent` — `currentChunkId`, `chunkAssigned`; managed by checkEntitiesChunks()
 - `PhysicsModeComponent` — `PhysicsMode mode` (GHOST/FLYING/FULL); server-only, not serialised
+- `BoundingBoxComponent` — AABB half-extents (hx, hy, hz) in sub-voxels; centered on position
 
 **server/game/systems/**
-- `InputSystem.hpp` — `apply(registry)`: translates InputComponent (buttons+yaw+pitch) → DynamicPositionComponent velocity per EntityType; called at top of `tick()` before `stepPhysics()`
+- `InputSystem.hpp` — `apply(registry)`: translates InputComponent (buttons+yaw+pitch) → DynamicPositionComponent velocity per EntityType; called at top of `tick()` before physics
+- `PhysicsSystem.hpp` — `apply(registry, chunks)`: collision-aware physics sweeps (X/Y/Z) with voxel-context cache; handles GHOST (no collision), FLYING (collision, no gravity), FULL (collision + gravity)
 
 **server/gateway/**
 - `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameBatch()` forwards to clients
@@ -98,6 +106,7 @@ Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
 - `Chunk.js` — per-chunk voxel state, LZ4 decompression, Three.js mesh rebuild
 - `components/DynamicPositionComponent.js` — mirrors server; `predictAt(tick)` for client-side interpolation
 - `entities/BaseEntity.js`, `PlayerEntity.js` — `fromRecord()`, `applyDelta()`
+- `NetworkProtocol.js` — serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader)
 - `main.js` — Three.js scene, render loop, HUD
 
 **docs/**
