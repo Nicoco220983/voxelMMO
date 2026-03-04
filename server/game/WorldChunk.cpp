@@ -8,7 +8,7 @@ WorldChunk::WorldChunk() {
     voxels.assign(CHUNK_VOXEL_COUNT, 0);
 }
 
-void WorldChunk::generate(int32_t chunkX, int8_t chunkY, int32_t chunkZ) {
+void WorldChunk::generate(int32_t chunkX, int32_t chunkY, int32_t chunkZ) {
     WorldGenerator{}.generate(voxels, chunkX, chunkY, chunkZ);
 }
 

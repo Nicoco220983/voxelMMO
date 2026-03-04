@@ -24,9 +24,9 @@ struct ChunkId {
     }
 
     /** @brief Y component, signed 6-bit (range [-32, 31]). */
-    constexpr int8_t y() const noexcept {
-        int8_t v = static_cast<int8_t>((packed >> 58) & 0x3F);
-        return (v & 0x20) ? static_cast<int8_t>(v | static_cast<int8_t>(0xC0)) : v;
+    constexpr int32_t y() const noexcept {
+        int32_t v = static_cast<int32_t>((packed >> 58) & 0x3F);
+        return (v & 0x20) ? (v | 0xFFFFFFC0) : v;
     }
 
     /** @brief X component, signed 29-bit. */

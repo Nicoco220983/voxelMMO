@@ -32,7 +32,7 @@ public:
     WorldChunk();
 
     /** @brief Procedurally fill voxel data for a given chunk position. */
-    void generate(int32_t chunkX, int8_t chunkY, int32_t chunkZ);
+    void generate(int32_t chunkX, int32_t chunkY, int32_t chunkZ);
 
     /** @brief Get voxel type at local chunk coordinates. */
     VoxelType getVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) const {

@@ -39,7 +39,7 @@ public:
      * @param cz      Chunk Z coordinate.
      */
     void generate(std::vector<VoxelType>& voxels,
-                  int32_t chunkX, int8_t chunkY, int32_t chunkZ) const;
+                  int32_t chunkX, int32_t chunkY, int32_t chunkZ) const;
 
     /**
      * @brief Return the surface world-Y voxel at world position (wx, wz).

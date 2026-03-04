@@ -125,7 +125,7 @@ int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
 }
 
 void WorldGenerator::generate(std::vector<VoxelType>& voxels,
-                               int32_t chunkX, int8_t chunkY, int32_t chunkZ) const
+                               int32_t chunkX, int32_t chunkY, int32_t chunkZ) const
 {
     // ── Step 1: sample height on a coarse (STEP-voxel) grid ──────────────────
     // CHUNK_SIZE_X = CHUNK_SIZE_Z = 64, STEP = 4  →  17 × 17 = 289 evaluations
@@ -166,7 +166,7 @@ void WorldGenerator::generate(std::vector<VoxelType>& voxels,
                     const int z = cell_z * STEP + lz;
 
                     for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
-                        const int32_t worldY = static_cast<int32_t>(chunkY) * CHUNK_SIZE_Y + y;
+                        const int32_t worldY = chunkY * CHUNK_SIZE_Y + y;
 
                         VoxelType type;
                         if      (worldY > surfaceY)        type = VoxelTypes::AIR;
