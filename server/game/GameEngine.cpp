@@ -166,12 +166,12 @@ Chunk& GameEngine::getOrActivateChunk(ChunkId id) {
     if (it != chunks.end()) return *it->second;
 
     auto chunk = std::make_unique<Chunk>(id);
-    chunk->world.generate(id.x(), id.y(), id.z());
+    worldGenerator.generate(chunk->world.voxels, id.x(), id.y(), id.z());
     
     // Generate entities for this chunk (sheep, etc.)
     // They are automatically marked for creation by generateEntities
     const uint32_t tick = static_cast<uint32_t>(tickCount);
-    chunk->generator.generateEntities(id, registry, tick);
+    worldGenerator.generateEntities(id, registry, tick);
     
     Chunk& ref = *chunk;
     chunks[id] = std::move(chunk);
@@ -188,7 +188,7 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     if (it == gateways.end()) return;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-        it->second, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS);
+        it->second, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
     ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS);
     if (!batchBuf.empty() && outputCallback)
         outputCallback(gwId, batchBuf.data(), batchBuf.size());
@@ -307,13 +307,13 @@ void GameEngine::tick() {
 
     // Phase B: Process all entity lifecycle events (CREATE, DELETE, CHUNK_CHANGE)
     // Deleted entities are NOT destroyed yet - they're stored in pendingDeletions
-    auto entityResult = EntityStateSystem::apply(registry, chunks, tickCount);
+    auto entityResult = EntityStateSystem::apply(registry, chunks, tickCount, worldGenerator);
     pendingDeletions = std::move(entityResult.entitiesToDestroy);
 
     // Phase C: Rebuild gateway watchedChunks and dispatch snapshots
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-            gwInfo, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS);
+            gwInfo, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
 
         if (!batchBuf.empty() && outputCallback)
             outputCallback(gwId, batchBuf.data(), batchBuf.size());

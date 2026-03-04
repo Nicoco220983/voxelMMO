@@ -45,7 +45,8 @@ void destroyPendingDeletions(entt::registry& registry, std::vector<entt::entity>
 EntityStateResult apply(
     entt::registry& registry,
     std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
-    int32_t tickCount)
+    int32_t tickCount,
+    const WorldGenerator& generator)
 {
     (void)tickCount;
     EntityStateResult result;
@@ -78,7 +79,7 @@ EntityStateResult apply(
             }
 
             // Ensure new chunk exists (activate if needed)
-            Chunk& newChunk = activateChunk(newChunkId, chunks, activatedChunks);
+            Chunk& newChunk = activateChunk(newChunkId, chunks, activatedChunks, generator);
 
             // Add to new chunk
             newChunk.entities.insert(ent);
@@ -117,7 +118,7 @@ EntityStateResult apply(
             cm.currentChunkId = pcc.targetChunkId;
 
             // Ensure chunk exists and add entity
-            Chunk& chunk = activateChunk(pcc.targetChunkId, chunks, activatedChunks);
+            Chunk& chunk = activateChunk(pcc.targetChunkId, chunks, activatedChunks, generator);
             chunk.entities.insert(ent);
 
             // Add to present players if it's a player

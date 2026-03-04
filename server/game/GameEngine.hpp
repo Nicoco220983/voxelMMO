@@ -1,5 +1,6 @@
 #pragma once
 #include "Chunk.hpp"
+#include "WorldGenerator.hpp"
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
 #include "game/systems/EntityStateSystem.hpp"
@@ -132,6 +133,9 @@ public:
      */
     void sendSnapshot(GatewayId gwId);
 
+    /** @brief Access the world generator for terrain queries. */
+    const WorldGenerator& getWorldGenerator() const { return worldGenerator; }
+
     // ── Configuration ─────────────────────────────────────────────────────
 
     /** Number of chunk radii around a player position to activate (load). */
@@ -176,6 +180,9 @@ private:
     
     /** @brief Entities marked for deletion that will be destroyed after serialization. */
     std::vector<entt::entity> pendingDeletions;
+    
+    /** @brief Stateless procedural terrain generator for world generation. */
+    WorldGenerator worldGenerator;
 
     // ── Internal helpers ──────────────────────────────────────────────────
 

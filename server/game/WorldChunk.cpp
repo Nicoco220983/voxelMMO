@@ -1,15 +1,10 @@
 #include "game/WorldChunk.hpp"
-#include "game/WorldGenerator.hpp"
 #include <cstring>
 
 namespace voxelmmo {
 
 WorldChunk::WorldChunk() {
     voxels.assign(CHUNK_VOXEL_COUNT, 0);
-}
-
-void WorldChunk::generate(int32_t chunkX, int32_t chunkY, int32_t chunkZ) {
-    WorldGenerator{}.generate(voxels, chunkX, chunkY, chunkZ);
 }
 
 void WorldChunk::setVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ, VoxelType type) {

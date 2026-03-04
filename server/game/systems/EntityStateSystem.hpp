@@ -1,5 +1,6 @@
 #pragma once
 #include "common/Types.hpp"
+#include "game/WorldGenerator.hpp"
 #include "game/Chunk.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingChunkChangeComponent.hpp"
@@ -72,12 +73,14 @@ struct EntityStateResult {
  * @param registry  The ECS registry.
  * @param chunks    Map of loaded chunks (may activate new chunks on CHUNK_CHANGE).
  * @param tickCount Current server tick.
+ * @param generator WorldGenerator for terrain generation when activating new chunks.
  * @return Statistics about processed entities + list of entities to destroy.
  */
 EntityStateResult apply(
     entt::registry& registry,
     std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
-    int32_t tickCount);
+    int32_t tickCount,
+    const WorldGenerator& generator);
 
 /**
  * @brief Destroy all entities that were marked for deletion.
@@ -126,16 +129,18 @@ void markForChunkChange(entt::registry& registry, entt::entity ent, ChunkId newC
 
 /**
  * @brief Get or activate a chunk, adding it to the activation list.
+ * @param generator WorldGenerator for terrain generation (stateless).
  */
 inline Chunk& activateChunk(
     ChunkId cid,
     std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
-    std::vector<ChunkId>& activatedOut)
+    std::vector<ChunkId>& activatedOut,
+    const WorldGenerator& generator)
 {
     auto it = chunks.find(cid);
     if (it == chunks.end()) {
         auto chunk = std::make_unique<Chunk>(cid);
-        chunk->world.generate(cid.x(), cid.y(), cid.z());
+        generator.generate(chunk->world.voxels, cid.x(), cid.y(), cid.z());
         Chunk* ptr = chunk.get();
         chunks[cid] = std::move(chunk);
         activatedOut.push_back(cid);

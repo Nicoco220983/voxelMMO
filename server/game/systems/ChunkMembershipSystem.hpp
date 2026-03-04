@@ -126,6 +126,7 @@ inline ChunkMembershipSystemResult updateEntities(
  * @param tick              Current server tick.
  * @param watchRadius       Radius for watching chunks around players.
  * @param activationRadius  Radius for activating chunks around players.
+ * @param generator         WorldGenerator for terrain generation (stateless).
  * @return Vector of framed snapshot messages ready to send.
  */
 inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
@@ -135,7 +136,8 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
     entt::registry& registry,
     uint32_t tick,
     int32_t watchRadius,
-    int32_t activationRadius)
+    int32_t activationRadius,
+    const WorldGenerator& generator)
 {
     std::vector<uint8_t> batchBuf;
     std::vector<ChunkId> activated; // Track locally for this call
@@ -158,7 +160,7 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
 
                     // Ensure activation-radius chunks exist; prepare snapshot on first sight
                     if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
-                        Chunk& chunk = EntityStateSystem::activateChunk(cid, chunks, activated);
+                        Chunk& chunk = EntityStateSystem::activateChunk(cid, chunks, activated, generator);
                         if (!gwInfo.lastStateTick.count(cid)) {
                             NetworkProtocol::appendFramed(batchBuf, chunk.buildSnapshot(registry, tick));
                             gwInfo.lastStateTick[cid] = tick;

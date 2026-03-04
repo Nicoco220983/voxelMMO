@@ -1,5 +1,6 @@
 #include <catch2/catch_test_macros.hpp>
 #include "game/WorldChunk.hpp"
+#include "game/WorldGenerator.hpp"
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
 
@@ -12,11 +13,17 @@ static size_t idx(int y, int x, int z) {
          + static_cast<size_t>(z);
 }
 
+// Helper: generate chunk using WorldGenerator
+static void generateChunk(WorldChunk& chunk, int cx, int cy, int cz) {
+    WorldGenerator gen;
+    gen.generate(chunk.voxels, cx, cy, cz);
+}
+
 // Surface is clamped to [4, 30].
 // cy=-1  → worldY ∈ [-32, -1],  always below surface − 3 (4−3=1 > −1) → all STONE.
-TEST_CASE("WorldChunk::generate - cy<0 layer is all stone", "[world_gen]") {
+TEST_CASE("WorldGenerator - cy<0 layer is all stone", "[world_gen]") {
     WorldChunk chunk;
-    chunk.generate(0, -1, 0);
+    generateChunk(chunk, 0, -1, 0);
 
     for (size_t i = 0; i < CHUNK_VOXEL_COUNT; ++i) {
         REQUIRE(chunk.voxels[i] == VoxelTypes::STONE);
@@ -24,9 +31,9 @@ TEST_CASE("WorldChunk::generate - cy<0 layer is all stone", "[world_gen]") {
 }
 
 // cy=1 → worldY ∈ [32, 63], always above max surface (30) → all AIR.
-TEST_CASE("WorldChunk::generate - cy>=1 layer is all air", "[world_gen]") {
+TEST_CASE("WorldGenerator - cy>=1 layer is all air", "[world_gen]") {
     WorldChunk chunk;
-    chunk.generate(0, 1, 0);
+    generateChunk(chunk, 0, 1, 0);
 
     for (size_t i = 0; i < CHUNK_VOXEL_COUNT; ++i) {
         REQUIRE(chunk.voxels[i] == VoxelTypes::AIR);
@@ -36,9 +43,9 @@ TEST_CASE("WorldChunk::generate - cy>=1 layer is all air", "[world_gen]") {
 // Wherever a GRASS voxel appears in a chunk, its neighbours must obey the
 // layering rule: AIR above, up to 3 DIRT below, STONE deeper down.
 // With 32-high chunks, the entire terrain (surface ∈ [4,30]) fits in cy=0.
-TEST_CASE("WorldChunk::generate - voxel type layering is correct", "[world_gen]") {
+TEST_CASE("WorldGenerator - voxel type layering is correct", "[world_gen]") {
     WorldChunk chunk;
-    chunk.generate(3, 0, 5);  // cy=0 contains all terrain
+    generateChunk(chunk, 3, 0, 5);  // cy=0 contains all terrain
 
     bool found_grass = false;
 
@@ -68,18 +75,18 @@ TEST_CASE("WorldChunk::generate - voxel type layering is correct", "[world_gen]"
     REQUIRE(found_grass);
 }
 
-TEST_CASE("WorldChunk::generate - deterministic output", "[world_gen]") {
+TEST_CASE("WorldGenerator - deterministic output", "[world_gen]") {
     WorldChunk a, b;
-    a.generate(7, 0, -3);
-    b.generate(7, 0, -3);
+    generateChunk(a, 7, 0, -3);
+    generateChunk(b, 7, 0, -3);
 
     REQUIRE(a.voxels == b.voxels);
 }
 
-TEST_CASE("WorldChunk::generate - different positions produce different terrain", "[world_gen]") {
+TEST_CASE("WorldGenerator - different positions produce different terrain", "[world_gen]") {
     WorldChunk a, b;
-    a.generate(0, 0, 0);
-    b.generate(100, 0, 100);
+    generateChunk(a, 0, 0, 0);
+    generateChunk(b, 100, 0, 100);
 
     REQUIRE(a.voxels != b.voxels);
 }

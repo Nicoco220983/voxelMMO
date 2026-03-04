@@ -1,10 +1,17 @@
 #include <catch2/catch_test_macros.hpp>
 #include <iostream>
 #include "game/WorldChunk.hpp"
+#include "game/WorldGenerator.hpp"
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
 
 using namespace voxelmmo;
+
+// Helper: generate chunk using WorldGenerator
+static void generateChunk(WorldChunk& chunk, int cx, int cy, int cz) {
+    WorldGenerator gen;
+    gen.generate(chunk.voxels, cx, cy, cz);
+}
 
 TEST_CASE("DEBUG - cy=1 contents") {
     std::cout << "CHUNK_SIZE_X = " << (int)CHUNK_SIZE_X << std::endl;
@@ -12,7 +19,7 @@ TEST_CASE("DEBUG - cy=1 contents") {
     std::cout << "CHUNK_SIZE_Z = " << (int)CHUNK_SIZE_Z << std::endl;
     
     WorldChunk chunk;
-    chunk.generate(0, 1, 0);
+    generateChunk(chunk, 0, 1, 0);
     
     int stoneCount = 0, airCount = 0;
     for (size_t i = 0; i < std::min(size_t(100), CHUNK_VOXEL_COUNT); ++i) {

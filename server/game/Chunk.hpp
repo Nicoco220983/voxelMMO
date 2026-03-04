@@ -1,6 +1,5 @@
 #pragma once
 #include "WorldChunk.hpp"
-#include "WorldGenerator.hpp"
 #include "common/Types.hpp"
 #include "common/MessageTypes.hpp"
 #include "common/ChunkState.hpp"
@@ -11,6 +10,10 @@
 #include <memory>
 #include <unordered_map>
 #include <cstdint>
+
+namespace voxelmmo {
+    class WorldGenerator;
+}
 
 namespace voxelmmo {
 
@@ -37,9 +40,6 @@ public:
     std::set<PlayerId> watchingPlayers;
 
     WorldChunk world;
-    
-    /** @brief Generator for terrain and entities (stateless, used for entity spawning). */
-    WorldGenerator generator;
 
     /**
      * @brief Set of entities currently resident in this chunk.

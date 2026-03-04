@@ -3,11 +3,18 @@
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
 #include "game/WorldChunk.hpp"
+#include "game/WorldGenerator.hpp"
 
 #include <cstring>
 #include <vector>
 
 using namespace voxelmmo;
+
+// Helper: generate chunk using WorldGenerator
+static void generateChunk(WorldChunk& chunk, int cx, int cy, int cz) {
+    WorldGenerator gen;
+    gen.generate(chunk.voxels, cx, cy, cz);
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -110,7 +117,7 @@ TEST_CASE("ChunkState - delta data is preserved verbatim", "[chunkstate]") {
 
 TEST_CASE("WorldChunk::serializeSnapshot - size and count field", "[serialization]") {
     WorldChunk chunk;
-    chunk.generate(0, 0, 0);
+    generateChunk(chunk, 0, 0, 0);
 
     std::vector<uint8_t> buf(sizeof(int32_t) + CHUNK_VOXEL_COUNT);
     size_t written = chunk.serializeSnapshot(buf.data());
@@ -124,7 +131,7 @@ TEST_CASE("WorldChunk::serializeSnapshot - size and count field", "[serializatio
 
 TEST_CASE("WorldChunk::serializeSnapshot - voxel data roundtrip", "[serialization]") {
     WorldChunk chunk;
-    chunk.generate(3, 0, -5);
+    generateChunk(chunk, 3, 0, -5);
 
     std::vector<uint8_t> buf(sizeof(int32_t) + CHUNK_VOXEL_COUNT);
     chunk.serializeSnapshot(buf.data());
@@ -137,7 +144,7 @@ TEST_CASE("WorldChunk::serializeSnapshot - voxel data roundtrip", "[serializatio
 
 TEST_CASE("WorldChunk::modifyVoxels + serializeTickDelta roundtrip", "[serialization]") {
     WorldChunk chunk;
-    chunk.generate(0, 0, 0);
+    generateChunk(chunk, 0, 0, 0);
 
     const VoxelIndex idx0 = packVoxelIndex(10, 5, 20);
     const VoxelIndex idx1 = packVoxelIndex(7, 3, 7);
@@ -171,7 +178,7 @@ TEST_CASE("WorldChunk::modifyVoxels + serializeTickDelta roundtrip", "[serializa
 
 TEST_CASE("WorldChunk::clearTickDelta empties tick deltas, preserves snapshot deltas", "[serialization]") {
     WorldChunk chunk;
-    chunk.generate(0, 0, 0);
+    generateChunk(chunk, 0, 0, 0);
     chunk.modifyVoxels({{packVoxelIndex(0, 0, 0), VoxelTypes::STONE}});
 
     REQUIRE(!chunk.voxelsTickDeltas.empty());
@@ -184,7 +191,7 @@ TEST_CASE("WorldChunk::clearTickDelta empties tick deltas, preserves snapshot de
 
 TEST_CASE("WorldChunk::clearSnapshotDelta empties snapshot deltas only", "[serialization]") {
     WorldChunk chunk;
-    chunk.generate(0, 0, 0);
+    generateChunk(chunk, 0, 0, 0);
     chunk.modifyVoxels({{packVoxelIndex(2, 1, 3), VoxelTypes::GRASS}});
 
     chunk.clearSnapshotDelta();

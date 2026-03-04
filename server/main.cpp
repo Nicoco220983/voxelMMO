@@ -1,5 +1,4 @@
 #include "game/GameEngine.hpp"
-#include "game/WorldGenerator.hpp"
 #include "gateway/GatewayEngine.hpp"
 #include <iostream>
 #include <thread>
@@ -26,7 +25,7 @@ int main() {
     // AABB bottom (centre − PLAYER_BBOX_HY ≈ 0.9 vox) clears the surface.
     static constexpr int32_t SPAWN_X = 32 * voxelmmo::SUBVOXEL_SIZE;
     static constexpr int32_t SPAWN_Z = 32 * voxelmmo::SUBVOXEL_SIZE;
-    const int32_t spawnY = (voxelmmo::WorldGenerator{}.surfaceY(32, 32) + 2) * voxelmmo::SUBVOXEL_SIZE;
+    const int32_t spawnY = (game.getWorldGenerator().surfaceY(32, 32) + 2) * voxelmmo::SUBVOXEL_SIZE;
 
     gateway.setPlayerConnectCallback([&, spawnY](voxelmmo::PlayerId pid) {
         game.queuePendingPlayer(0, pid, SPAWN_X, spawnY, SPAWN_Z);
