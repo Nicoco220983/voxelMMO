@@ -50,12 +50,13 @@ static void collectSnapshots(const uint8_t* data, size_t size,
 /**
  * Convenience: register a gateway, add a GHOST_PLAYER, and send a zero-button
  * INPUT so the first tick's InputSystem sees no movement (velocity stays 0).
+ * Position parameters are in sub-voxels.
  */
 static void setupGroundedPlayer(GameEngine& engine, GatewayId gwId, PlayerId pid,
-                                 float x, float y, float z)
+                                 int32_t sx, int32_t sy, int32_t sz)
 {
     engine.registerGateway(gwId);
-    engine.addPlayer(gwId, pid, x, y, z);  // default: GHOST_PLAYER
+    engine.addPlayer(gwId, pid, sx, sy, sz);  // default: GHOST_PLAYER
     // Zero buttons → InputSystem sets velocity to 0 → no movement on first tick.
     const auto zeroInput = makeInput(0);
     engine.handlePlayerInput(pid, zeroInput.data(), zeroInput.size());
@@ -73,21 +74,20 @@ TEST_CASE("GameEngine - initial tick sends snapshots for chunks around spawn", "
         collectSnapshots(data, size, snapshots);
     });
 
-    // Spawn at (0, 8, 0) → chunk (cx=0, cy=0, cz=0).
+    // Spawn at (0, 8 voxels, 0) → chunk (cx=0, cy=0, cz=0).
     // Zero-velocity input makes the player grounded so physics does not snap
     // them to FLOOR_Y on the first tick.
-    setupGroundedPlayer(engine, gwId, pid, 0.0f, 8.0f, 0.0f);
+    setupGroundedPlayer(engine, gwId, pid, 0, 8 * SUBVOXEL_SIZE, 0);
     engine.tick();
 
     // Every chunk in the activation window must have been snapshotted:
     //   cx ∈ [-R, R], cy ∈ {cy-1, cy, cy+1}, cz ∈ [-R, R]
-    // where R = ACTIVATION_RADIUS = 2 and cy = floor(8/16) = 0.
+    // where R = ACTIVATION_RADIUS = 2 and cy = floor(8/32) = 0.
     constexpr int R = GameEngine::ACTIVATION_RADIUS;
     for (int32_t dx = -R; dx <= R; ++dx) {
         for (int32_t dy = -1; dy <= 1; ++dy) {
             for (int32_t dz = -R; dz <= R; ++dz) {
-                const int64_t cid = ChunkId::make(static_cast<int8_t>(dy),
-                                                   dx, dz).packed;
+                const int64_t cid = ChunkId::make(dy, dx, dz).packed;
                 CAPTURE(dx, dy, dz);
                 REQUIRE(snapshots.count(cid) == 1);
             }
@@ -109,17 +109,17 @@ TEST_CASE("GameEngine - moving player sends snapshots for newly entered chunks",
     });
 
     // Spawn grounded at the origin chunk (cx=0, cy=0, cz=0).
-    setupGroundedPlayer(engine, gwId, pid, 0.0f, 8.0f, 0.0f);
+    setupGroundedPlayer(engine, gwId, pid, 0, 8 * SUBVOXEL_SIZE, 0);
     engine.tick();  // initial snapshots for cx ∈ [-2, 2]
 
     const std::set<int64_t> initialSnapshots = snapshots;
     REQUIRE(!initialSnapshots.empty());
 
     // ── Move the player 5 chunks forward in X ─────────────────────────────
-    // Target chunk: cx=5 (world x = 5×64 = 320 voxels), outside ACTIVATION_RADIUS=2.
+    // Target chunk: cx=5 (world x = 5×32 = 160 voxels), outside ACTIVATION_RADIUS=2.
     // Teleport directly (test setup bypass) — this test covers chunk-snapshot
     // dispatch logic, not the input system.
-    engine.teleportPlayer(pid, 5.0f * static_cast<float>(CHUNK_SIZE_X), 8.0f, 0.0f);
+    engine.teleportPlayer(pid, 5 * CHUNK_SIZE_X * SUBVOXEL_SIZE, 8 * SUBVOXEL_SIZE, 0);
 
     snapshots.clear();
     engine.tick();  // player jumps to x≈320 (chunk cx=5); new chunks emitted
@@ -134,8 +134,7 @@ TEST_CASE("GameEngine - moving player sends snapshots for newly entered chunks",
     for (int32_t cx = 5 - R; cx <= 5 + R; ++cx) {
         for (int32_t dy = -1; dy <= 1; ++dy) {
             for (int32_t dz = -R; dz <= R; ++dz) {
-                const int64_t cid = ChunkId::make(static_cast<int8_t>(dy),
-                                                   cx, dz).packed;
+                const int64_t cid = ChunkId::make(dy, cx, dz).packed;
                 CAPTURE(cx, dy, dz);
                 REQUIRE(snapshots.count(cid) == 1);
             }
@@ -159,7 +158,7 @@ TEST_CASE("GameEngine - micro-movement within same chunk sends no new snapshots"
         collectSnapshots(data, size, snapshots);
     });
 
-    setupGroundedPlayer(engine, gwId, pid, 0.0f, 8.0f, 0.0f);
+    setupGroundedPlayer(engine, gwId, pid, 0, 8 * SUBVOXEL_SIZE, 0);
     engine.tick();  // load all chunks around origin
 
     snapshots.clear();  // discard initial batch
@@ -187,7 +186,7 @@ TEST_CASE("GameEngine - JOIN message spawns entity with correct EntityType", "[c
         });
 
         engine.registerGateway(gwId);
-        engine.queuePendingPlayer(gwId, pid, 0.0f, 8.0f, 0.0f);
+        engine.queuePendingPlayer(gwId, pid, 0, 8 * SUBVOXEL_SIZE, 0);
 
         // Before JOIN, no entity exists — INPUT message must be silently ignored.
         const auto zeroInput = makeInput(0);

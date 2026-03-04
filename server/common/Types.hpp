@@ -15,7 +15,7 @@ struct ChunkId {
     int64_t packed{0};
 
     /** @brief Construct a ChunkId from its three signed components. */
-    static constexpr ChunkId make(int8_t chunkY, int32_t chunkX, int32_t chunkZ) noexcept {
+    static constexpr ChunkId make(int32_t chunkY, int32_t chunkX, int32_t chunkZ) noexcept {
         ChunkId id;
         id.packed = (static_cast<int64_t>(chunkY  & 0x3F)        << 58)
                   | (static_cast<int64_t>(chunkX  & 0x1FFFFFFF)  << 29)
@@ -99,7 +99,7 @@ inline constexpr int CHUNK_SHIFT_Z = 13;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZ
  */
 inline constexpr ChunkId chunkIdOf(int32_t worldX, int32_t worldY, int32_t worldZ) noexcept {
     return ChunkId::make(
-        static_cast<int8_t>(worldY >> CHUNK_SHIFT_Y),
+        worldY >> CHUNK_SHIFT_Y,
         worldX >> CHUNK_SHIFT_X,
         worldZ >> CHUNK_SHIFT_Z);
 }
@@ -112,7 +112,7 @@ inline constexpr ChunkId chunkIdOf(int32_t worldX, int32_t worldY, int32_t world
  */
 inline constexpr ChunkId chunkIdOfVoxel(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
     return ChunkId::make(
-        static_cast<int8_t>(voxelY >> (CHUNK_SHIFT_Y - SUBVOXEL_BITS)),
+        voxelY >> (CHUNK_SHIFT_Y - SUBVOXEL_BITS),
         voxelX >> (CHUNK_SHIFT_X - SUBVOXEL_BITS),
         voxelZ >> (CHUNK_SHIFT_Z - SUBVOXEL_BITS));
 }

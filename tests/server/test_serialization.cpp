@@ -208,7 +208,7 @@ TEST_CASE("VoxelIndex pack/unpack roundtrip", "[types]") {
 }
 
 TEST_CASE("ChunkId packing roundtrip", "[types]") {
-    for (int8_t y : {int8_t(-32), int8_t(-1), int8_t(0), int8_t(1), int8_t(31)}) {
+    for (int32_t y : {-32, -1, 0, 1, 31}) {
         for (int32_t x : {-268435456, -1, 0, 1, 268435455}) {
             for (int32_t z : {-268435456, -1, 0, 1, 268435455}) {
                 const ChunkId cid = ChunkId::make(y, x, z);

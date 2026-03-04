@@ -65,7 +65,7 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
 // ── Player management ─────────────────────────────────────────────────────
 
 void GameEngine::queuePendingPlayer(GatewayId gwId, PlayerId playerId,
-                                     float sx, float sy, float sz)
+                                     int32_t sx, int32_t sy, int32_t sz)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     pendingPlayers[playerId] = {gwId, sx, sy, sz};
@@ -74,32 +74,25 @@ void GameEngine::queuePendingPlayer(GatewayId gwId, PlayerId playerId,
 }
 
 void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
-                            float sx, float sy, float sz, EntityType type)
+                            int32_t sx, int32_t sy, int32_t sz, EntityType type)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     const auto fit = playerFactories.find(type);
     if (fit == playerFactories.end()) return;
     const entt::entity ent = registry.create();
-    fit->second(registry, ent,
-        static_cast<int32_t>(sx * SUBVOXEL_SIZE),
-        static_cast<int32_t>(sy * SUBVOXEL_SIZE),
-        static_cast<int32_t>(sz * SUBVOXEL_SIZE),
-        playerId);
+    fit->second(registry, ent, sx, sy, sz, playerId);
     playerEntities[playerId] = ent;
     if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
 }
 
-void GameEngine::teleportPlayer(PlayerId playerId, float sx, float sy, float sz) {
+void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return;
     const auto& dyn = registry.get<DynamicPositionComponent>(it->second);
     DynamicPositionComponent::modify(registry, it->second,
-        static_cast<int32_t>(sx * SUBVOXEL_SIZE),
-        static_cast<int32_t>(sy * SUBVOXEL_SIZE),
-        static_cast<int32_t>(sz * SUBVOXEL_SIZE),
-        dyn.vx, dyn.vy, dyn.vz, dyn.grounded, /*dirty=*/true);
+        sx, sy, sz, dyn.vx, dyn.vy, dyn.vz, dyn.grounded, /*dirty=*/true);
 }
 
 void GameEngine::removePlayer(PlayerId playerId) {
@@ -113,17 +106,16 @@ void GameEngine::removePlayer(PlayerId playerId) {
         const auto& cm = registry.get<ChunkMemberComponent>(ent);
         if (cm.chunkAssigned) {
             const int32_t ocx = cm.currentChunkId.x();
-            const int8_t  ocy = cm.currentChunkId.y();
+            const int32_t ocy = cm.currentChunkId.y();
             const int32_t ocz = cm.currentChunkId.z();
             if (auto cit = chunks.find(cm.currentChunkId); cit != chunks.end()) {
                 cit->second->entities.erase(ent);
                 cit->second->presentPlayers.erase(playerId);
             }
             for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-            for (int8_t  dy = -1; dy <= 1; ++dy)
+            for (int32_t dy = -1; dy <= 1; ++dy)
             for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-                const ChunkId cid = ChunkId::make(
-                    static_cast<int8_t>(ocy + dy), ocx + dx, ocz + dz);
+                const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
                 if (auto cit = chunks.find(cid); cit != chunks.end())
                     cit->second->watchingPlayers.erase(playerId);
             }
@@ -268,7 +260,7 @@ void GameEngine::checkEntitiesChunks() {
         dyn.moved = false;
 
         const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
-        const int8_t  cy = static_cast<int8_t>(dyn.y >> CHUNK_SHIFT_Y);
+        const int32_t cy = dyn.y >> CHUNK_SHIFT_Y;
         const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
         const ChunkId newChunk = ChunkId::make(cy, cx, cz);
 
@@ -280,7 +272,7 @@ void GameEngine::checkEntitiesChunks() {
         // Remove from old chunk lists
         if (cm.chunkAssigned) {
             const int32_t ocx = cm.currentChunkId.x();
-            const int8_t  ocy = cm.currentChunkId.y();
+            const int32_t ocy = cm.currentChunkId.y();
             const int32_t ocz = cm.currentChunkId.z();
 
             if (auto it = chunks.find(cm.currentChunkId); it != chunks.end()) {
@@ -289,10 +281,9 @@ void GameEngine::checkEntitiesChunks() {
             }
             if (isPlayer) {
                 for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-                for (int8_t  dy = -1; dy <= 1; ++dy)
+                for (int32_t dy = -1; dy <= 1; ++dy)
                 for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-                    const ChunkId cid = ChunkId::make(
-                        static_cast<int8_t>(ocy + dy), ocx + dx, ocz + dz);
+                    const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
                     if (auto it = chunks.find(cid); it != chunks.end())
                         it->second->watchingPlayers.erase(pid);
                 }
@@ -305,10 +296,9 @@ void GameEngine::checkEntitiesChunks() {
         if (isPlayer) {
             nc.presentPlayers.insert(pid);
             for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-            for (int8_t  dy = -1; dy <= 1; ++dy)
+            for (int32_t dy = -1; dy <= 1; ++dy)
             for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-                const ChunkId cid = ChunkId::make(
-                    static_cast<int8_t>(cy + dy), cx + dx, cz + dz);
+                const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
                 activateChunk(cid).watchingPlayers.insert(pid);
             }
             // Tell the gateway which entity is "self" for this player
@@ -341,14 +331,13 @@ void GameEngine::checkEntitiesChunks() {
 
             const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
             const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
-            const int8_t  cy = static_cast<int8_t>(dyn.y >> CHUNK_SHIFT_Y);
+            const int32_t cy = dyn.y >> CHUNK_SHIFT_Y;
             const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
 
             for (int32_t dx = -WATCH_RADIUS; dx <= WATCH_RADIUS; ++dx) {
-                for (int8_t dy = -1; dy <= 1; ++dy) {
+                for (int32_t dy = -1; dy <= 1; ++dy) {
                     for (int32_t dz = -WATCH_RADIUS; dz <= WATCH_RADIUS; ++dz) {
-                        const ChunkId cid = ChunkId::make(
-                            static_cast<int8_t>(cy + dy), cx + dx, cz + dz);
+                        const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
                         gwInfo.watchedChunks.insert(cid);
 
                         // Ensure activation-radius chunks exist; send snapshot on first sight

@@ -121,7 +121,7 @@ TEST_CASE("stepPhysics - GHOST player at rest produces no tick-delta entity upda
 {
     GameEngine engine;
     engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0.0f, 8.0f, 0.0f);  // GHOST_PLAYER by default
+    engine.addPlayer(1, 1, 0, 8 * SUBVOXEL_SIZE, 0);  // GHOST_PLAYER by default
 
     std::vector<ParsedEntity> states;
     engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
@@ -145,7 +145,7 @@ TEST_CASE("stepPhysics - GHOST player moves forward one tick (yaw=0)",
 {
     GameEngine engine;
     engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0.0f, 8.0f, 0.0f);
+    engine.addPlayer(1, 1, 0, 8 * SUBVOXEL_SIZE, 0);
 
     std::vector<ParsedEntity> states;
     engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
@@ -184,7 +184,7 @@ TEST_CASE("stepPhysics - GHOST player moves diagonally (yaw=0 FORWARD+RIGHT)",
 {
     GameEngine engine;
     engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0.0f, 8.0f, 0.0f);
+    engine.addPlayer(1, 1, 0, 8 * SUBVOXEL_SIZE, 0);
 
     std::vector<ParsedEntity> states;
     engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
@@ -229,7 +229,7 @@ TEST_CASE("stepPhysics - FULL player falls silently (no delta while airborne, no
     GameEngine engine;
     engine.registerGateway(1);
     // Spawn high above any terrain; cy ≈ 6 (y=100 voxels → 100/16=6.25)
-    engine.addPlayer(1, 1, 0.0f, 100.0f, 0.0f, EntityType::PLAYER);
+    engine.addPlayer(1, 1, 0, 100 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
 
     std::vector<ParsedEntity> states;
     engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
@@ -253,7 +253,7 @@ TEST_CASE("stepPhysics - FULL player eventually lands and becomes grounded",
 {
     GameEngine engine;
     engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0.0f, 100.0f, 0.0f, EntityType::PLAYER);
+    engine.addPlayer(1, 1, 0, 100 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
 
     std::vector<ParsedEntity> states;
     engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
@@ -292,7 +292,7 @@ TEST_CASE("stepPhysics - FULL player jump impulse when grounded",
     engine.registerGateway(1);
     // Spawn above the terrain surface (terrain surface ≤ 30 voxels globally in cy=0).
     // y=50 ensures the player is in free air and will land cleanly on terrain.
-    engine.addPlayer(1, 1, 0.0f, 50.0f, 0.0f, EntityType::PLAYER);
+    engine.addPlayer(1, 1, 0, 50 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
 
     std::vector<ParsedEntity> states;
     engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
