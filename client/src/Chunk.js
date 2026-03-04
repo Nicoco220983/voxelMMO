@@ -1,8 +1,7 @@
 // @ts-check
 import * as THREE from 'three'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, ChunkMessageType } from './types.js'
 import { lz4Decompress, BufReader } from './utils.js'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, DeltaType } from './types.js'
-import { BaseEntity } from './entities/BaseEntity.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
@@ -55,6 +54,7 @@ function voxelHash(wx, wy, wz) {
 /**
  * @class Chunk
  * @description Client-side state for one chunk: voxel data and Three.js mesh.
+ * Entity management is handled by EntityRegistry; Chunk only manages voxels.
  */
 export class Chunk {
   /** @type {ChunkIdPacked} */
@@ -69,11 +69,8 @@ export class Chunk {
   /** @type {boolean} True when voxels changed and mesh needs rebuild. */
   dirty = false
 
-  /** @type {Map<number, BaseEntity>} GlobalEntityId → entity, populated from server messages. */
-  #entities = new Map()
-
-  /** @returns {Map<number, BaseEntity>} */
-  get entities() { return this.#entities }
+  /** @returns {Uint8Array} */
+  get voxels() { return this.#voxels }
 
   /** @param {ChunkIdPacked} chunkId */
   constructor(chunkId) {
@@ -82,97 +79,22 @@ export class Chunk {
   }
 
   /**
-   * Parse and apply a SNAPSHOT_COMPRESSED message.
-   * @param {DataView} view         View over the full raw message buffer.
-   * @param {number}   messageTick  Server tick embedded in the message header.
+   * Set all voxels at once (from decompressed snapshot).
+   * @param {Uint8Array} voxelData
    */
-  applySnapshot(view, messageTick) {
-    const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
-    let off = 13  // skip type(1) + chunkId(8) + tick(4)
-
-    const flags = view.getUint8(off++)
-    const cvs   = view.getInt32(off, true); off += 4
-
-    this.#voxels.set(lz4Decompress(raw.subarray(off, off + cvs), CHUNK_VOXEL_COUNT))
-    off += cvs
-
-    // Entity section
-    const ess = view.getInt32(off, true); off += 4
-    this.#entities.clear()
-    if (ess >= 4) {
-      let entityData
-      if (flags & 0x01) {
-        // Compressed: int32 entity_uncompressed_size + LZ4(entity_data)
-        const uncompSize = view.getInt32(off, true)
-        entityData = lz4Decompress(raw.subarray(off + 4, off + ess), uncompSize)
-      } else {
-        entityData = raw.subarray(off, off + ess)
-      }
-      const entView = new DataView(entityData.buffer, entityData.byteOffset, entityData.byteLength)
-      const reader  = new BufReader(entView)
-      const count   = reader.readInt32()
-      for (let i = 0; i < count; i++) {
-        const entity = BaseEntity.fromRecord(reader, messageTick)
-        this.#entities.set(entity.id, entity)  // entity.id is now GlobalEntityId (uint32)
-      }
-    }
-    off += ess
-
-    this.dirty = true
+  setVoxels(voxelData) {
+    this.#voxels.set(voxelData)
   }
 
   /**
-   * Parse and apply a delta message (snapshot delta or tick delta).
-   * @param {DataView} view         View over the full raw message buffer.
-   * @param {boolean}  compressed   True when the payload is LZ4-compressed.
-   * @param {number}   messageTick  Server tick embedded in the message header.
+   * Set a single voxel.
+   * @param {number} x Local x ∈ [0, CHUNK_SIZE_X)
+   * @param {number} y Local y ∈ [0, CHUNK_SIZE_Y)
+   * @param {number} z Local z ∈ [0, CHUNK_SIZE_Z)
+   * @param {number} vtype VoxelType
    */
-  applyVoxelDelta(view, compressed = false, messageTick = 0) {
-    const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
-    let payload, pOff = 0
-
-    if (compressed) {
-      const uncompSize = view.getInt32(13, true)  // bytes 13-16 (after 13-byte header)
-      payload = lz4Decompress(raw.subarray(17), uncompSize)
-    } else {
-      payload = raw
-      pOff    = 13  // skip 13-byte header
-    }
-
-    const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
-    const count = pView.getInt32(pOff, true); pOff += 4
-    for (let i = 0; i < count; i++) {
-      const vidPacked = pView.getUint16(pOff, true); pOff += 2
-      const vtype     = pView.getUint8(pOff++)
-      const vy = (vidPacked >> 10) & 0x1f
-      const vx = (vidPacked >>  5) & 0x1f
-      const vz =  vidPacked        & 0x1f
-      this.#voxels[vy * CHUNK_SIZE_X * CHUNK_SIZE_Z + vx * CHUNK_SIZE_Z + vz] = vtype
-    }
-
-    // Entity section (present in real server deltas; guard against test-only messages)
-    if (pOff + 4 <= pView.byteLength) {
-      const reader      = new BufReader(pView, pOff)
-      const entityCount = reader.readInt32()
-      for (let i = 0; i < entityCount; i++) {
-        const deltaType  = reader.readUint8()
-        const entityId   = reader.readUint32()   // GlobalEntityId (uint32, was uint16)
-        const entityType = reader.readUint8()
-        if (deltaType === DeltaType.DELETE) {
-          this.#entities.delete(entityId)
-        } else {
-          // NEW_ENTITY or UPDATE_ENTITY — upsert then apply component delta
-          let entity = this.#entities.get(entityId)
-          if (!entity) {
-            entity = new BaseEntity(entityId, entityType)
-            this.#entities.set(entityId, entity)
-          }
-          entity.applyDelta(reader, messageTick)
-        }
-      }
-    }
-
-    this.dirty = true
+  setVoxel(x, y, z, vtype) {
+    this.#voxels[y * CHUNK_SIZE_X * CHUNK_SIZE_Z + x * CHUNK_SIZE_Z + z] = vtype
   }
 
   /**
@@ -273,5 +195,65 @@ export class Chunk {
       this.#mesh.geometry.dispose()
       this.#mesh = null
     }
+  }
+
+  // ── Legacy API for tests and backward compatibility ────────────────────────
+
+  /**
+   * Parse and apply a SNAPSHOT_COMPRESSED message (voxels only).
+   * Note: entity parsing is now handled by EntityRegistry.
+   * @param {DataView} view         View over the full raw message buffer.
+   * @param {number}   messageTick  Server tick embedded in the message header.
+   */
+  applySnapshot(view, messageTick) {
+    const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+    let off = 13  // skip type(1) + chunkId(8) + tick(4)
+
+    const flags = view.getUint8(off++)
+    const cvs   = view.getInt32(off, true); off += 4
+
+    this.#voxels.set(lz4Decompress(raw.subarray(off, off + cvs), CHUNK_VOXEL_COUNT))
+    off += cvs
+
+    // Skip entity section (handled by EntityRegistry)
+    const ess = view.getInt32(off, true)
+    // off += ess + 4  // Not needed, just ignore
+
+    this.dirty = true
+  }
+
+  /**
+   * Parse and apply a delta message (voxels only).
+   * Note: entity parsing is now handled by EntityRegistry.
+   * @param {DataView} view         View over the full raw message buffer.
+   * @param {boolean}  compressed   True when the payload is LZ4-compressed.
+   * @param {number}   messageTick  Server tick embedded in the message header.
+   */
+  applyVoxelDelta(view, compressed = false, messageTick = 0) {
+    const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+    let payload, pOff = 0
+
+    if (compressed) {
+      const uncompSize = view.getInt32(13, true)
+      payload = lz4Decompress(raw.subarray(17), uncompSize)
+    } else {
+      payload = raw
+      pOff    = 13
+    }
+
+    const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+    const count = pView.getInt32(pOff, true); pOff += 4
+    for (let i = 0; i < count; i++) {
+      const vidPacked = pView.getUint16(pOff, true); pOff += 2
+      const vtype     = pView.getUint8(pOff++)
+      const vy = (vidPacked >> 10) & 0x1f
+      const vx = (vidPacked >>  5) & 0x1f
+      const vz =  vidPacked        & 0x1f
+      this.#voxels[vy * CHUNK_SIZE_X * CHUNK_SIZE_Z + vx * CHUNK_SIZE_Z + vz] = vtype
+    }
+
+    // Entity section is skipped (handled by EntityRegistry)
+
+    this.dirty = true
   }
 }

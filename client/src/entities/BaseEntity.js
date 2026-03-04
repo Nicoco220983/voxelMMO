@@ -3,6 +3,7 @@ import { DynamicPositionComponent } from '../components/DynamicPositionComponent
 import { POSITION_BIT } from '../types.js'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
+/** @typedef {import('../types.js').ChunkIdPacked} ChunkIdPacked */
 
 /**
  * @class BaseEntity
@@ -23,6 +24,9 @@ export class BaseEntity {
 
   /** @type {number} EntityType (uint8) */
   type
+
+  /** @type {ChunkIdPacked|undefined} Current chunk ID (updated when entity moves) */
+  chunkId
 
   motion = new DynamicPositionComponent()
 

@@ -105,12 +105,13 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 **client/src/**
 - `types.js` — mirrors server enums + constants (ChunkMessageType, EntityType, SUBVOXEL_SIZE …)
 - `utils.js` — `lz4Decompress`, `BufReader` (sequential binary read)
-- `GameClient.js` — WebSocket; parses 13-byte header; dispatches to Chunk instances
-- `Chunk.js` — per-chunk voxel state, LZ4 decompression, Three.js mesh rebuild
+- `EntityRegistry.js` — **NEW** global entity registry; entities keyed by GlobalEntityId, track current chunkId; handles snapshot/delta entity parsing
+- `GameClient.js` — WebSocket; parses 13-byte header; owns `EntityRegistry` + chunk map; `selfEntity` finds by globalId (not stored chunkId)
+- `Chunk.js` — per-chunk voxel state only (entities moved to EntityRegistry); LZ4 decompression, Three.js mesh rebuild
 - `components/DynamicPositionComponent.js` — mirrors server; `predictAt(tick)` for client-side interpolation
-- `entities/BaseEntity.js`, `PlayerEntity.js` — `fromRecord()`, `applyDelta()`
+- `entities/BaseEntity.js`, `PlayerEntity.js` — now includes `chunkId` property to track current chunk
 - `NetworkProtocol.js` — serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader)
-- `main.js` — Three.js scene, render loop, HUD
+- `main.js` — Three.js scene, render loop, HUD; entity meshes keyed by GlobalEntityId only (not chunkId-entityId composite)
 
 **docs/**
 - `wire-format.md` — chunk message binary layout (keep in sync with Chunk.cpp)

@@ -230,25 +230,25 @@ function animate() {
   // ── Remote entity rendering ───────────────────────────────────────────
   // Each entity is predicted forward from its last server state using
   // the same kinematic formula as the server (position + velocity*n - gravity).
-  // The local player's own entity will also appear here (no self-ID yet).
-  /** @type {Set<string>} */
-  const seenKeys = new Set()
-  for (const { chunkId, entity } of client.allEntities()) {
-    const key = chunkId.toString() + '-' + entity.id
-    seenKeys.add(key)
-    let mesh = entityMeshes.get(key)
+  // The local player's own entity is also rendered (orange box).
+  /** @type {Set<number>} */
+  const seenIds = new Set()
+  for (const { entity } of client.allEntities()) {
+    const id = entity.id
+    seenIds.add(id)
+    let mesh = entityMeshes.get(id)
     if (!mesh) {
       mesh = new THREE.Mesh(ENTITY_GEO, ENTITY_MAT)
       scene.add(mesh)
-      entityMeshes.set(key, mesh)
+      entityMeshes.set(id, mesh)
     }
     const pos = entity.predictAt(currentTick)
     mesh.position.set(pos.x / SUBVOXEL_SIZE, pos.y / SUBVOXEL_SIZE, pos.z / SUBVOXEL_SIZE)
   }
-  for (const [key, mesh] of entityMeshes) {
-    if (!seenKeys.has(key)) {
+  for (const [id, mesh] of entityMeshes) {
+    if (!seenIds.has(id)) {
       scene.remove(mesh)
-      entityMeshes.delete(key)
+      entityMeshes.delete(id)
     }
   }
 

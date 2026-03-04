@@ -3,8 +3,9 @@ import * as THREE from 'three'
 import { ChunkMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
 import { NetworkProtocol } from './NetworkProtocol.js'
 import { Chunk } from './Chunk.js'
-
-/** @typedef {import('./entities/BaseEntity.js').BaseEntity} BaseEntity */
+import { EntityRegistry } from './EntityRegistry.js'
+import { lz4Decompress, BufReader } from './utils.js'
+import { BaseEntity } from './entities/BaseEntity.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
@@ -12,14 +13,6 @@ import { Chunk } from './Chunk.js'
 const MSG_TYPE_NAMES = Object.fromEntries(
   Object.entries(ChunkMessageType).map(([k, v]) => [v, k])
 )
-
-/**
- * Callback invoked for every parsed chunk-state message.
- * @callback ChunkMessageHandler
- * @param {number}        type     ChunkMessageType value.
- * @param {bigint}        chunkId  Packed ChunkId bigint.
- * @param {DataView}      view     View over the full raw buffer.
- */
 
 /**
  * @class GameClient
@@ -43,11 +36,11 @@ export class GameClient {
   /** @type {Map<ChunkIdPacked, Chunk>} */
   #chunks = new Map()
 
+  /** @type {EntityRegistry} */
+  #entityRegistry = new EntityRegistry()
+
   /** @type {number} Server tick from the most-recently received message. */
   #latestServerTick = 0
-
-  /** @type {bigint|null} ChunkId of the chunk containing the local player entity. */
-  #selfChunkId = null
 
   /** @type {number|null} GlobalEntityId of the local player entity. */
   #selfEntityId = null
@@ -57,12 +50,12 @@ export class GameClient {
 
   /**
    * Returns the local player's own entity as tracked by the server, or null until
-   * a SELF_ENTITY message has been received and the entity's chunk snapshot is loaded.
+   * the SELF_ENTITY message has been received.
    * @returns {BaseEntity|null}
    */
   get selfEntity() {
-    if (this.#selfChunkId === null || this.#selfEntityId === null) return null
-    return this.#chunks.get(this.#selfChunkId)?.entities.get(this.#selfEntityId) ?? null
+    if (this.#selfEntityId === null) return null
+    return this.#entityRegistry.get(this.#selfEntityId) ?? null
   }
 
   /**
@@ -131,12 +124,12 @@ export class GameClient {
   /**
    * Iterate all entities across all known chunks.
    * Each entry is { chunkId, entity } — use the composite key for stable mesh tracking.
-   * @returns {IterableIterator<{chunkId: bigint, entity: BaseEntity}>}
+   * @returns {IterableIterator<{chunkId: ChunkIdPacked, entity: BaseEntity}>}
    */
   * allEntities() {
-    for (const [chunkId, chunk] of this.#chunks) {
-      for (const entity of chunk.entities.values()) {
-        yield { chunkId, entity }
+    for (const entity of this.#entityRegistry.all()) {
+      if (entity.chunkId !== undefined) {
+        yield { chunkId: entity.chunkId, entity }
       }
     }
   }
@@ -158,6 +151,7 @@ export class GameClient {
       chunk.dispose(this.#scene)
     }
     this.#chunks.clear()
+    this.#entityRegistry.clear()
   }
 
   /**
@@ -175,6 +169,7 @@ export class GameClient {
       if (Math.abs(cx - pcx) > maxRadius || Math.abs(cz - pcz) > maxRadius) {
         chunk.dispose(this.#scene)
         this.#chunks.delete(chunkId)
+        this.#entityRegistry.removeChunk(chunkId)
       }
     }
   }
@@ -222,22 +217,89 @@ export class GameClient {
 
     switch (msgType) {
       case ChunkMessageType.SNAPSHOT_COMPRESSED:
-        this.#getOrCreateChunk(chunkId).applySnapshot(view, messageTick)
+        this.#applySnapshot(view, chunkId, messageTick)
         break
       case ChunkMessageType.SNAPSHOT_DELTA:
       case ChunkMessageType.TICK_DELTA:
-        this.#chunks.get(chunkId)?.applyVoxelDelta(view, false, messageTick)
+        this.#applyVoxelDelta(view, false, chunkId, messageTick)
         break
       case ChunkMessageType.SNAPSHOT_DELTA_COMPRESSED:
       case ChunkMessageType.TICK_DELTA_COMPRESSED:
-        this.#chunks.get(chunkId)?.applyVoxelDelta(view, true, messageTick)
+        this.#applyVoxelDelta(view, true, chunkId, messageTick)
         break
       case ChunkMessageType.SELF_ENTITY:
         if (view.byteLength >= 17) {
-          this.#selfChunkId  = chunkId
           this.#selfEntityId = view.getUint32(13, true)
         }
         break
     }
+  }
+
+  /**
+   * Apply a SNAPSHOT_COMPRESSED message.
+   * @param {DataView} view
+   * @param {ChunkIdPacked} chunkId
+   * @param {number} messageTick
+   */
+  #applySnapshot(view, chunkId, messageTick) {
+    const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+    let off = 13  // skip type(1) + chunkId(8) + tick(4)
+
+    const flags = view.getUint8(off++)
+    const cvs   = view.getInt32(off, true); off += 4
+
+    // Get or create chunk and set voxels
+    const chunk = this.#getOrCreateChunk(chunkId)
+    chunk.setVoxels(lz4Decompress(raw.subarray(off, off + cvs), chunk.voxels.length))
+    off += cvs
+
+    // Entity section
+    const ess = view.getInt32(off, true); off += 4
+    this.#entityRegistry.applySnapshotEntities(chunkId, view, off, ess, messageTick)
+    off += ess
+
+    chunk.dirty = true
+  }
+
+  /**
+   * Apply a delta message (snapshot delta or tick delta).
+   * @param {DataView} view
+   * @param {boolean} compressed
+   * @param {ChunkIdPacked} chunkId
+   * @param {number} messageTick
+   */
+  #applyVoxelDelta(view, compressed, chunkId, messageTick) {
+    const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+    let payload, pOff = 0
+
+    if (compressed) {
+      const uncompSize = view.getInt32(13, true)
+      payload = lz4Decompress(raw.subarray(17), uncompSize)
+    } else {
+      payload = raw
+      pOff    = 13
+    }
+
+    const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
+    const count = pView.getInt32(pOff, true); pOff += 4
+
+    // Apply voxel deltas
+    const chunk = this.#getOrCreateChunk(chunkId)
+    for (let i = 0; i < count; i++) {
+      const vidPacked = pView.getUint16(pOff, true); pOff += 2
+      const vtype     = pView.getUint8(pOff++)
+      const vy = (vidPacked >> 10) & 0x1f
+      const vx = (vidPacked >>  5) & 0x1f
+      const vz =  vidPacked        & 0x1f
+      chunk.setVoxel(vx, vy, vz, vtype)
+    }
+
+    // Entity section (present in real server deltas; guard against test-only messages)
+    if (pOff + 4 <= pView.byteLength) {
+      const reader = new BufReader(pView, pOff)
+      this.#entityRegistry.applyDeltaEntities(chunkId, reader, messageTick)
+    }
+
+    chunk.dirty = true
   }
 }
