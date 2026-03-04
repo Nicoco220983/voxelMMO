@@ -112,7 +112,7 @@ private:
     bool buildDeltaImpl(
         entt::registry& reg,
         uint32_t tickCount,
-        const std::vector<std::pair<VoxelId, VoxelType>>& voxelDeltas,
+        const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
         uint8_t DirtyComponent::* flagsField,
         ChunkMessageType rawType,
         ChunkMessageType compressedType);

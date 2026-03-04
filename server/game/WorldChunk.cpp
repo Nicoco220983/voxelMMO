@@ -12,12 +12,20 @@ void WorldChunk::generate(int32_t cx, int8_t cy, int32_t cz) {
     WorldGenerator{}.generate(voxels, cx, cy, cz);
 }
 
-void WorldChunk::modifyVoxels(const std::vector<std::pair<VoxelId, VoxelType>>& mods) {
-    for (const auto& [vid, vtype] : mods) {
-        voxels[vid.packed] = vtype;
-        // TODO: check that vid is not already present
-        voxelsSnapshotDeltas.emplace_back(vid, vtype);
-        voxelsTickDeltas.emplace_back(vid, vtype);
+void WorldChunk::setVoxel(uint32_t x, uint32_t y, uint32_t z, VoxelType type) {
+    const VoxelIndex idx = packVoxelIndex(x, y, z);
+    voxels[idx] = type;
+    // TODO: check that idx is not already present in deltas
+    voxelsSnapshotDeltas.emplace_back(idx, type);
+    voxelsTickDeltas.emplace_back(idx, type);
+}
+
+void WorldChunk::modifyVoxels(const std::vector<std::pair<VoxelIndex, VoxelType>>& mods) {
+    for (const auto& [idx, vtype] : mods) {
+        voxels[idx] = vtype;
+        // TODO: check that idx is not already present
+        voxelsSnapshotDeltas.emplace_back(idx, vtype);
+        voxelsTickDeltas.emplace_back(idx, vtype);
     }
 }
 
@@ -32,16 +40,16 @@ size_t WorldChunk::serializeSnapshot(uint8_t* buf) const {
 }
 
 static size_t serializeDeltaImpl(
-    const std::vector<std::pair<VoxelId, VoxelType>>& deltas,
+    const std::vector<std::pair<VoxelIndex, VoxelType>>& deltas,
     uint8_t* buf)
 {
     size_t off = 0;
     const int32_t count = static_cast<int32_t>(deltas.size());
     std::memcpy(buf + off, &count, sizeof(int32_t));
     off += sizeof(int32_t);
-    for (const auto& [vid, vtype] : deltas) {
-        std::memcpy(buf + off, &vid.packed, sizeof(uint16_t));
-        off += sizeof(uint16_t);
+    for (const auto& [idx, vtype] : deltas) {
+        std::memcpy(buf + off, &idx, sizeof(VoxelIndex));
+        off += sizeof(VoxelIndex);
         buf[off++] = vtype;
     }
     return off;

@@ -30,7 +30,7 @@ Odd = LZ4-compressed counterpart of the preceding even value.
 [13-byte header]
 uint8   flags           (bit 0 = entity section is LZ4-compressed)
 int32   compressed_voxel_size
-bytes   LZ4(voxels[65536])
+bytes   LZ4(voxels[32768])
 int32   entity_section_stored_size
   if flags & 1:
     int32   entity_uncompressed_size
@@ -57,7 +57,7 @@ ComponentFlags uint8    (bitmask of present components)
     bytes   LZ4(payload)
   else payload:
     int32   voxel_count
-    repeat: VoxelId uint16 · VoxelType uint8
+    repeat: VoxelIndex uint16 (uint5 y | uint5 x | uint5 z) · VoxelType uint8
     int32   entity_count
     repeat: entity delta record
 ```

@@ -13,20 +13,21 @@ namespace voxelmmo {
  *
  * The serialisation wire format for the voxel section is:
  *   Snapshot:      int32 count, [VoxelType * CHUNK_VOXEL_COUNT]
- *   Delta:         int32 count, [(VoxelId uint16, VoxelType) * count]
+ *   Delta:         int32 count, [(VoxelIndex uint16, VoxelType) * count]
+ *                  VoxelIndex = packVoxelIndex(x, y, z)
  */
 class WorldChunk {
 public:
 
     /** @brief All voxels in row-major (y, x, z) order. Size = CHUNK_VOXEL_COUNT.
-     *         VoxelId::packed is a direct index into this array. */
+     *         Use packVoxelIndex(x, y, z) to compute the index. */
     std::vector<VoxelType> voxels;
 
     /** @brief Accumulated voxel changes since the last snapshot was sent. */
-    std::vector<std::pair<VoxelId, VoxelType>> voxelsSnapshotDeltas;
+    std::vector<std::pair<VoxelIndex, VoxelType>> voxelsSnapshotDeltas;
 
     /** @brief Voxel changes in the current tick only. */
-    std::vector<std::pair<VoxelId, VoxelType>> voxelsTickDeltas;
+    std::vector<std::pair<VoxelIndex, VoxelType>> voxelsTickDeltas;
 
     WorldChunk();
 
@@ -38,11 +39,19 @@ public:
      */
     void generate(int32_t cx, int8_t cy, int32_t cz);
 
+    /** @brief Get voxel type at local chunk coordinates. */
+    VoxelType getVoxel(uint32_t x, uint32_t y, uint32_t z) const {
+        return voxels[packVoxelIndex(x, y, z)];
+    }
+
+    /** @brief Set voxel type at local chunk coordinates and record as delta. */
+    void setVoxel(uint32_t x, uint32_t y, uint32_t z, VoxelType type);
+
     /**
-     * @brief Apply a batch of voxel modifications and record them as deltas.
-     * @param mods  List of (VoxelId, VoxelType) pairs.
+     * @brief Apply a batch of voxel modifications (via packed indices) and record as deltas.
+     * @param mods  List of (VoxelIndex, VoxelType) pairs.
      */
-    void modifyVoxels(const std::vector<std::pair<VoxelId, VoxelType>>& mods);
+    void modifyVoxels(const std::vector<std::pair<VoxelIndex, VoxelType>>& mods);
 
     /**
      * @brief Write the full voxel snapshot into buf.

@@ -141,7 +141,7 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
 bool Chunk::buildDeltaImpl(
     entt::registry& reg,
     uint32_t tickCount,
-    const std::vector<std::pair<VoxelId, VoxelType>>& voxelDeltas,
+    const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
     uint8_t DirtyComponent::* flagsField,
     ChunkMessageType rawType,
     ChunkMessageType compressedType)
@@ -168,9 +168,9 @@ bool Chunk::buildDeltaImpl(
     const int32_t voxelCount = static_cast<int32_t>(voxelDeltas.size());
     std::memcpy(staging.data() + off, &voxelCount, sizeof(int32_t));
     off += sizeof(int32_t);
-    for (const auto& [vid, vtype] : voxelDeltas) {
-        std::memcpy(staging.data() + off, &vid.packed, sizeof(uint16_t));
-        off += sizeof(uint16_t);
+    for (const auto& [vidx, vtype] : voxelDeltas) {
+        std::memcpy(staging.data() + off, &vidx, sizeof(VoxelIndex));
+        off += sizeof(VoxelIndex);
         staging[off++] = vtype;
     }
 

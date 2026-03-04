@@ -49,9 +49,9 @@ function packChunkId(y, x, z) {
        |  BigInt(z & 0x1FFFFFFF)
 }
 
-/** Pack VoxelId: uint4(y) | uint6(x) | uint6(z) → uint16. */
+/** Pack VoxelId: uint5(y) | uint5(x) | uint5(z) → uint16. */
 function packVoxelId(y, x, z) {
-  return ((y & 0x0F) << 12) | ((x & 0x3F) << 6) | (z & 0x3F)
+  return ((y & 0x1F) << 10) | ((x & 0x1F) << 5) | (z & 0x1F)
 }
 
 /**
@@ -133,15 +133,15 @@ describe('VoxelId packing', () => {
   it('roundtrips y/x/z components', () => {
     const cases = [
       { y: 0,  x: 0,  z: 0 },
-      { y: 15, x: 63, z: 63 },
+      { y: 31, x: 31, z: 31 },
       { y: 5,  x: 10, z: 20 },
       { y: 3,  x: 7,  z: 7 },
     ]
     for (const { y, x, z } of cases) {
       const packed = packVoxelId(y, x, z)
-      expect((packed >> 12) & 0x0f).toBe(y)
-      expect((packed >>  6) & 0x3f).toBe(x)
-      expect( packed        & 0x3f).toBe(z)
+      expect((packed >> 10) & 0x1f).toBe(y)
+      expect((packed >>  5) & 0x1f).toBe(x)
+      expect( packed        & 0x1f).toBe(z)
     }
   })
 })
@@ -224,15 +224,15 @@ describe('Chunk.applyVoxelDelta', () => {
   it('applies multiple voxel changes', () => {
     const mods = [
       { vy: 0, vx: 0,  vz: 0,  vtype: VoxelType.STONE },
-      { vy: 5, vx: 63, vz: 63, vtype: VoxelType.DIRT  },
-      { vy: 9, vx: 32, vz: 16, vtype: VoxelType.GRASS },
+      { vy: 5, vx: 31, vz: 31, vtype: VoxelType.DIRT  },
+      { vy: 9, vx: 16, vz: 16, vtype: VoxelType.GRASS },
     ]
     const chunk = new Chunk(chunkId)
     chunk.applyVoxelDelta(buildDeltaMsg(chunkId, 10, mods), false, 10)
 
     expect(chunk.getVoxel(0,  0, 0 )).toBe(VoxelType.STONE)
-    expect(chunk.getVoxel(63, 5, 63)).toBe(VoxelType.DIRT)
-    expect(chunk.getVoxel(32, 9, 16)).toBe(VoxelType.GRASS)
+    expect(chunk.getVoxel(31, 5, 31)).toBe(VoxelType.DIRT)
+    expect(chunk.getVoxel(16, 9, 16)).toBe(VoxelType.GRASS)
   })
 
   it('overwrites a previously set voxel', () => {

@@ -46,35 +46,22 @@ struct ChunkId {
     constexpr bool operator< (const ChunkId& o) const noexcept { return packed <  o.packed; }
 };
 
-/**
- * @brief Voxel identifier packed as uint4(y) | uint6(x) | uint6(z) into 16 bits.
- *
- * Bit layout: [15:12] y (4-bit) | [11:6] x (6-bit) | [5:0] z (6-bit)
- *
- * Because chunk dimensions are exactly 16×64×64, the packed value equals
- * y*4096 + x*64 + z, which is the flat (y,x,z) row-major index into
- * WorldChunk::voxels[].  Use vid.packed directly to index the array.
- */
-struct VoxelId {
-    uint16_t packed{0};
+/** @brief Packed voxel index: uint5(y) | uint5(x) | uint5(z) into 15 bits.
+ *         Used for delta encoding (wire format) and direct array indexing.
+ *         Bit layout: [14:10] y (5-bit) | [9:5] x (5-bit) | [4:0] z (5-bit) */
+using VoxelIndex = uint16_t;
 
-    /** @brief Construct a VoxelId from its three unsigned components. */
-    static constexpr VoxelId make(uint8_t y, uint8_t x, uint8_t z) noexcept {
-        VoxelId id;
-        id.packed = static_cast<uint16_t>(
-            ((y & 0x0F) << 12) | ((x & 0x3F) << 6) | (z & 0x3F));
-        return id;
-    }
+/** @brief Pack (x,y,z) chunk-local coordinates into a VoxelIndex. */
+inline constexpr VoxelIndex packVoxelIndex(uint32_t x, uint32_t y, uint32_t z) noexcept {
+    return static_cast<VoxelIndex>(((y & 0x1F) << 10) | ((x & 0x1F) << 5) | (z & 0x1F));
+}
 
-    /** @brief Y component, 4-bit (range [0, 15]). */
-    constexpr uint8_t y() const noexcept { return (packed >> 12) & 0x0F; }
-    /** @brief X component, 6-bit (range [0, 63]). */
-    constexpr uint8_t x() const noexcept { return (packed >>  6) & 0x3F; }
-    /** @brief Z component, 6-bit (range [0, 63]). */
-    constexpr uint8_t z() const noexcept { return  packed        & 0x3F; }
-
-    constexpr bool operator==(const VoxelId& o) const noexcept { return packed == o.packed; }
-};
+/** @brief Unpack VoxelIndex into (x,y,z) chunk-local coordinates. */
+inline constexpr void unpackVoxelIndex(VoxelIndex idx, uint32_t& x, uint32_t& y, uint32_t& z) noexcept {
+    y = (idx >> 10) & 0x1F;
+    x = (idx >>  5) & 0x1F;
+    z =  idx        & 0x1F;
+}
 
 /** @brief Voxel type byte. */
 using VoxelType = uint8_t;
@@ -89,10 +76,10 @@ using PlayerId = uint32_t;
 using GatewayId = uint32_t;
 
 // ── Chunk voxel dimensions (must match VoxelId bit widths) ──────────────────
-inline constexpr uint8_t CHUNK_SIZE_Y = 16;   ///< uint4 range [0,15]
-inline constexpr uint8_t CHUNK_SIZE_X = 64;   ///< uint6 range [0,63]
-inline constexpr uint8_t CHUNK_SIZE_Z = 64;   ///< uint6 range [0,63]
-inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z; // 65 536
+inline constexpr uint8_t CHUNK_SIZE_Y = 32;   ///< uint5 range [0,31]
+inline constexpr uint8_t CHUNK_SIZE_X = 32;   ///< uint5 range [0,31]
+inline constexpr uint8_t CHUNK_SIZE_Z = 32;   ///< uint5 range [0,31]
+inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z; // 32 768
 
 /// Sub-voxel precision: 1 voxel = 256 position units.
 inline constexpr int     SUBVOXEL_BITS = 8;
@@ -100,14 +87,14 @@ inline constexpr int32_t SUBVOXEL_SIZE = 1 << SUBVOXEL_BITS;  ///< 256
 inline constexpr int32_t SUBVOXEL_MASK = SUBVOXEL_SIZE - 1;   ///< 0xFF
 
 /// Bit-shift from sub-voxel position to chunk coordinate = log2(chunk_dim × SUBVOXEL_SIZE).
-inline constexpr int CHUNK_SHIFT_Y = 12;  ///< log2(CHUNK_SIZE_Y × SUBVOXEL_SIZE) = log2(16 × 256)
-inline constexpr int CHUNK_SHIFT_X = 14;  ///< log2(CHUNK_SIZE_X × SUBVOXEL_SIZE) = log2(64 × 256)
-inline constexpr int CHUNK_SHIFT_Z = 14;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZE) = log2(64 × 256)
+inline constexpr int CHUNK_SHIFT_Y = 13;  ///< log2(CHUNK_SIZE_Y × SUBVOXEL_SIZE) = log2(32 × 256)
+inline constexpr int CHUNK_SHIFT_X = 13;  ///< log2(CHUNK_SIZE_X × SUBVOXEL_SIZE) = log2(32 × 256)
+inline constexpr int CHUNK_SHIFT_Z = 13;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZE) = log2(32 × 256)
 
 /// Bitmasks for extracting local voxel coordinates within a chunk.
-inline constexpr int CHUNK_MASK_Y = CHUNK_SIZE_Y - 1;  ///< 0x0F
-inline constexpr int CHUNK_MASK_X = CHUNK_SIZE_X - 1;  ///< 0x3F
-inline constexpr int CHUNK_MASK_Z = CHUNK_SIZE_Z - 1;  ///< 0x3F
+inline constexpr int CHUNK_MASK_Y = CHUNK_SIZE_Y - 1;  ///< 0x1F
+inline constexpr int CHUNK_MASK_X = CHUNK_SIZE_X - 1;  ///< 0x1F
+inline constexpr int CHUNK_MASK_Z = CHUNK_SIZE_Z - 1;  ///< 0x1F
 
 /**
  * @brief ChunkId for the chunk that contains integer world-voxel coordinate (ix, iy, iz).

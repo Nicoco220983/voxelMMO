@@ -144,9 +144,9 @@ export class Chunk {
     for (let i = 0; i < count; i++) {
       const vidPacked = pView.getUint16(pOff, true); pOff += 2
       const vtype     = pView.getUint8(pOff++)
-      const vy = (vidPacked >> 12) & 0x0f
-      const vx = (vidPacked >>  6) & 0x3f
-      const vz =  vidPacked        & 0x3f
+      const vy = (vidPacked >> 10) & 0x1f
+      const vx = (vidPacked >>  5) & 0x1f
+      const vz =  vidPacked        & 0x1f
       this.#voxels[vy * CHUNK_SIZE_X * CHUNK_SIZE_Z + vx * CHUNK_SIZE_Z + vz] = vtype
     }
 

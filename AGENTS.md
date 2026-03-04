@@ -20,7 +20,7 @@ A high performance online webgame massive multiplayer, on wide generated world.
 
 - **Pure ECS**: all entity state lives in entt components. No parallel data structures mirroring the registry.
 - **Fixed-point positions**: `int32_t` sub-voxels, 1 voxel = `SUBVOXEL_SIZE` (256) units. No floats in game state.
-  - `CHUNK_SHIFT_Y/X/Z = 12/14/14` → chunk coord = position >> shift (works directly on sub-voxel values).
+  - `CHUNK_SHIFT_Y/X/Z = 13/13/13` → chunk coord = position >> shift (works directly on sub-voxel values).
   - Client sends button bitmask + yaw/pitch; server `InputSystem` converts to velocity each tick.
   - Rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
 - **Dirty flags**: `DirtyComponent` carries `snapshotDirtyFlags` and `tickDirtyFlags` (1 bit per component).
@@ -34,13 +34,13 @@ A high performance online webgame massive multiplayer, on wide generated world.
 | Type | Repr | Notes |
 |------|------|-------|
 | ChunkId | int64 packed | sint6(y) · sint29(x) · sint29(z) |
-| VoxelId | uint16 packed | uint4(y) · uint6(x) · uint6(z) |
+| VoxelIndex | uint16 | uint5(y) · uint5(x) · uint5(z) — flat array index for deltas |
 | VoxelType | uint8 | 0 = air |
 | ChunkEntityId | uint16 | per-chunk, per-residence |
 | PlayerId | uint32 | persistent |
 | GatewayId | uint32 | |
 
-Chunk voxels: 64 × 16 × 64 = 65 536 bytes.
+Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to compute flat index.
 
 # Code structure
 

@@ -8,7 +8,7 @@
  */
 
 /**
- * Packed VoxelId as a number: uint4(y) | uint6(x) | uint6(z) in 16 bits.
+ * Packed VoxelId as a number: uint5(y) | uint5(x) | uint5(z) in 15 bits.
  * @typedef {number} VoxelIdPacked
  */
 
@@ -92,9 +92,9 @@ export const InputButton = Object.freeze({
 
 // ── Chunk dimensions (must stay in sync with server Types.hpp) ───────────────
 
-/** @type {number} */ export const CHUNK_SIZE_Y      = 16
-/** @type {number} */ export const CHUNK_SIZE_X      = 64
-/** @type {number} */ export const CHUNK_SIZE_Z      = 64
+/** @type {number} */ export const CHUNK_SIZE_Y      = 32
+/** @type {number} */ export const CHUNK_SIZE_X      = 32
+/** @type {number} */ export const CHUNK_SIZE_Z      = 32
 /** @type {number} */ export const CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z
 
 // ── VoxelType (must stay in sync with server common/VoxelTypes.hpp) ─────────

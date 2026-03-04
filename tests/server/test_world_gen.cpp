@@ -13,7 +13,7 @@ static size_t idx(int y, int x, int z) {
 }
 
 // Surface is clamped to [4, 30].
-// cy=-1  → worldY ∈ [-16, -1],  always below surface − 3 (4−3=1 > −1) → all STONE.
+// cy=-1  → worldY ∈ [-32, -1],  always below surface − 3 (4−3=1 > −1) → all STONE.
 TEST_CASE("WorldChunk::generate - cy<0 layer is all stone", "[world_gen]") {
     WorldChunk chunk;
     chunk.generate(0, -1, 0);
@@ -23,10 +23,10 @@ TEST_CASE("WorldChunk::generate - cy<0 layer is all stone", "[world_gen]") {
     }
 }
 
-// cy=2 → worldY ∈ [32, 47], always above max surface (30) → all AIR.
-TEST_CASE("WorldChunk::generate - cy>=2 layer is all air", "[world_gen]") {
+// cy=1 → worldY ∈ [32, 63], always above max surface (30) → all AIR.
+TEST_CASE("WorldChunk::generate - cy>=1 layer is all air", "[world_gen]") {
     WorldChunk chunk;
-    chunk.generate(0, 2, 0);
+    chunk.generate(0, 1, 0);
 
     for (size_t i = 0; i < CHUNK_VOXEL_COUNT; ++i) {
         REQUIRE(chunk.voxels[i] == VoxelTypes::AIR);
@@ -35,49 +35,37 @@ TEST_CASE("WorldChunk::generate - cy>=2 layer is all air", "[world_gen]") {
 
 // Wherever a GRASS voxel appears in a chunk, its neighbours must obey the
 // layering rule: AIR above, up to 3 DIRT below, STONE deeper down.
-// This holds regardless of whether the surface is in cy=0 or cy=1.
+// With 32-high chunks, the entire terrain (surface ∈ [4,30]) fits in cy=0.
 TEST_CASE("WorldChunk::generate - voxel type layering is correct", "[world_gen]") {
-    // Generate both layers at the same XZ so we cover plains (cy=0) and
-    // mountain tops (cy=1).
-    for (int8_t cy : {(int8_t)0, (int8_t)1}) {
-        WorldChunk chunk;
-        chunk.generate(3, cy, 5);
+    WorldChunk chunk;
+    chunk.generate(3, 0, 5);  // cy=0 contains all terrain
 
-        bool found_grass = false;
+    bool found_grass = false;
 
-        for (int x = 0; x < CHUNK_SIZE_X; ++x) {
-            for (int z = 0; z < CHUNK_SIZE_Z; ++z) {
-                for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
-                    if (chunk.voxels[idx(y, x, z)] != VoxelTypes::GRASS) continue;
+    for (int x = 0; x < CHUNK_SIZE_X; ++x) {
+        for (int z = 0; z < CHUNK_SIZE_Z; ++z) {
+            for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
+                if (chunk.voxels[idx(y, x, z)] != VoxelTypes::GRASS) continue;
 
-                    found_grass = true;
+                found_grass = true;
 
-                    // Voxel above must be AIR (if still within the chunk)
-                    if (y + 1 < CHUNK_SIZE_Y)
-                        REQUIRE(chunk.voxels[idx(y + 1, x, z)] == VoxelTypes::AIR);
+                // Voxel above must be AIR (if still within the chunk)
+                if (y + 1 < CHUNK_SIZE_Y)
+                    REQUIRE(chunk.voxels[idx(y + 1, x, z)] == VoxelTypes::AIR);
 
-                    // Up to 3 DIRT layers directly below
-                    for (int dy = 1; dy <= 3 && (y - dy) >= 0; ++dy)
-                        REQUIRE(chunk.voxels[idx(y - dy, x, z)] == VoxelTypes::DIRT);
+                // Up to 3 DIRT layers directly below
+                for (int dy = 1; dy <= 3 && (y - dy) >= 0; ++dy)
+                    REQUIRE(chunk.voxels[idx(y - dy, x, z)] == VoxelTypes::DIRT);
 
-                    // STONE further below (4th voxel down)
-                    if (y - 4 >= 0)
-                        REQUIRE(chunk.voxels[idx(y - 4, x, z)] == VoxelTypes::STONE);
-                }
+                // STONE further below (4th voxel down)
+                if (y - 4 >= 0)
+                    REQUIRE(chunk.voxels[idx(y - 4, x, z)] == VoxelTypes::STONE);
             }
         }
-
-        // At (cx=3, cz=5) the terrain is not all-mountain, so at least
-        // one GRASS voxel must be present across both layers combined.
-        if (cy == 0) {
-            // Relax: cy=1 will pick up the check if cy=0 is a mountain base.
-            // We assert found_grass over the union of both layers below.
-            (void)found_grass;
-        } else {
-            // By cy=1 we must have encountered GRASS somewhere in the two passes.
-            REQUIRE(found_grass);
-        }
     }
+
+    // At (cx=3, cz=5) the terrain is not all-mountain, so grass must exist.
+    REQUIRE(found_grass);
 }
 
 TEST_CASE("WorldChunk::generate - deterministic output", "[world_gen]") {

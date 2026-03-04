@@ -48,10 +48,10 @@ struct VoxelContext {
 
         // Extract local voxel coords within the chunk using arithmetic right-shift
         // (C++20 guarantees two's complement; negative positions floor correctly).
-        const uint8_t lx = static_cast<uint8_t>((wx >> SUBVOXEL_BITS) & CHUNK_MASK_X);
-        const uint8_t ly = static_cast<uint8_t>((wy >> SUBVOXEL_BITS) & CHUNK_MASK_Y);
-        const uint8_t lz = static_cast<uint8_t>((wz >> SUBVOXEL_BITS) & CHUNK_MASK_Z);
-        return lastChunk->world.voxels[VoxelId::make(ly, lx, lz).packed];
+        const uint32_t lx = static_cast<uint32_t>((wx >> SUBVOXEL_BITS) & CHUNK_MASK_X);
+        const uint32_t ly = static_cast<uint32_t>((wy >> SUBVOXEL_BITS) & CHUNK_MASK_Y);
+        const uint32_t lz = static_cast<uint32_t>((wz >> SUBVOXEL_BITS) & CHUNK_MASK_Z);
+        return lastChunk->world.getVoxel(lx, ly, lz);
     }
 };
 

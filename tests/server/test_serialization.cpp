@@ -139,14 +139,14 @@ TEST_CASE("WorldChunk::modifyVoxels + serializeTickDelta roundtrip", "[serializa
     WorldChunk chunk;
     chunk.generate(0, 0, 0);
 
-    const VoxelId vid0 = VoxelId::make(5, 10, 20);
-    const VoxelId vid1 = VoxelId::make(3,  7,  7);
-    chunk.modifyVoxels({{vid0, VoxelTypes::STONE}, {vid1, VoxelTypes::AIR}});
+    const VoxelIndex idx0 = packVoxelIndex(10, 5, 20);
+    const VoxelIndex idx1 = packVoxelIndex(7, 3, 7);
+    chunk.modifyVoxels({{idx0, VoxelTypes::STONE}, {idx1, VoxelTypes::AIR}});
 
     REQUIRE(chunk.voxelsTickDeltas.size() == 2);
 
-    // Buffer: int32 count + 2 × (uint16 VoxelId + uint8 VoxelType)
-    const size_t expectedSize = sizeof(int32_t) + 2 * (sizeof(uint16_t) + sizeof(uint8_t));
+    // Buffer: int32 count + 2 × (uint16 VoxelIndex + uint8 VoxelType)
+    const size_t expectedSize = sizeof(int32_t) + 2 * (sizeof(VoxelIndex) + sizeof(uint8_t));
     std::vector<uint8_t> buf(expectedSize);
     size_t written = chunk.serializeTickDelta(buf.data());
     REQUIRE(written == expectedSize);
@@ -156,23 +156,23 @@ TEST_CASE("WorldChunk::modifyVoxels + serializeTickDelta roundtrip", "[serializa
     REQUIRE(count == 2);
 
     // First entry
-    uint16_t p0 = 0;
-    std::memcpy(&p0, buf.data() + sizeof(int32_t), sizeof(uint16_t));
-    REQUIRE(p0 == vid0.packed);
-    REQUIRE(buf[sizeof(int32_t) + sizeof(uint16_t)] == VoxelTypes::STONE);
+    VoxelIndex ridx0 = 0;
+    std::memcpy(&ridx0, buf.data() + sizeof(int32_t), sizeof(VoxelIndex));
+    REQUIRE(ridx0 == idx0);
+    REQUIRE(buf[sizeof(int32_t) + sizeof(VoxelIndex)] == VoxelTypes::STONE);
 
     // Second entry
-    const size_t entry1 = sizeof(int32_t) + sizeof(uint16_t) + sizeof(uint8_t);
-    uint16_t p1 = 0;
-    std::memcpy(&p1, buf.data() + entry1, sizeof(uint16_t));
-    REQUIRE(p1 == vid1.packed);
-    REQUIRE(buf[entry1 + sizeof(uint16_t)] == VoxelTypes::AIR);
+    const size_t entry1 = sizeof(int32_t) + sizeof(VoxelIndex) + sizeof(uint8_t);
+    VoxelIndex ridx1 = 0;
+    std::memcpy(&ridx1, buf.data() + entry1, sizeof(VoxelIndex));
+    REQUIRE(ridx1 == idx1);
+    REQUIRE(buf[entry1 + sizeof(VoxelIndex)] == VoxelTypes::AIR);
 }
 
 TEST_CASE("WorldChunk::clearTickDelta empties tick deltas, preserves snapshot deltas", "[serialization]") {
     WorldChunk chunk;
     chunk.generate(0, 0, 0);
-    chunk.modifyVoxels({{VoxelId::make(0, 0, 0), VoxelTypes::STONE}});
+    chunk.modifyVoxels({{packVoxelIndex(0, 0, 0), VoxelTypes::STONE}});
 
     REQUIRE(!chunk.voxelsTickDeltas.empty());
     REQUIRE(!chunk.voxelsSnapshotDeltas.empty());
@@ -185,21 +185,23 @@ TEST_CASE("WorldChunk::clearTickDelta empties tick deltas, preserves snapshot de
 TEST_CASE("WorldChunk::clearSnapshotDelta empties snapshot deltas only", "[serialization]") {
     WorldChunk chunk;
     chunk.generate(0, 0, 0);
-    chunk.modifyVoxels({{VoxelId::make(1, 2, 3), VoxelTypes::GRASS}});
+    chunk.modifyVoxels({{packVoxelIndex(2, 1, 3), VoxelTypes::GRASS}});
 
     chunk.clearSnapshotDelta();
     REQUIRE(chunk.voxelsSnapshotDeltas.empty());
     REQUIRE(!chunk.voxelsTickDeltas.empty());  // tick delta still present
 }
 
-TEST_CASE("VoxelId packing roundtrip", "[types]") {
-    for (uint8_t y = 0; y < 16; ++y) {
-        for (uint8_t x : {uint8_t(0), uint8_t(1), uint8_t(31), uint8_t(63)}) {
-            for (uint8_t z : {uint8_t(0), uint8_t(1), uint8_t(31), uint8_t(63)}) {
-                const VoxelId vid = VoxelId::make(y, x, z);
-                REQUIRE(vid.y() == y);
-                REQUIRE(vid.x() == x);
-                REQUIRE(vid.z() == z);
+TEST_CASE("VoxelIndex pack/unpack roundtrip", "[types]") {
+    for (uint32_t y = 0; y < 32; ++y) {
+        for (uint32_t x : {0u, 1u, 15u, 31u}) {
+            for (uint32_t z : {0u, 1u, 15u, 31u}) {
+                const VoxelIndex idx = packVoxelIndex(x, y, z);
+                uint32_t ux, uy, uz;
+                unpackVoxelIndex(idx, ux, uy, uz);
+                REQUIRE(uy == y);
+                REQUIRE(ux == x);
+                REQUIRE(uz == z);
             }
         }
     }
