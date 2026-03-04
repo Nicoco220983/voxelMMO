@@ -1,6 +1,8 @@
 #include "game/WorldGenerator.hpp"
 #include "game/entities/SheepEntity.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
+#include "game/components/DirtyComponent.hpp"
+#include "game/systems/EntityStateSystem.hpp"
 #include "common/Types.hpp"
 #include <cmath>
 #include <algorithm>
@@ -166,10 +168,14 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
         const int32_t sy = worldY << SUBVOXEL_BITS;
         const int32_t sz = (cz * CHUNK_SIZE_Z + localZ) << SUBVOXEL_BITS;
         
-        // Create sheep entity
+        // Create sheep entity and mark for creation
         const entt::entity ent = registry.create();
         registry.emplace<GlobalEntityIdComponent>(ent, static_cast<GlobalEntityId>(tick + i + hash));
+        registry.emplace<DirtyComponent>(ent);  // Ensure DirtyComponent exists
         SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick + i);
+        
+        // Mark for creation - EntityStateSystem will add to chunk
+        EntityStateSystem::markForCreation(registry, ent, chunkId);
     }
 }
 

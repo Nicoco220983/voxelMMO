@@ -2,6 +2,7 @@
 #include "Chunk.hpp"
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
+#include "game/systems/EntityStateSystem.hpp"
 #include "game/systems/SheepAISystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
@@ -172,6 +173,9 @@ private:
 
     /** @brief Reused batch buffer — cleared and refilled every serialize call. */
     std::vector<uint8_t> batchBuf;
+    
+    /** @brief Entities marked for deletion that will be destroyed after serialization. */
+    std::vector<entt::entity> pendingDeletions;
 
     // ── Internal helpers ──────────────────────────────────────────────────
 

@@ -65,12 +65,24 @@ ComponentFlags uint8    (bitmask of present components)
 ### Entity delta record
 
 ```
-DeltaType      uint8   (0=NEW, 1=UPDATE, 2=DELETE)
+DeltaType      uint8   (0=CREATE, 1=UPDATE, 2=DELETE, 3=CHUNK_CHANGE)
 GlobalEntityId uint32  (stable across chunk moves and server lifetime)
-EntityType     uint8
-ComponentFlags uint8   (bitmask of dirty components)
-  if POSITION_BIT:  DynamicPositionComponent fields (see below)
+  if DeltaType == CREATE or UPDATE:
+    EntityType     uint8
+    ComponentFlags uint8   (bitmask of dirty components, bits 0-5)
+      if POSITION_BIT:       DynamicPositionComponent fields (see below)
+      if SHEEP_BEHAVIOR_BIT: SheepBehaviorComponent fields (see below)
+  if DeltaType == CHUNK_CHANGE:
+    NewChunkId     int64 LE (packed) - the chunk the entity moved to
+  if DeltaType == DELETE:
+    (no additional fields)
 ```
+
+**DeltaType semantics:**
+- **CREATE_ENTITY (0)**: Entity appears in this chunk for the first time (newly spawned or arrived from another chunk). Full entity data follows.
+- **UPDATE_ENTITY (1)**: Entity already known in this chunk; only dirty components are present.
+- **DELETE_ENTITY (2)**: Entity removed from this chunk (despawned or moved elsewhere). No payload.
+- **CHUNK_CHANGE_ENTITY (3)**: Entity moved to a different chunk. The *old* chunk sends this with the new ChunkId. Clients should update entity.chunkId but keep the entity object.
 
 ## DynamicPositionComponent fields (when POSITION_BIT set)
 

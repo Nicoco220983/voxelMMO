@@ -1,5 +1,6 @@
 #pragma once
 #include "game/Chunk.hpp"
+#include "game/systems/EntityStateSystem.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
@@ -15,8 +16,6 @@
 
 namespace voxelmmo {
 
-
-
 // ── Result structures ─────────────────────────────────────────────────────────
 
 /**
@@ -30,49 +29,30 @@ struct ChunkMembershipSystemResult {
 // ── ChunkMembershipSystem ───────────────────────────────────────────────────────────────
 
 /**
- * @brief Manages chunk membership for entities with DynamicPositionComponent.
+ * @brief Manages chunk membership marking for entities with DynamicPositionComponent.
  *
- * Phase A: Update per-chunk entity lists for moved entities (crossed chunk boundary).
+ * Phase A: For entities with `moved=true` crossing chunk boundary, mark for chunk change.
+ *          Actual moves are deferred to EntityStateSystem::apply().
+ *
  * Phase B: Rebuild gateway watchedChunks and activate newly-seen chunks.
  *
- * This system operates on the ECS registry and the chunk map, returning
- * results that the caller uses for gateway notifications.
+ * This system operates on the ECS registry, returning results that the caller
+ * uses for gateway notifications. The actual chunk moves happen in EntityStateSystem.
  */
 namespace ChunkMembershipSystem {
 
-// TODO: move this to gameEngine
 /**
- * @brief Helper to activate a chunk if it doesn't exist.
- * @return Reference to the chunk (either existing or newly created).
- */
-inline Chunk& activateChunk(
-    ChunkId cid,
-    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
-    std::vector<ChunkId>& activatedOut)
-{
-    auto it = chunks.find(cid);
-    if (it == chunks.end()) {
-        auto chunk = std::make_unique<Chunk>(cid);
-        chunk->world.generate(cid.x(), cid.y(), cid.z());
-        Chunk* ptr = chunk.get();
-        chunks[cid] = std::move(chunk);
-        activatedOut.push_back(cid);
-        return *ptr;
-    }
-    return *it->second;
-}
-
-/**
- * @brief Update chunk membership for all entities that have moved.
+ * @brief Mark entities for chunk change when they cross chunk boundaries.
  *
  * Phase A: For entities with `moved=true`, compute new chunk from position,
- * remove from old chunk lists, add to new chunk (activating if needed).
+ * and mark for chunk change via EntityStateSystem. The actual move happens
+ * later in EntityStateSystem::apply().
  *
  * @param registry          The ECS registry.
- * @param chunks            Map of loaded chunks (may be modified: new chunks activated).
- * @param tickCount         Current server tick (for entity ID assignment tracking).
+ * @param chunks            Map of loaded chunks (passed through to EntityStateSystem).
+ * @param tickCount         Current server tick.
  * @param activationRadius  Radius for chunk activation around players.
- * @return Result containing player entries and activated chunks.
+ * @return Result containing activated chunks (from CHUNK_CHANGE activations).
  */
 inline ChunkMembershipSystemResult updateEntities(
     entt::registry& registry,
@@ -80,7 +60,7 @@ inline ChunkMembershipSystemResult updateEntities(
     int32_t tickCount,
     int32_t activationRadius)
 {
-    (void)tickCount; // Currently unused but kept for API consistency
+    (void)tickCount;
     ChunkMembershipSystemResult result;
 
     auto view = registry.view<DynamicPositionComponent, ChunkMembershipComponent>();
@@ -95,18 +75,14 @@ inline ChunkMembershipSystemResult updateEntities(
 
         if (newChunk == cm.currentChunkId) return;
 
-        const bool     isPlayer = registry.all_of<PlayerComponent>(ent);
-        const PlayerId pid      = isPlayer ? registry.get<PlayerComponent>(ent).playerId : 0u;
+        const bool isPlayer = registry.all_of<PlayerComponent>(ent);
+        const PlayerId pid = isPlayer ? registry.get<PlayerComponent>(ent).playerId : 0u;
 
-        // Remove from old chunk lists
+        // Remove from old chunk lists immediately (watchingPlayers only)
         const int32_t ocx = cm.currentChunkId.x();
         const int32_t ocy = cm.currentChunkId.y();
         const int32_t ocz = cm.currentChunkId.z();
 
-        if (auto it = chunks.find(cm.currentChunkId); it != chunks.end()) {
-            it->second->entities.erase(ent);
-            if (isPlayer) it->second->presentPlayers.erase(pid);
-        }
         if (isPlayer) {
             for (int32_t dx = -activationRadius; dx <= activationRadius; ++dx)
             for (int32_t dy = -1; dy <= 1; ++dy)
@@ -117,22 +93,20 @@ inline ChunkMembershipSystemResult updateEntities(
             }
         }
 
-        // Ensure new chunk exists (activate if needed) and add to it
-        Chunk& nc = activateChunk(newChunk, chunks, result.activatedChunks);
-        nc.entities.insert(ent);
+        // Mark for chunk change - actual move happens in EntityStateSystem::apply()
+        EntityStateSystem::markForChunkChange(registry, ent, newChunk);
 
+        // For players, set up watching in new radius (chunk will be activated in Phase B)
         if (isPlayer) {
-            nc.presentPlayers.insert(pid);
             for (int32_t dx = -activationRadius; dx <= activationRadius; ++dx)
             for (int32_t dy = -1; dy <= 1; ++dy)
             for (int32_t dz = -activationRadius; dz <= activationRadius; ++dz) {
                 const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-                Chunk& watchChunk = activateChunk(cid, chunks, result.activatedChunks);
-                watchChunk.watchingPlayers.insert(pid);
+                if (auto it = chunks.find(cid); it != chunks.end()) {
+                    it->second->watchingPlayers.insert(pid);
+                }
             }
         }
-
-        cm.currentChunkId = newChunk;
     });
 
     return result;
@@ -184,7 +158,7 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
 
                     // Ensure activation-radius chunks exist; prepare snapshot on first sight
                     if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
-                        Chunk& chunk = activateChunk(cid, chunks, activated);
+                        Chunk& chunk = EntityStateSystem::activateChunk(cid, chunks, activated);
                         if (!gwInfo.lastStateTick.count(cid)) {
                             NetworkProtocol::appendFramed(batchBuf, chunk.buildSnapshot(registry, tick));
                             gwInfo.lastStateTick[cid] = tick;

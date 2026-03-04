@@ -3,6 +3,7 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
 #include "game/components/SheepBehaviorComponent.hpp"
+#include "game/components/PendingChunkChangeComponent.hpp"
 #include <lz4.h>
 #include <algorithm>
 #include <cstring>
@@ -199,14 +200,48 @@ bool Chunk::buildDeltaImpl(
             const uint8_t mask = reg.get<DirtyComponent>(ent).*flagsField;
             if (!mask) continue;
             const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
-            w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
-            w.write(gid.id);                          // uint32 GlobalEntityId (was uint16 ChunkEntityId)
             const auto etype = reg.get<EntityTypeComponent>(ent).type;
+            
+            // Determine delta type based on lifecycle flags and pending operations
+            DeltaType deltaType;
+            if (mask & DirtyComponent::DELETED_BIT) {
+                deltaType = DeltaType::DELETE_ENTITY;
+            } else if (reg.all_of<PendingChunkChangeComponent>(ent)) {
+                // Entity is leaving this chunk - old chunk sends CHUNK_CHANGE
+                deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
+            } else if (mask & DirtyComponent::CREATED_BIT) {
+                deltaType = DeltaType::CREATE_ENTITY;
+            } else {
+                deltaType = DeltaType::UPDATE_ENTITY;
+            }
+            
+            w.write(static_cast<uint8_t>(deltaType));
+            w.write(gid.id);  // uint32 GlobalEntityId
+            
+            if (deltaType == DeltaType::DELETE_ENTITY) {
+                // DELETE: just GlobalEntityId, no additional data
+                ++entityCount;
+                continue;
+            }
+            
+            if (deltaType == DeltaType::CHUNK_CHANGE_ENTITY) {
+                // CHUNK_CHANGE: include new chunk ID (int64 packed)
+                const auto& pcc = reg.get<PendingChunkChangeComponent>(ent);
+                w.write(pcc.newChunkId.packed);
+                ++entityCount;
+                continue;
+            }
+            
+            // CREATE and UPDATE: include EntityType and component data
             w.write(static_cast<uint8_t>(etype));
-            w.write(mask);
-            if (mask & POSITION_BIT)
+            
+            // Component mask (strip lifecycle bits, keep only component bits 0-5)
+            const uint8_t componentMask = mask & 0x3F;
+            w.write(componentMask);
+            
+            if (componentMask & POSITION_BIT)
                 reg.get<DynamicPositionComponent>(ent).serializeFields(w);
-            if (mask & SHEEP_BEHAVIOR_BIT)
+            if (componentMask & SHEEP_BEHAVIOR_BIT)
                 reg.get<SheepBehaviorComponent>(ent).serializeFields(w);
             ++entityCount;
         }

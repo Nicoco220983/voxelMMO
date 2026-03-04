@@ -51,9 +51,10 @@ export const ChunkMessageType = Object.freeze({
  * @enum {number}
  */
 export const DeltaType = Object.freeze({
-  NEW_ENTITY:    0,
-  UPDATE_ENTITY: 1,
-  DELETE_ENTITY: 2,
+  CREATE_ENTITY:       0,  // Entity appears in this chunk
+  UPDATE_ENTITY:       1,  // Entity component updates
+  DELETE_ENTITY:       2,  // Entity removed from this chunk
+  CHUNK_CHANGE_ENTITY: 3,  // Entity moved to different chunk (old chunk sends this)
 })
 
 /**

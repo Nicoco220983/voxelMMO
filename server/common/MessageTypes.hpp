@@ -22,9 +22,10 @@ enum class ChunkMessageType : uint8_t {
 
 /** @brief Entity delta sub-type, encoded as the first byte of each entity record in a delta. */
 enum class DeltaType : uint8_t {
-    NEW_ENTITY    = 0,  ///< First time this entity appears; serialize all non-default components.
-    UPDATE_ENTITY = 1,  ///< Entity already known; only dirty components are present.
-    DELETE_ENTITY = 2,  ///< Entity was removed from the simulation.
+    CREATE_ENTITY      = 0,  ///< Entity appears in this chunk (newly spawned or moved from elsewhere).
+    UPDATE_ENTITY      = 1,  ///< Entity already known in this chunk; only dirty components are present.
+    DELETE_ENTITY      = 2,  ///< Entity removed from this chunk (despawned or moved elsewhere).
+    CHUNK_CHANGE_ENTITY = 3, ///< Entity moved to different chunk; old chunk sends this with new ChunkId.
 };
 
 /** @brief Registered entity types. */

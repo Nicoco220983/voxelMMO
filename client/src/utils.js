@@ -32,6 +32,14 @@ export class BufReader {
 
   /** @returns {number} */
   readFloat32() { const v = this.#view.getFloat32(this.offset, true); this.offset += 4; return v }
+
+  /** @returns {bigint} */
+  readInt64()   { 
+    const lo = this.#view.getUint32(this.offset, true)
+    const hi = this.#view.getInt32(this.offset + 4, true)
+    this.offset += 8
+    return (BigInt(hi) << 32n) | BigInt(lo)
+  }
 }
 
 /**

@@ -42,6 +42,7 @@ export class EntityRegistry {
    * @returns {BaseEntity}
    */
   #createEntity(globalId, entityType) {
+    console.info("createEntity", entityType, globalId)
     if (entityType === EntityType.SHEEP && this.scene) {
       return new SheepEntity(globalId, this.scene)
     }
@@ -180,7 +181,8 @@ export class EntityRegistry {
 
   /**
    * Parse and apply entity deltas from a delta message.
-   * Handles DELETE (remove), NEW_ENTITY/UPDATE_ENTITY (upsert + update).
+   * Handles CREATE_ENTITY (new), UPDATE_ENTITY (update), DELETE_ENTITY (remove),
+   * and CHUNK_CHANGE_ENTITY (entity moved to different chunk).
    * @param {ChunkIdPacked} chunkId
    * @param {BufReader} reader Positioned at entity count
    * @param {number} messageTick Server tick from message header
@@ -192,16 +194,35 @@ export class EntityRegistry {
     for (let i = 0; i < count; i++) {
       const deltaType = reader.readUint8()
       const entityId = reader.readUint32()
-      const entityType = reader.readUint8()
 
-      if (deltaType === DeltaType.DELETE) {
+      if (deltaType === DeltaType.DELETE_ENTITY) {
+        // Entity removed from this chunk (despawned or moved elsewhere)
         const entity = this.#entities.get(entityId)
         if (entity && entity.chunkId === chunkId) {
+          // Call destroy if entity has a mesh
+          if (entity.destroy && this.scene) {
+            entity.destroy(this.scene)
+          }
           this.#entities.delete(entityId)
         }
         members.delete(entityId)
-      } else {
-        // NEW_ENTITY or UPDATE_ENTITY - upsert
+      } else if (deltaType === DeltaType.CHUNK_CHANGE_ENTITY) {
+        // Entity moved to different chunk - read new chunk ID
+        const newChunkIdPacked = reader.readInt64()
+        const entity = this.#entities.get(entityId)
+        if (entity && entity.chunkId === chunkId) {
+          // Update entity's chunk reference
+          entity.chunkId = newChunkIdPacked
+          // Remove from old chunk's members
+          members.delete(entityId)
+          // Add to new chunk's members (will be created if needed)
+          const newMembers = this.#getOrCreateMembers(newChunkIdPacked)
+          newMembers.add(entityId)
+        }
+      } else if (deltaType === DeltaType.CREATE_ENTITY || deltaType === DeltaType.UPDATE_ENTITY) {
+        // CREATE_ENTITY or UPDATE_ENTITY - both have entityType + component data
+        const entityType = reader.readUint8()
+        
         let entity = this.#entities.get(entityId)
         if (!entity) {
           entity = this.#createEntity(entityId, entityType)
