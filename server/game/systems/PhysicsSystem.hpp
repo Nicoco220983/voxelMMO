@@ -34,11 +34,11 @@ struct VoxelContext {
     ChunkId      lastChunkId = {};
 
     /**
-     * @brief Return the voxel type at sub-voxel world position (wx, wy, wz).
+     * @brief Return the voxel type at voxel coordinates (vx, vy, vz).
      *        Returns AIR for unloaded chunks (passable = safe outside loaded world).
      */
-    VoxelType getAt(int32_t wx, int32_t wy, int32_t wz) {
-        const ChunkId cid = chunkIdOf(wx, wy, wz);
+    VoxelType getAtVoxel(int32_t vx, int32_t vy, int32_t vz) {
+        const ChunkId cid = chunkIdOfVoxel(vx, vy, vz);
         if (cid != lastChunkId) {
             const auto it = chunks.find(cid);
             lastChunkId   = cid;
@@ -46,12 +46,7 @@ struct VoxelContext {
         }
         if (!lastChunk) return VoxelTypes::AIR;
 
-        // Extract local voxel coords within the chunk using arithmetic right-shift
-        // (C++20 guarantees two's complement; negative positions floor correctly).
-        const uint32_t lx = static_cast<uint32_t>((wx >> SUBVOXEL_BITS) & CHUNK_MASK_X);
-        const uint32_t ly = static_cast<uint32_t>((wy >> SUBVOXEL_BITS) & CHUNK_MASK_Y);
-        const uint32_t lz = static_cast<uint32_t>((wz >> SUBVOXEL_BITS) & CHUNK_MASK_Z);
-        return lastChunk->world.getVoxel(lx, ly, lz);
+        return lastChunk->world.getVoxel(vx, vy, vz);
     }
 };
 
@@ -91,7 +86,7 @@ inline int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx) {
         for (int32_t vy = vyFrom; vy <= vyTo; ++vy) {
             for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAt(vx << SUBVOXEL_BITS, vy << SUBVOXEL_BITS, vz << SUBVOXEL_BITS))) {
+                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
                         // Push minY to rest on top of this voxel.
                         const int32_t push = (vy + 1) * SUBVOXEL_SIZE - aabb.minY;
                         if (push > dy) dy = push;  // dy is negative; max → less negative
@@ -106,7 +101,7 @@ inline int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx) {
         for (int32_t vy = vyFrom; vy <= vyTo; ++vy) {
             for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAt(vx << SUBVOXEL_BITS, vy << SUBVOXEL_BITS, vz << SUBVOXEL_BITS))) {
+                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
                         // Push maxY to just below the bottom of this voxel.
                         const int32_t push = vy * SUBVOXEL_SIZE - aabb.maxY;
                         if (push < dy) dy = push;  // dy is positive; min → less positive
@@ -136,7 +131,7 @@ inline int32_t sweepX(AABB aabb, int32_t dx, VoxelContext& ctx) {
         for (int32_t vx = vxFrom; vx <= vxTo; ++vx) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAt(vx << SUBVOXEL_BITS, vy << SUBVOXEL_BITS, vz << SUBVOXEL_BITS))) {
+                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
                         const int32_t push = (vx + 1) * SUBVOXEL_SIZE - aabb.minX;
                         if (push > dx) dx = push;
                     }
@@ -149,7 +144,7 @@ inline int32_t sweepX(AABB aabb, int32_t dx, VoxelContext& ctx) {
         for (int32_t vx = vxFrom; vx <= vxTo; ++vx) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAt(vx << SUBVOXEL_BITS, vy << SUBVOXEL_BITS, vz << SUBVOXEL_BITS))) {
+                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
                         const int32_t push = vx * SUBVOXEL_SIZE - aabb.maxX;
                         if (push < dx) dx = push;
                     }
@@ -178,7 +173,7 @@ inline int32_t sweepZ(AABB aabb, int32_t dz, VoxelContext& ctx) {
         for (int32_t vz = vzFrom; vz <= vzTo; ++vz) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
-                    if (isSolid(ctx.getAt(vx << SUBVOXEL_BITS, vy << SUBVOXEL_BITS, vz << SUBVOXEL_BITS))) {
+                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
                         const int32_t push = (vz + 1) * SUBVOXEL_SIZE - aabb.minZ;
                         if (push > dz) dz = push;
                     }
@@ -191,7 +186,7 @@ inline int32_t sweepZ(AABB aabb, int32_t dz, VoxelContext& ctx) {
         for (int32_t vz = vzFrom; vz <= vzTo; ++vz) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
-                    if (isSolid(ctx.getAt(vx << SUBVOXEL_BITS, vy << SUBVOXEL_BITS, vz << SUBVOXEL_BITS))) {
+                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
                         const int32_t push = vz * SUBVOXEL_SIZE - aabb.maxZ;
                         if (push < dz) dz = push;
                     }

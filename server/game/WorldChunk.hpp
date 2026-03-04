@@ -31,21 +31,16 @@ public:
 
     WorldChunk();
 
-    /**
-     * @brief Procedurally fill voxel data for a given chunk position.
-     * @param cx  Chunk X coordinate.
-     * @param cy  Chunk Y coordinate (vertical layer).
-     * @param cz  Chunk Z coordinate.
-     */
-    void generate(int32_t cx, int8_t cy, int32_t cz);
+    /** @brief Procedurally fill voxel data for a given chunk position. */
+    void generate(int32_t chunkX, int8_t chunkY, int32_t chunkZ);
 
     /** @brief Get voxel type at local chunk coordinates. */
-    VoxelType getVoxel(uint32_t x, uint32_t y, uint32_t z) const {
-        return voxels[packVoxelIndex(x, y, z)];
+    VoxelType getVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) const {
+        return voxels[packVoxelIndex(voxelX, voxelY, voxelZ)];
     }
 
     /** @brief Set voxel type at local chunk coordinates and record as delta. */
-    void setVoxel(uint32_t x, uint32_t y, uint32_t z, VoxelType type);
+    void setVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ, VoxelType type);
 
     /**
      * @brief Apply a batch of voxel modifications (via packed indices) and record as deltas.

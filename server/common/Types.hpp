@@ -15,11 +15,11 @@ struct ChunkId {
     int64_t packed{0};
 
     /** @brief Construct a ChunkId from its three signed components. */
-    static constexpr ChunkId make(int8_t y, int32_t x, int32_t z) noexcept {
+    static constexpr ChunkId make(int8_t chunkY, int32_t chunkX, int32_t chunkZ) noexcept {
         ChunkId id;
-        id.packed = (static_cast<int64_t>(y  & 0x3F)        << 58)
-                  | (static_cast<int64_t>(x  & 0x1FFFFFFF)  << 29)
-                  |  static_cast<int64_t>(z  & 0x1FFFFFFF);
+        id.packed = (static_cast<int64_t>(chunkY  & 0x3F)        << 58)
+                  | (static_cast<int64_t>(chunkX  & 0x1FFFFFFF)  << 29)
+                  |  static_cast<int64_t>(chunkZ  & 0x1FFFFFFF);
         return id;
     }
 
@@ -52,8 +52,8 @@ struct ChunkId {
 using VoxelIndex = uint16_t;
 
 /** @brief Pack (x,y,z) chunk-local coordinates into a VoxelIndex. */
-inline constexpr VoxelIndex packVoxelIndex(uint32_t x, uint32_t y, uint32_t z) noexcept {
-    return static_cast<VoxelIndex>(((y & 0x1F) << 10) | ((x & 0x1F) << 5) | (z & 0x1F));
+inline constexpr VoxelIndex packVoxelIndex(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) noexcept {
+    return static_cast<VoxelIndex>(((voxelY & 0x1F) << 10) | ((voxelX & 0x1F) << 5) | (voxelZ & 0x1F));
 }
 
 /** @brief Unpack VoxelIndex into (x,y,z) chunk-local coordinates. */
@@ -91,22 +91,30 @@ inline constexpr int CHUNK_SHIFT_Y = 13;  ///< log2(CHUNK_SIZE_Y × SUBVOXEL_SIZ
 inline constexpr int CHUNK_SHIFT_X = 13;  ///< log2(CHUNK_SIZE_X × SUBVOXEL_SIZE) = log2(32 × 256)
 inline constexpr int CHUNK_SHIFT_Z = 13;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZE) = log2(32 × 256)
 
-/// Bitmasks for extracting local voxel coordinates within a chunk.
-inline constexpr int CHUNK_MASK_Y = CHUNK_SIZE_Y - 1;  ///< 0x1F
-inline constexpr int CHUNK_MASK_X = CHUNK_SIZE_X - 1;  ///< 0x1F
-inline constexpr int CHUNK_MASK_Z = CHUNK_SIZE_Z - 1;  ///< 0x1F
-
 /**
  * @brief ChunkId for the chunk that contains integer world-voxel coordinate (ix, iy, iz).
  *
  * Uses arithmetic right-shift (guaranteed by C++20 two's complement) instead of
  * division so negative coordinates floor correctly without a branch.
  */
-inline constexpr ChunkId chunkIdOf(int32_t ix, int32_t iy, int32_t iz) noexcept {
+inline constexpr ChunkId chunkIdOf(int32_t worldX, int32_t worldY, int32_t worldZ) noexcept {
     return ChunkId::make(
-        static_cast<int8_t>(iy >> CHUNK_SHIFT_Y),
-        ix >> CHUNK_SHIFT_X,
-        iz >> CHUNK_SHIFT_Z);
+        static_cast<int8_t>(worldY >> CHUNK_SHIFT_Y),
+        worldX >> CHUNK_SHIFT_X,
+        worldZ >> CHUNK_SHIFT_Z);
+}
+
+/**
+ * @brief ChunkId for the chunk that contains voxel coordinates (vx, vy, vz).
+ *
+ * Voxel coordinates are at a lower resolution than sub-voxel coordinates.
+ * Uses arithmetic right-shift for correct negative coordinate handling.
+ */
+inline constexpr ChunkId chunkIdOfVoxel(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
+    return ChunkId::make(
+        static_cast<int8_t>(voxelY >> (CHUNK_SHIFT_Y - SUBVOXEL_BITS)),
+        voxelX >> (CHUNK_SHIFT_X - SUBVOXEL_BITS),
+        voxelZ >> (CHUNK_SHIFT_Z - SUBVOXEL_BITS));
 }
 
 /** @brief Minimum payload size (bytes) that triggers LZ4 compression. */

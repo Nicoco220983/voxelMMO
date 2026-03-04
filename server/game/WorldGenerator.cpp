@@ -99,8 +99,8 @@ static float simplex2D(float x, float y) noexcept {
 //   - Base offset 5 + clamp to [4, 30]
 //
 // Guarantees:
-//   cy = -1  (worldY -16 .. -1)  → always STONE  (surface ≥ 4 > -1)
-//   cy =  2  (worldY 32  .. 47)  → always AIR    (surface ≤ 30 < 32)
+//   chunkY = -1  (worldY -16 .. -1)  → always STONE  (surface ≥ 4 > -1)
+//   chunkY =  2  (worldY 32  .. 47)  → always AIR    (surface ≤ 30 < 32)
 //
 static float computeHeight(float wx, float wz) noexcept {
     // fBm: 3 octaves — large hills, medium bumps, fine detail
@@ -125,7 +125,7 @@ int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
 }
 
 void WorldGenerator::generate(std::vector<VoxelType>& voxels,
-                               int32_t cx, int8_t cy, int32_t cz) const
+                               int32_t chunkX, int8_t chunkY, int32_t chunkZ) const
 {
     // ── Step 1: sample height on a coarse (STEP-voxel) grid ──────────────────
     // CHUNK_SIZE_X = CHUNK_SIZE_Z = 64, STEP = 4  →  17 × 17 = 289 evaluations
@@ -137,8 +137,8 @@ void WorldGenerator::generate(std::vector<VoxelType>& voxels,
     float heightGrid[GRID_X][GRID_Z];
     for (int gx = 0; gx < GRID_X; ++gx) {
         for (int gz = 0; gz < GRID_Z; ++gz) {
-            const float wx = static_cast<float>(cx * CHUNK_SIZE_X + gx * STEP);
-            const float wz = static_cast<float>(cz * CHUNK_SIZE_Z + gz * STEP);
+            const float wx = static_cast<float>(chunkX * CHUNK_SIZE_X + gx * STEP);
+            const float wz = static_cast<float>(chunkZ * CHUNK_SIZE_Z + gz * STEP);
             heightGrid[gx][gz] = computeHeight(wx, wz);
         }
     }
@@ -166,7 +166,7 @@ void WorldGenerator::generate(std::vector<VoxelType>& voxels,
                     const int z = cell_z * STEP + lz;
 
                     for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
-                        const int32_t worldY = static_cast<int32_t>(cy) * CHUNK_SIZE_Y + y;
+                        const int32_t worldY = static_cast<int32_t>(chunkY) * CHUNK_SIZE_Y + y;
 
                         VoxelType type;
                         if      (worldY > surfaceY)        type = VoxelTypes::AIR;

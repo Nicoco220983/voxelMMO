@@ -8,12 +8,12 @@ WorldChunk::WorldChunk() {
     voxels.assign(CHUNK_VOXEL_COUNT, 0);
 }
 
-void WorldChunk::generate(int32_t cx, int8_t cy, int32_t cz) {
-    WorldGenerator{}.generate(voxels, cx, cy, cz);
+void WorldChunk::generate(int32_t chunkX, int8_t chunkY, int32_t chunkZ) {
+    WorldGenerator{}.generate(voxels, chunkX, chunkY, chunkZ);
 }
 
-void WorldChunk::setVoxel(uint32_t x, uint32_t y, uint32_t z, VoxelType type) {
-    const VoxelIndex idx = packVoxelIndex(x, y, z);
+void WorldChunk::setVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ, VoxelType type) {
+    const VoxelIndex idx = packVoxelIndex(voxelX, voxelY, voxelZ);
     voxels[idx] = type;
     // TODO: check that idx is not already present in deltas
     voxelsSnapshotDeltas.emplace_back(idx, type);
