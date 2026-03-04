@@ -27,7 +27,7 @@ static std::array<uint8_t, 10> makeInput(uint8_t buttons = 0,
 
 /** Entity state parsed from a TICK_DELTA entity section. */
 struct ParsedEntity {
-    uint16_t id{};
+    uint32_t id{};       // GlobalEntityId (uint32, was uint16)
     uint8_t  type{};
     int32_t  x{}, y{}, z{};
     int32_t  vx{}, vy{}, vz{};
@@ -40,7 +40,7 @@ struct ParsedEntity {
  *   int32 voxel_count
  *   repeat: VoxelId(2) + VoxelType(1)
  *   int32 entity_count
- *   repeat: DeltaType(1) + ChunkEntityId(2) + EntityType(1) + Flags(1) + [fields]
+ *   repeat: DeltaType(1) + GlobalEntityId(4) + EntityType(1) + Flags(1) + [fields]
  */
 static std::vector<ParsedEntity> parseTickDeltaEntities(const uint8_t* msg, size_t len)
 {
@@ -61,10 +61,10 @@ static std::vector<ParsedEntity> parseTickDeltaEntities(const uint8_t* msg, size
     std::memcpy(&entityCount, p, 4); p += 4;
 
     for (int i = 0; i < entityCount && p < end; ++i) {
-        if (p + 5 > end) break;
+        if (p + 7 > end) break;
         /* uint8_t  deltaType = */ ++p;  // skip DeltaType
-        uint16_t entityId = 0;
-        std::memcpy(&entityId, p, 2); p += 2;
+        uint32_t entityId = 0;
+        std::memcpy(&entityId, p, 4); p += 4;  // GlobalEntityId is uint32
         uint8_t entityType = *p++;
         uint8_t flags      = *p++;
 

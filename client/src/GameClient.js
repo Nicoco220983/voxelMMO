@@ -49,7 +49,7 @@ export class GameClient {
   /** @type {bigint|null} ChunkId of the chunk containing the local player entity. */
   #selfChunkId = null
 
-  /** @type {number|null} ChunkEntityId of the local player entity. */
+  /** @type {number|null} GlobalEntityId of the local player entity. */
   #selfEntityId = null
 
   /** @returns {number} */
@@ -233,9 +233,9 @@ export class GameClient {
         this.#chunks.get(chunkId)?.applyVoxelDelta(view, true, messageTick)
         break
       case ChunkMessageType.SELF_ENTITY:
-        if (view.byteLength >= 15) {
+        if (view.byteLength >= 17) {
           this.#selfChunkId  = chunkId
-          this.#selfEntityId = view.getUint16(13, true)
+          this.#selfEntityId = view.getUint32(13, true)
         }
         break
     }

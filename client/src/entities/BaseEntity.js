@@ -11,14 +11,14 @@ import { POSITION_BIT } from '../types.js'
  * and straight-line prediction. Does not render. Mirrors server BaseEntity.
  *
  * Snapshot record format (server → client):
- *   uint16 EntityId · uint8 EntityType · uint8 ComponentFlags · ComponentStates…
+ *   uint32 GlobalEntityId · uint8 EntityType · uint8 ComponentFlags · ComponentStates…
  *
  * Delta record format:
  *   uint8 ComponentFlags · ComponentStates…   (DeltaType/EntityId/EntityType
  *   are consumed by the outer loop before applyDelta() is called)
  */
 export class BaseEntity {
-  /** @type {number} EntityId (uint16) */
+  /** @type {number} GlobalEntityId (uint32) */
   id
 
   /** @type {number} EntityType (uint8) */
@@ -27,7 +27,7 @@ export class BaseEntity {
   motion = new DynamicPositionComponent()
 
   /**
-   * @param {number} id    EntityId.
+   * @param {number} id    GlobalEntityId.
    * @param {number} type  EntityType.
    */
   constructor(id, type) {
@@ -67,13 +67,13 @@ export class BaseEntity {
 
   /**
    * Read a full snapshot entity record and return a populated BaseEntity.
-   * Reads: EntityId(u16) + EntityType(u8) + ComponentFlags(u8) + ComponentStates…
+   * Reads: GlobalEntityId(u32) + EntityType(u8) + ComponentFlags(u8) + ComponentStates…
    * @param {BufReader} reader
    * @param {number}    messageTick  Server tick from the chunk message header.
    * @returns {BaseEntity}
    */
   static fromRecord(reader, messageTick) {
-    const id    = reader.readUint16()
+    const id    = reader.readUint32()   // GlobalEntityId (uint32, was uint16)
     const type  = reader.readUint8()
     const flags = reader.readUint8()
     const entity = new BaseEntity(id, type)

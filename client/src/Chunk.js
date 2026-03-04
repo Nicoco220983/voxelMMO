@@ -69,7 +69,7 @@ export class Chunk {
   /** @type {boolean} True when voxels changed and mesh needs rebuild. */
   dirty = false
 
-  /** @type {Map<number, BaseEntity>} ChunkEntityId → entity, populated from server messages. */
+  /** @type {Map<number, BaseEntity>} GlobalEntityId → entity, populated from server messages. */
   #entities = new Map()
 
   /** @returns {Map<number, BaseEntity>} */
@@ -113,7 +113,7 @@ export class Chunk {
       const count   = reader.readInt32()
       for (let i = 0; i < count; i++) {
         const entity = BaseEntity.fromRecord(reader, messageTick)
-        this.#entities.set(entity.id, entity)
+        this.#entities.set(entity.id, entity)  // entity.id is now GlobalEntityId (uint32)
       }
     }
     off += ess
@@ -156,7 +156,7 @@ export class Chunk {
       const entityCount = reader.readInt32()
       for (let i = 0; i < entityCount; i++) {
         const deltaType  = reader.readUint8()
-        const entityId   = reader.readUint16()
+        const entityId   = reader.readUint32()   // GlobalEntityId (uint32, was uint16)
         const entityType = reader.readUint8()
         if (deltaType === DeltaType.DELETE) {
           this.#entities.delete(entityId)

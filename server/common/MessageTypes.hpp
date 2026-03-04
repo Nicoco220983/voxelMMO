@@ -17,7 +17,7 @@ enum class ChunkMessageType : uint8_t {
     SNAPSHOT_DELTA_COMPRESSED = 3,
     TICK_DELTA                = 4,
     TICK_DELTA_COMPRESSED     = 5,
-    SELF_ENTITY               = 6,  ///< Self-identification: type(1)+ChunkId(8)+tick(4)+ChunkEntityId(2) = 15 bytes
+    SELF_ENTITY               = 6,  ///< Self-identification: type(1)+ChunkId(8)+tick(4)+GlobalEntityId(4) = 17 bytes
 };
 
 /** @brief Entity delta sub-type, encoded as the first byte of each entity record in a delta. */

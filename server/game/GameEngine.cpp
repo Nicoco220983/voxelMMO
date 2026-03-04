@@ -87,12 +87,17 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
     const ChunkId chunkId = ChunkId::make(cy, cx, cz);
     
     const entt::entity ent = registry.create();
+    
+    // Assign stable global entity ID (persists across chunk moves)
+    const GlobalEntityId globalId = acquireEntityId();
+    registry.emplace<GlobalEntityIdComponent>(ent, globalId);
+    
     fit->second(registry, ent, sx, sy, sz, playerId, chunkId);
     playerEntities[playerId] = ent;
     
-    // Add to chunk immediately
+    // Add to chunk immediately (track by entt handle, not wire ID)
     Chunk& chunk = getOrActivateChunk(chunkId);
-    chunk.entities[ent] = chunk.nextChunkEntityId_++;
+    chunk.entities.insert(ent);
     chunk.presentPlayers.insert(playerId);
     
     // Add to watching radius
@@ -173,7 +178,7 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     for (const auto& pe : ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS).playerEntries) {
         for (auto& [gwId2, gwInfo2] : gateways) {
             if (gwInfo2.players.count(pe.playerId)) {
-                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.chunkEntityId);
+                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.globalEntityId);
                 NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
                 break;
             }
@@ -225,7 +230,7 @@ void GameEngine::serializeSnapshotDelta() {
     for (auto& [cid, chunk] : chunks) {
         chunk->state.hasNewDelta = false;
         chunk->world.clearSnapshotDelta();
-        for (auto& [ent, ceid] : chunk->entities) {
+        for (auto ent : chunk->entities) {
             registry.get<DirtyComponent>(ent).clearSnapshot();
         }
     }
@@ -256,7 +261,7 @@ void GameEngine::serializeTickDelta() {
     for (auto& [cid, chunk] : chunks) {
         chunk->state.hasNewDelta = false;
         chunk->world.clearTickDelta();
-        for (auto& [ent, ceid] : chunk->entities) {
+        for (auto ent : chunk->entities) {
             registry.get<DirtyComponent>(ent).clearTick();
         }
     }
@@ -298,7 +303,7 @@ void GameEngine::tick() {
         // Append SELF_ENTITY messages for players who entered new chunks
         for (const auto& pe : chunkResult.playerEntries) {
             if (gwInfo.players.count(pe.playerId)) {
-                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.chunkEntityId);
+                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.globalEntityId);
                 NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
             }
         }

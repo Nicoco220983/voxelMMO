@@ -60,17 +60,17 @@ inline std::optional<JoinMessage> parseJoin(const uint8_t* data, size_t size) {
 // ── Server → Client (serialization) ──────────────────────────────────────
 
 /**
- * @brief Build a 15-byte SELF_ENTITY message.
- * Wire: type(1) + ChunkId int64LE(8) + tick uint32LE(4) + ChunkEntityId uint16LE(2).
+ * @brief Build a 17-byte SELF_ENTITY message.
+ * Wire: type(1) + ChunkId int64LE(8) + tick uint32LE(4) + GlobalEntityId uint32LE(4).
  */
-inline std::array<uint8_t, 15> buildSelfEntityMessage(
-    const ChunkId& chunkId, uint32_t tick, uint16_t entityId)
+inline std::array<uint8_t, 17> buildSelfEntityMessage(
+    const ChunkId& chunkId, uint32_t tick, GlobalEntityId entityId)
 {
-    std::array<uint8_t, 15> msg;
+    std::array<uint8_t, 17> msg;
     msg[0] = static_cast<uint8_t>(ChunkMessageType::SELF_ENTITY);
     std::memcpy(msg.data() + 1,  &chunkId.packed, 8);
     std::memcpy(msg.data() + 9,  &tick,            sizeof(uint32_t));
-    std::memcpy(msg.data() + 13, &entityId,         sizeof(uint16_t));
+    std::memcpy(msg.data() + 13, &entityId,         sizeof(uint32_t));
     return msg;
 }
 

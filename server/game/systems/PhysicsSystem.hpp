@@ -221,7 +221,7 @@ inline void apply(entt::registry& registry,
         ctx.lastChunk   = chunkPtr.get();
         ctx.lastChunkId = chunkId;
 
-        for (auto& [ent, _ceid] : chunkPtr->entities) {
+        for (auto ent : chunkPtr->entities) {
             if (!registry.all_of<DynamicPositionComponent,
                                  BoundingBoxComponent,
                                  PhysicsModeComponent>(ent)) continue;

@@ -82,10 +82,11 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
     int32_t entityCount = 0;
 
     BufWriter w{scratch.data(), entityOff};
-    for (auto& [ent, ceid] : entities) {
+    for (auto ent : entities) {
         const auto& dyn   = reg.get<DynamicPositionComponent>(ent);
         const auto& etype = reg.get<EntityTypeComponent>(ent);
-        w.write(ceid);
+        const auto& gid   = reg.get<GlobalEntityIdComponent>(ent);
+        w.write(gid.id);                          // uint32 GlobalEntityId (was uint16 ChunkEntityId)
         w.write(static_cast<uint8_t>(etype.type));
         w.write<uint8_t>(POSITION_BIT);
         dyn.serializeFields(w);
@@ -149,8 +150,8 @@ bool Chunk::buildDeltaImpl(
     // Early exit: nothing to send
     if (voxelDeltas.empty()) {
         const bool anyDirty = std::any_of(entities.begin(), entities.end(),
-            [&](const auto& kv) {
-                return reg.get<DirtyComponent>(kv.first).*flagsField != 0;
+            [&](entt::entity ent) {
+                return reg.get<DirtyComponent>(ent).*flagsField != 0;
             });
         if (!anyDirty) return false;
     }
@@ -180,11 +181,12 @@ bool Chunk::buildDeltaImpl(
     int32_t entityCount = 0;
     {
         BufWriter w{staging.data(), off};
-        for (auto& [ent, ceid] : entities) {
+        for (auto ent : entities) {
             const uint8_t mask = reg.get<DirtyComponent>(ent).*flagsField;
             if (!mask) continue;
+            const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
             w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
-            w.write(ceid);
+            w.write(gid.id);                          // uint32 GlobalEntityId (was uint16 ChunkEntityId)
             w.write(static_cast<uint8_t>(reg.get<EntityTypeComponent>(ent).type));
             w.write(mask);
             if (mask & POSITION_BIT)

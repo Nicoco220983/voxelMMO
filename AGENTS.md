@@ -36,7 +36,7 @@ A high performance online webgame massive multiplayer, on wide generated world.
 | ChunkId | int64 packed | sint6(y) · sint29(x) · sint29(z) |
 | VoxelIndex | uint16 | uint5(y) · uint5(x) · uint5(z) — flat array index for deltas |
 | VoxelType | uint8 | 0 = air |
-| ChunkEntityId | uint16 | per-chunk, per-residence |
+| GlobalEntityId | uint32 | assigned at spawn, stable across moves |
 | PlayerId | uint32 | persistent |
 | GatewayId | uint32 | |
 
@@ -45,7 +45,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 # Code structure
 
 **server/common/**
-- `Types.hpp` — ChunkId, VoxelId, VoxelType, ChunkEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
+- `Types.hpp` — ChunkId, VoxelId, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
 - `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType (PLAYER=0, GHOST_PLAYER=1), ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
 - `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
 - `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick)
@@ -74,7 +74,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `surfaceY(wx, wz)` — surface height at world position (matches generation logic)
 
 **server/game/Chunk.hpp/cpp**
-- `map[entt::entity, ChunkEntityId] entities` — chunk membership + wire id assignment (`nextChunkEntityId_`)
+- `set<entt::entity> entities` — chunk membership; wire ID from GlobalEntityIdComponent
 - `buildSnapshot(reg, tick)` — LZ4(voxels) zero-copy + entity section into scratch, compress if above threshold
 - `buildSnapshotDelta / buildTickDelta` — staging buffer → optional LZ4 → appended to state.deltas
 
@@ -83,6 +83,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `voxelsSnapshotDeltas`, `voxelsTickDeltas` — changed-voxel lists, cleared after each delta send
 
 **server/game/components/**
+- `GlobalEntityIdComponent` — `GlobalEntityId id`; assigned at spawn, never changes
 - `DirtyComponent` — `snapshotDirtyFlags`, `tickDirtyFlags`; `mark(bit)`, `clearSnapshot()`, `clearTick()`
 - `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded, moved; `modify()`; `serializeFields(BufWriter&)`
 - `EntityTypeComponent` — `EntityType type`; emplaced on every entity at creation

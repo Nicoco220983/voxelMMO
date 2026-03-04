@@ -66,8 +66,17 @@ inline constexpr void unpackVoxelIndex(VoxelIndex idx, uint32_t& x, uint32_t& y,
 /** @brief Voxel type byte. */
 using VoxelType = uint8_t;
 
-/** @brief Per-chunk wire entity id (uint16, unique within one chunk's lifetime). */
+/** @brief Per-chunk wire entity id (uint16, unique within one chunk's lifetime).
+ *  @deprecated Use GlobalEntityId instead for stable entity identification.
+ */
 using ChunkEntityId = uint16_t;
+
+/** @brief Global entity identifier (uint32, stable across chunk moves and server lifetime).
+ *
+ * Assigned once at entity spawn by GameEngine; never changes during the entity's lifetime.
+ * Persisted in GlobalEntityIdComponent; serialized as uint32 on the wire.
+ */
+using GlobalEntityId = uint32_t;
 
 /** @brief Persistent player identifier (uint32). */
 using PlayerId = uint32_t;

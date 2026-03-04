@@ -4,6 +4,7 @@
 #include "game/systems/ChunkMembershipSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
+#include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/InputComponent.hpp"
 #include "common/Types.hpp"
 #include "common/GatewayInfo.hpp"
@@ -161,7 +162,13 @@ private:
      */
     std::recursive_mutex mtx_;
 
+    /** @brief Monotonically increasing global entity ID counter (starts at 1, 0 reserved). */
+    GlobalEntityId nextEntityId_{1};
+
     // TODO: remove it when migrated to sockets using writev
+    /** @brief Acquire a new unique global entity ID. */
+    GlobalEntityId acquireEntityId() { return nextEntityId_++; }
+
     /** @brief Reused batch buffer — cleared and refilled every serialize call. */
     std::vector<uint8_t> batchBuf;
 

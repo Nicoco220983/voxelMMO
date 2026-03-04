@@ -18,8 +18,8 @@
  */
 
 /**
- * Per-chunk wire entity id (uint16, unique within one chunk's lifetime).
- * @typedef {number} ChunkEntityId
+ * Global entity identifier (uint32, stable across chunk moves and server lifetime).
+ * @typedef {number} GlobalEntityId
  */
 
 /**
@@ -42,7 +42,7 @@ export const ChunkMessageType = Object.freeze({
   SNAPSHOT_DELTA_COMPRESSED: 3,
   TICK_DELTA:                4,
   TICK_DELTA_COMPRESSED:     5,
-  SELF_ENTITY:               6,  // type(1)+ChunkId(8)+tick(4)+ChunkEntityId(2) = 15 bytes
+  SELF_ENTITY:               6,  // type(1)+ChunkId(8)+tick(4)+GlobalEntityId(4) = 17 bytes
 })
 
 /**

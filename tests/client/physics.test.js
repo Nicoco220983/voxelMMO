@@ -149,8 +149,8 @@ describe('DynamicPositionComponent.deserialize', () => {
 describe('BaseEntity.fromRecord', () => {
   it('reads id, type, flags and deserializes POSITION_BIT component', () => {
     const bytes = [
-      // ChunkEntityId uint16 LE
-      5, 0,
+      // GlobalEntityId uint32 LE (was uint16)
+      5, 0, 0, 0,
       // EntityType uint8
       1,  // GHOST_PLAYER
       // ComponentFlags uint8
@@ -173,9 +173,9 @@ describe('BaseEntity.fromRecord', () => {
 
   it('leaves motion at defaults when POSITION_BIT is not set', () => {
     const bytes = [
-      3, 0,  // id = 3
-      0,     // EntityType = PLAYER
-      0,     // ComponentFlags = 0 (no components)
+      3, 0, 0, 0,  // GlobalEntityId = 3 (uint32, was uint16)
+      0,           // EntityType = PLAYER
+      0,           // ComponentFlags = 0 (no components)
     ]
     const entity = BaseEntity.fromRecord(makeReader(bytes), 50)
     expect(entity.id).toBe(3)

@@ -4,6 +4,7 @@
 #include "common/MessageTypes.hpp"
 #include "common/ChunkState.hpp"
 #include "game/components/DirtyComponent.hpp"
+#include "game/components/GlobalEntityIdComponent.hpp"
 #include <entt/entt.hpp>
 #include <set>
 #include <memory>
@@ -37,20 +38,15 @@ public:
     WorldChunk world;
 
     /**
-     * @brief Maps entt entity handle → per-chunk wire entity id.
+     * @brief Set of entities currently resident in this chunk.
      *
-     * The ChunkEntityId is assigned when an entity enters this chunk (monotonically
-     * increasing from nextChunkEntityId_) and is valid only for the lifetime of that
-     * entity's residence in the chunk.  The client sees DELETE + NEW when an entity
-     * crosses a chunk boundary.
+     * Entities are tracked by their entt handle. The GlobalEntityId (stable across
+     * chunk moves) is stored in GlobalEntityIdComponent and used on the wire.
      */
-    std::unordered_map<entt::entity, ChunkEntityId> entities;
+    std::set<entt::entity> entities;
 
     /** @brief Serialised state cache (snapshot, deltas, scratch). */
     ChunkState state;
-
-    /** @brief Monotonically increasing counter; assigned to each entity when it enters this chunk. */
-    ChunkEntityId nextChunkEntityId_{1};
 
     explicit Chunk(ChunkId chunkId);
 

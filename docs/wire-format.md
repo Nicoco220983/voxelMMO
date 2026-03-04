@@ -42,7 +42,7 @@ int32   entity_section_stored_size
 ### Entity record (snapshot)
 
 ```
-ChunkEntityId  uint16
+GlobalEntityId uint32    (stable across chunk moves and server lifetime)
 EntityType     uint8
 ComponentFlags uint8    (bitmask of present components)
   if POSITION_BIT:  DynamicPositionComponent fields (see below)
@@ -66,7 +66,7 @@ ComponentFlags uint8    (bitmask of present components)
 
 ```
 DeltaType      uint8   (0=NEW, 1=UPDATE, 2=DELETE)
-ChunkEntityId  uint16
+GlobalEntityId uint32  (stable across chunk moves and server lifetime)
 EntityType     uint8
 ComponentFlags uint8   (bitmask of dirty components)
   if POSITION_BIT:  DynamicPositionComponent fields (see below)
@@ -82,11 +82,14 @@ uint8 grounded    0 = airborne (gravity applied), 1 = on ground
 
 Total: 25 bytes. Tick is NOT here — read from the message header.
 
-## ChunkEntityId semantics
+## GlobalEntityId semantics
 
-`ChunkEntityId` (uint16) is per-chunk and per-residence: assigned when an
-entity enters a chunk (monotonically increasing from 1), freed implicitly on
-departure. The client sees DELETE in the old chunk and NEW in the new one.
+`GlobalEntityId` (uint32) is assigned once at entity spawn and is stable for
+the entire lifetime of the entity across all chunk moves. The client can track
+entities reliably using this ID; no DELETE+NEW cycle occurs on chunk crossing.
+
+IDs are assigned monotonically starting from 1 (0 reserved) and persist across
+save/resume cycles by persisting the counter with the save file.
 
 ## Client → Server (binary WebSocket frames)
 
