@@ -172,7 +172,7 @@ private:
 
     // ── Internal helpers ──────────────────────────────────────────────────
 
-    Chunk& activateChunk(ChunkId id);
+    Chunk& getOrActivateChunk(ChunkId id);
 
     /** @brief Return the chunk containing sub-voxel position (px, py, pz), or nullptr if not loaded. */
     Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;

@@ -79,9 +79,30 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     const auto fit = playerFactories.find(type);
     if (fit == playerFactories.end()) return;
+    
+    // Compute initial chunk from spawn position
+    const int32_t cx = sx >> CHUNK_SHIFT_X;
+    const int32_t cy = sy >> CHUNK_SHIFT_Y;
+    const int32_t cz = sz >> CHUNK_SHIFT_Z;
+    const ChunkId chunkId = ChunkId::make(cy, cx, cz);
+    
     const entt::entity ent = registry.create();
-    fit->second(registry, ent, sx, sy, sz, playerId);
+    fit->second(registry, ent, sx, sy, sz, playerId, chunkId);
     playerEntities[playerId] = ent;
+    
+    // Add to chunk immediately
+    Chunk& chunk = getOrActivateChunk(chunkId);
+    chunk.entities[ent] = chunk.nextChunkEntityId_++;
+    chunk.presentPlayers.insert(playerId);
+    
+    // Add to watching radius
+    for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
+    for (int32_t dy = -1; dy <= 1; ++dy)
+    for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
+        const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
+        getOrActivateChunk(cid).watchingPlayers.insert(playerId);
+    }
+    
     if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
 }
@@ -104,21 +125,19 @@ void GameEngine::removePlayer(PlayerId playerId) {
     // Clean up chunk membership before destroying
     if (registry.all_of<ChunkMemberComponent>(ent)) {
         const auto& cm = registry.get<ChunkMemberComponent>(ent);
-        if (cm.chunkAssigned) {
-            const int32_t ocx = cm.currentChunkId.x();
-            const int32_t ocy = cm.currentChunkId.y();
-            const int32_t ocz = cm.currentChunkId.z();
-            if (auto cit = chunks.find(cm.currentChunkId); cit != chunks.end()) {
-                cit->second->entities.erase(ent);
-                cit->second->presentPlayers.erase(playerId);
-            }
-            for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-            for (int32_t dy = -1; dy <= 1; ++dy)
-            for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-                const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-                if (auto cit = chunks.find(cid); cit != chunks.end())
-                    cit->second->watchingPlayers.erase(playerId);
-            }
+        const int32_t ocx = cm.currentChunkId.x();
+        const int32_t ocy = cm.currentChunkId.y();
+        const int32_t ocz = cm.currentChunkId.z();
+        if (auto cit = chunks.find(cm.currentChunkId); cit != chunks.end()) {
+            cit->second->entities.erase(ent);
+            cit->second->presentPlayers.erase(playerId);
+        }
+        for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
+        for (int32_t dy = -1; dy <= 1; ++dy)
+        for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
+            const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
+            if (auto cit = chunks.find(cid); cit != chunks.end())
+                cit->second->watchingPlayers.erase(playerId);
         }
     }
 
@@ -128,7 +147,7 @@ void GameEngine::removePlayer(PlayerId playerId) {
 
 // ── Chunk activation ──────────────────────────────────────────────────────
 
-Chunk& GameEngine::activateChunk(ChunkId id) {
+Chunk& GameEngine::getOrActivateChunk(ChunkId id) {
     auto it = chunks.find(id);
     if (it != chunks.end()) return *it->second;
 
@@ -264,34 +283,32 @@ void GameEngine::checkEntitiesChunks() {
         const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
         const ChunkId newChunk = ChunkId::make(cy, cx, cz);
 
-        if (cm.chunkAssigned && newChunk == cm.currentChunkId) return;
+        if (newChunk == cm.currentChunkId) return;
 
         const bool     isPlayer = registry.all_of<PlayerComponent>(ent);
         const PlayerId pid      = isPlayer ? registry.get<PlayerComponent>(ent).playerId : 0u;
 
         // Remove from old chunk lists
-        if (cm.chunkAssigned) {
-            const int32_t ocx = cm.currentChunkId.x();
-            const int32_t ocy = cm.currentChunkId.y();
-            const int32_t ocz = cm.currentChunkId.z();
+        const int32_t ocx = cm.currentChunkId.x();
+        const int32_t ocy = cm.currentChunkId.y();
+        const int32_t ocz = cm.currentChunkId.z();
 
-            if (auto it = chunks.find(cm.currentChunkId); it != chunks.end()) {
-                it->second->entities.erase(ent);
-                if (isPlayer) it->second->presentPlayers.erase(pid);
-            }
-            if (isPlayer) {
-                for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-                for (int32_t dy = -1; dy <= 1; ++dy)
-                for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-                    const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-                    if (auto it = chunks.find(cid); it != chunks.end())
-                        it->second->watchingPlayers.erase(pid);
-                }
+        if (auto it = chunks.find(cm.currentChunkId); it != chunks.end()) {
+            it->second->entities.erase(ent);
+            if (isPlayer) it->second->presentPlayers.erase(pid);
+        }
+        if (isPlayer) {
+            for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
+            for (int32_t dy = -1; dy <= 1; ++dy)
+            for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
+                const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
+                if (auto it = chunks.find(cid); it != chunks.end())
+                    it->second->watchingPlayers.erase(pid);
             }
         }
 
         // Add to new chunk lists
-        Chunk& nc = activateChunk(newChunk);
+        Chunk& nc = getOrActivateChunk(newChunk);
         nc.entities[ent] = nc.nextChunkEntityId_++;
         if (isPlayer) {
             nc.presentPlayers.insert(pid);
@@ -299,7 +316,7 @@ void GameEngine::checkEntitiesChunks() {
             for (int32_t dy = -1; dy <= 1; ++dy)
             for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
                 const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-                activateChunk(cid).watchingPlayers.insert(pid);
+                getOrActivateChunk(cid).watchingPlayers.insert(pid);
             }
             // Tell the gateway which entity is "self" for this player
             const uint16_t ceid = static_cast<uint16_t>(nc.nextChunkEntityId_ - 1);
@@ -312,7 +329,6 @@ void GameEngine::checkEntitiesChunks() {
         }
 
         cm.currentChunkId = newChunk;
-        cm.chunkAssigned  = true;
     });
 
     // ── Phase B: rebuild gateway watchedChunks + dispatch new snapshots ───
@@ -344,7 +360,7 @@ void GameEngine::checkEntitiesChunks() {
                         if (std::abs(dx) <= ACTIVATION_RADIUS &&
                             std::abs(dz) <= ACTIVATION_RADIUS)
                         {
-                            Chunk& chunk = activateChunk(cid);
+                            Chunk& chunk = getOrActivateChunk(cid);
                             if (!gwInfo.lastStateTick.count(cid)) {
                                 NetworkProtocol::appendFramed(batchBuf, chunk.buildSnapshot(registry, tick));
                                 gwInfo.lastStateTick[cid] = tick;

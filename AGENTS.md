@@ -87,7 +87,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `EntityTypeComponent` — `EntityType type`; emplaced on every entity at creation
 - `InputComponent` — `buttons` (uint8 bitmask), `yaw`, `pitch` (float radians); updated by handlePlayerInput(); read by InputSystem
 - `PlayerComponent` — `PlayerId playerId`; emplaced on player entities only
-- `ChunkMemberComponent` — `currentChunkId`, `chunkAssigned`; managed by checkEntitiesChunks()
+- `ChunkMemberComponent` — `currentChunkId` (assigned at spawn); managed by checkEntitiesChunks()
 - `PhysicsModeComponent` — `PhysicsMode mode` (GHOST/FLYING/FULL); server-only, not serialised
 - `BoundingBoxComponent` — AABB half-extents (hx, hy, hz) in sub-voxels; centered on position
 

@@ -10,7 +10,8 @@
 namespace voxelmmo {
 
 using PlayerSpawnFn = std::function<void(entt::registry&, entt::entity,
-                                         int32_t, int32_t, int32_t, PlayerId)>;
+                                         int32_t, int32_t, int32_t, PlayerId,
+                                         ChunkId)>;
 
 inline const std::unordered_map<EntityType, PlayerSpawnFn> playerFactories = {
     { EntityType::PLAYER,       PlayerEntity::spawn      },
