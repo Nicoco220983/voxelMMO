@@ -96,7 +96,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 **server/game/systems/**
 - `InputSystem.hpp` — `apply(registry)`: translates InputComponent (buttons+yaw+pitch) → DynamicPositionComponent velocity per EntityType; called at top of `tick()` before physics
 - `PhysicsSystem.hpp` — `apply(registry, chunks)`: collision-aware physics sweeps (X/Y/Z) with voxel-context cache; handles GHOST (no collision), FLYING (collision, no gravity), FULL (collision + gravity)
-- `ChunkMembershipSystem.hpp` — `updateEntities(registry, chunks, tick, activationRadius)` + `rebuildGatewayWatchedChunks(...)`: chunk membership management (Phase A: entity movement between chunks; Phase B: rebuild gateway watchedChunks, activate new chunks)
+- `ChunkMembershipSystem.hpp` — `updateEntities(registry, chunks, tick, activationRadius)` + `rebuildGatewayWatchedChunks(...)`: chunk membership management (Phase A: entity movement between chunks; Phase B: rebuild gateway watchedChunks, activate new chunks). Note: SELF_ENTITY is sent once at player creation, not on every chunk change (global entity ID is stable).
 
 **server/gateway/**
 - `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameBatch()` forwards to clients

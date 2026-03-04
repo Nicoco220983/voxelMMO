@@ -79,27 +79,27 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     const auto fit = playerFactories.find(type);
     if (fit == playerFactories.end()) return;
-    
+
     // Compute initial chunk from spawn position
     const int32_t cx = sx >> CHUNK_SHIFT_X;
     const int32_t cy = sy >> CHUNK_SHIFT_Y;
     const int32_t cz = sz >> CHUNK_SHIFT_Z;
     const ChunkId chunkId = ChunkId::make(cy, cx, cz);
-    
+
     const entt::entity ent = registry.create();
-    
+
     // Assign stable global entity ID (persists across chunk moves)
     const GlobalEntityId globalId = acquireEntityId();
     registry.emplace<GlobalEntityIdComponent>(ent, globalId);
-    
+
     fit->second(registry, ent, sx, sy, sz, playerId, chunkId);
     playerEntities[playerId] = ent;
-    
+
     // Add to chunk immediately (track by entt handle, not wire ID)
     Chunk& chunk = getOrActivateChunk(chunkId);
     chunk.entities.insert(ent);
     chunk.presentPlayers.insert(playerId);
-    
+
     // Add to watching radius
     for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
     for (int32_t dy = -1; dy <= 1; ++dy)
@@ -107,9 +107,17 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
         const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
         getOrActivateChunk(cid).watchingPlayers.insert(playerId);
     }
-    
+
     if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
+
+    // Send SELF_ENTITY message once at creation (global ID is stable across chunk moves)
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
+    std::vector<uint8_t> selfEntityBuf;
+    const auto msg = NetworkProtocol::buildSelfEntityMessage(chunkId, tick, globalId);
+    NetworkProtocol::appendFramed(selfEntityBuf, msg.data(), msg.size());
+    if (!selfEntityBuf.empty() && outputCallback)
+        outputCallback(gwId, selfEntityBuf.data(), selfEntityBuf.size());
 }
 
 void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz) {
@@ -174,16 +182,7 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
         it->second, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS);
-    // Append SELF_ENTITY messages for player entries
-    for (const auto& pe : ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS).playerEntries) {
-        for (auto& [gwId2, gwInfo2] : gateways) {
-            if (gwInfo2.players.count(pe.playerId)) {
-                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.globalEntityId);
-                NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
-                break;
-            }
-        }
-    }
+    ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS);
     if (!batchBuf.empty() && outputCallback)
         outputCallback(gwId, batchBuf.data(), batchBuf.size());
     serializeSnapshot(gwId);
@@ -293,20 +292,12 @@ void GameEngine::tick() {
     stepPhysics();
 
     // Phase A: Update chunk membership for moved entities
-    auto chunkResult = ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS);
+    ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS);
 
     // Phase B: Rebuild gateway watchedChunks and dispatch snapshots
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
             gwInfo, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS);
-
-        // Append SELF_ENTITY messages for players who entered new chunks
-        for (const auto& pe : chunkResult.playerEntries) {
-            if (gwInfo.players.count(pe.playerId)) {
-                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.globalEntityId);
-                NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
-            }
-        }
 
         if (!batchBuf.empty() && outputCallback)
             outputCallback(gwId, batchBuf.data(), batchBuf.size());

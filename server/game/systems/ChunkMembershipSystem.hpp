@@ -20,23 +20,9 @@ namespace voxelmmo {
 // ── Result structures ─────────────────────────────────────────────────────────
 
 /**
- * @brief Information about a player who entered a new chunk.
- *
- * The caller (GameEngine) uses this to send a SELF_ENTITY message
- * through the appropriate gateway.
- */
-struct PlayerChunkEntry {
-    PlayerId       playerId;
-    ChunkId        chunkId;
-    GlobalEntityId globalEntityId;
-};
-
-/**
  * @brief Result of ChunkMembershipSystem::updateEntities() containing all changes.
  */
 struct ChunkMembershipSystemResult {
-    /** Players who entered a new chunk and need SELF_ENTITY messages. */
-    std::vector<PlayerChunkEntry> playerEntries;
     /** Chunks that were activated (created) during the update. */
     std::vector<ChunkId> activatedChunks;
 };
@@ -54,6 +40,7 @@ struct ChunkMembershipSystemResult {
  */
 namespace ChunkMembershipSystem {
 
+// TODO: move this to gameEngine
 /**
  * @brief Helper to activate a chunk if it doesn't exist.
  * @return Reference to the chunk (either existing or newly created).
@@ -116,11 +103,6 @@ inline ChunkMembershipSystemResult updateEntities(
         const int32_t ocy = cm.currentChunkId.y();
         const int32_t ocz = cm.currentChunkId.z();
 
-        // Get the global entity ID before we move the entity (for SELF_ENTITY message)
-        const GlobalEntityId globalId = isPlayer 
-            ? registry.get<GlobalEntityIdComponent>(ent).id 
-            : GlobalEntityId{0};
-
         if (auto it = chunks.find(cm.currentChunkId); it != chunks.end()) {
             it->second->entities.erase(ent);
             if (isPlayer) it->second->presentPlayers.erase(pid);
@@ -148,12 +130,6 @@ inline ChunkMembershipSystemResult updateEntities(
                 Chunk& watchChunk = activateChunk(cid, chunks, result.activatedChunks);
                 watchChunk.watchingPlayers.insert(pid);
             }
-            // Record player entry for SELF_ENTITY message (with stable global ID)
-            result.playerEntries.push_back({
-                pid,
-                newChunk,
-                globalId
-            });
         }
 
         cm.currentChunkId = newChunk;
