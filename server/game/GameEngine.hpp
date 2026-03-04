@@ -1,10 +1,12 @@
 #pragma once
 #include "Chunk.hpp"
 #include "game/systems/PhysicsSystem.hpp"
+#include "game/systems/ChunkMembershipSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/InputComponent.hpp"
 #include "common/Types.hpp"
+#include "common/GatewayInfo.hpp"
 #include "common/NetworkProtocol.hpp"
 #include <entt/entt.hpp>
 #include <unordered_map>
@@ -16,14 +18,7 @@
 
 namespace voxelmmo {
 
-/**
- * @brief Metadata the GameEngine tracks for each connected gateway.
- */
-struct GatewayInfo {
-    std::set<PlayerId>                    players;        ///< Players routed through this gateway.
-    std::set<ChunkId>                     watchedChunks;  ///< Chunks the gateway currently needs state for.
-    std::unordered_map<ChunkId, uint32_t> lastStateTick; ///< Tick of the last state (snapshot or delta) sent per chunk.
-};
+
 
 /**
  * @brief Authoritative game server.
@@ -177,16 +172,7 @@ private:
     /** @brief Return the chunk containing sub-voxel position (px, py, pz), or nullptr if not loaded. */
     Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;
 
-    /**
-     * @brief Update chunk membership (Chunk::entities, presentPlayers, watchingPlayers) for
-     *        any entity whose DynamicPositionComponent::moved flag is set, then rebuild each
-     *        gateway's watchedChunks set and dispatch snapshots for newly-activated chunks.
-     *
-     * Per-chunk lists are never cleared wholesale — only changed when an entity crosses
-     * a chunk boundary, making this O(moved_entities × ACTIVATION_RADIUS²) instead of
-     * O(all_chunks + all_entities) per tick.
-     */
-    void   checkEntitiesChunks();
+
     void   serializeSnapshot(GatewayId gwId);
     void   serializeSnapshotDelta();
     void   serializeTickDelta();

@@ -8,12 +8,12 @@ namespace voxelmmo {
  *
  * Chunk assignment is mandatory at entity creation. The component cannot be
  * default-constructed; a valid ChunkId must always be provided.
- * Managed exclusively by GameEngine::checkEntitiesChunks().
+ * Managed exclusively by ChunkSystem::updateEntities().
  */
-struct ChunkMemberComponent {
+struct ChunkMembershipComponent {
     ChunkId currentChunkId;
 
-    explicit ChunkMemberComponent(ChunkId chunkId) : currentChunkId(chunkId) {}
+    explicit ChunkMembershipComponent(ChunkId chunkId) : currentChunkId(chunkId) {}
 };
 
 } // namespace voxelmmo

@@ -123,8 +123,8 @@ void GameEngine::removePlayer(PlayerId playerId) {
     const entt::entity ent = it->second;
 
     // Clean up chunk membership before destroying
-    if (registry.all_of<ChunkMemberComponent>(ent)) {
-        const auto& cm = registry.get<ChunkMemberComponent>(ent);
+    if (registry.all_of<ChunkMembershipComponent>(ent)) {
+        const auto& cm = registry.get<ChunkMembershipComponent>(ent);
         const int32_t ocx = cm.currentChunkId.x();
         const int32_t ocy = cm.currentChunkId.y();
         const int32_t ocz = cm.currentChunkId.z();
@@ -162,9 +162,25 @@ Chunk& GameEngine::getOrActivateChunk(ChunkId id) {
 
 void GameEngine::sendSnapshot(GatewayId gwId) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
-    // watchedChunks is populated by checkPlayersChunks(); run it now so a
+    // watchedChunks is populated by ChunkMembershipSystem; run it now so a
     // snapshot requested immediately after addPlayer() is not empty.
-    checkEntitiesChunks();
+    auto it = gateways.find(gwId);
+    if (it == gateways.end()) return;
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
+    batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
+        it->second, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS);
+    // Append SELF_ENTITY messages for player entries
+    for (const auto& pe : ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS).playerEntries) {
+        for (auto& [gwId2, gwInfo2] : gateways) {
+            if (gwInfo2.players.count(pe.playerId)) {
+                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.chunkEntityId);
+                NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
+                break;
+            }
+        }
+    }
+    if (!batchBuf.empty() && outputCallback)
+        outputCallback(gwId, batchBuf.data(), batchBuf.size());
     serializeSnapshot(gwId);
 }
 
@@ -259,139 +275,37 @@ Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
     return it != chunks.end() ? it->second.get() : nullptr;
 }
 
-// ── Chunk membership ──────────────────────────────────────────────────────
 
-void GameEngine::checkEntitiesChunks() {
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
-
-    // ── Phase A: incrementally update per-chunk lists for moved entities ──
-    //
-    // Per-chunk sets (entities, presentPlayers, watchingPlayers) are never
-    // cleared wholesale.  We only touch them when an entity crosses a chunk
-    // boundary, identified by the DynamicPositionComponent::moved flag.
-
-    struct SelfMsg { GatewayId gwId; ChunkId chunkId; uint16_t entityId; };
-    std::vector<SelfMsg> selfMsgs;
-
-    auto view = registry.view<DynamicPositionComponent, ChunkMemberComponent>();
-    view.each([&](entt::entity ent, DynamicPositionComponent& dyn, ChunkMemberComponent& cm) {
-        if (!dyn.moved) return;
-        dyn.moved = false;
-
-        const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
-        const int32_t cy = dyn.y >> CHUNK_SHIFT_Y;
-        const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
-        const ChunkId newChunk = ChunkId::make(cy, cx, cz);
-
-        if (newChunk == cm.currentChunkId) return;
-
-        const bool     isPlayer = registry.all_of<PlayerComponent>(ent);
-        const PlayerId pid      = isPlayer ? registry.get<PlayerComponent>(ent).playerId : 0u;
-
-        // Remove from old chunk lists
-        const int32_t ocx = cm.currentChunkId.x();
-        const int32_t ocy = cm.currentChunkId.y();
-        const int32_t ocz = cm.currentChunkId.z();
-
-        if (auto it = chunks.find(cm.currentChunkId); it != chunks.end()) {
-            it->second->entities.erase(ent);
-            if (isPlayer) it->second->presentPlayers.erase(pid);
-        }
-        if (isPlayer) {
-            for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-            for (int32_t dy = -1; dy <= 1; ++dy)
-            for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-                const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-                if (auto it = chunks.find(cid); it != chunks.end())
-                    it->second->watchingPlayers.erase(pid);
-            }
-        }
-
-        // Add to new chunk lists
-        Chunk& nc = getOrActivateChunk(newChunk);
-        nc.entities[ent] = nc.nextChunkEntityId_++;
-        if (isPlayer) {
-            nc.presentPlayers.insert(pid);
-            for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-            for (int32_t dy = -1; dy <= 1; ++dy)
-            for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-                const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-                getOrActivateChunk(cid).watchingPlayers.insert(pid);
-            }
-            // Tell the gateway which entity is "self" for this player
-            const uint16_t ceid = static_cast<uint16_t>(nc.nextChunkEntityId_ - 1);
-            for (auto& [gwId2, gwInfo2] : gateways) {
-                if (gwInfo2.players.count(pid)) {
-                    selfMsgs.push_back({gwId2, newChunk, ceid});
-                    break;
-                }
-            }
-        }
-
-        cm.currentChunkId = newChunk;
-    });
-
-    // ── Phase B: rebuild gateway watchedChunks + dispatch new snapshots ───
-    //
-    // Per-gateway watchedChunks is rebuilt from scratch each tick (cheap: set
-    // insertions over WATCH_RADIUS³ chunks per player).  Per-chunk membership
-    // lists are NOT touched here — Phase A owns those.
-
-    for (auto& [gwId, gwInfo] : gateways) {
-        gwInfo.watchedChunks.clear();
-        batchBuf.clear();
-
-        for (PlayerId pid : gwInfo.players) {
-            auto entIt = playerEntities.find(pid);
-            if (entIt == playerEntities.end()) continue;
-
-            const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
-            const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
-            const int32_t cy = dyn.y >> CHUNK_SHIFT_Y;
-            const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
-
-            for (int32_t dx = -WATCH_RADIUS; dx <= WATCH_RADIUS; ++dx) {
-                for (int32_t dy = -1; dy <= 1; ++dy) {
-                    for (int32_t dz = -WATCH_RADIUS; dz <= WATCH_RADIUS; ++dz) {
-                        const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-                        gwInfo.watchedChunks.insert(cid);
-
-                        // Ensure activation-radius chunks exist; send snapshot on first sight
-                        if (std::abs(dx) <= ACTIVATION_RADIUS &&
-                            std::abs(dz) <= ACTIVATION_RADIUS)
-                        {
-                            Chunk& chunk = getOrActivateChunk(cid);
-                            if (!gwInfo.lastStateTick.count(cid)) {
-                                NetworkProtocol::appendFramed(batchBuf, chunk.buildSnapshot(registry, tick));
-                                gwInfo.lastStateTick[cid] = tick;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Append SELF_ENTITY messages for any player in this gateway who entered a new chunk
-        for (const auto& sm : selfMsgs) {
-            if (sm.gwId != gwId) continue;
-            const auto msg = NetworkProtocol::buildSelfEntityMessage(sm.chunkId, tick, sm.entityId);
-            NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
-        }
-
-        if (!batchBuf.empty() && outputCallback)
-            outputCallback(gwId, batchBuf.data(), batchBuf.size());
-    }
-}
 
 // ── Main tick ─────────────────────────────────────────────────────────────
 
 void GameEngine::tick() {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     ++tickCount;
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
 
     InputSystem::apply(registry);
     stepPhysics();
-    checkEntitiesChunks();
+
+    // Phase A: Update chunk membership for moved entities
+    auto chunkResult = ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS);
+
+    // Phase B: Rebuild gateway watchedChunks and dispatch snapshots
+    for (auto& [gwId, gwInfo] : gateways) {
+        batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
+            gwInfo, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS);
+
+        // Append SELF_ENTITY messages for players who entered new chunks
+        for (const auto& pe : chunkResult.playerEntries) {
+            if (gwInfo.players.count(pe.playerId)) {
+                const auto msg = NetworkProtocol::buildSelfEntityMessage(pe.chunkId, tick, pe.chunkEntityId);
+                NetworkProtocol::appendFramed(batchBuf, msg.data(), msg.size());
+            }
+        }
+
+        if (!batchBuf.empty() && outputCallback)
+            outputCallback(gwId, batchBuf.data(), batchBuf.size());
+    }
 
     if (tickCount % SNAPSHOT_DELTA_INTERVAL == 0) {
         serializeSnapshotDelta();

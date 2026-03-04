@@ -4,7 +4,7 @@
 #include "game/components/EntityTypeComponent.hpp"
 #include "game/components/InputComponent.hpp"
 #include "game/components/PlayerComponent.hpp"
-#include "game/components/ChunkMemberComponent.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
 #include "game/components/BoundingBoxComponent.hpp"
 #include "game/components/PhysicsModeComponent.hpp"
 #include "common/MessageTypes.hpp"
@@ -23,7 +23,7 @@ inline void spawn(entt::registry& reg, entt::entity ent,
     reg.emplace<EntityTypeComponent>(ent, EntityType::GHOST_PLAYER);
     reg.emplace<InputComponent>(ent);
     reg.emplace<PlayerComponent>(ent, playerId);
-    reg.emplace<ChunkMemberComponent>(ent, chunkId);
+    reg.emplace<ChunkMembershipComponent>(ent, chunkId);
     reg.emplace<BoundingBoxComponent>(ent, PLAYER_BBOX_HX, PLAYER_BBOX_HY, PLAYER_BBOX_HZ);
     reg.emplace<PhysicsModeComponent>(ent, PhysicsMode::GHOST);
 }
