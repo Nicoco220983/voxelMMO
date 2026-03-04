@@ -1,5 +1,6 @@
 #include "game/GameEngine.hpp"
 #include "game/systems/InputSystem.hpp"
+#include "game/components/SheepBehaviorComponent.hpp"
 #include "common/MessageTypes.hpp"
 #include <cmath>
 
@@ -166,6 +167,19 @@ Chunk& GameEngine::getOrActivateChunk(ChunkId id) {
 
     auto chunk = std::make_unique<Chunk>(id);
     chunk->world.generate(id.x(), id.y(), id.z());
+    
+    // Generate entities for this chunk (sheep, etc.)
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
+    chunk->generator.generateEntities(id, registry, tick);
+    
+    // Add any newly created sheep entities to this chunk's entity set
+    registry.view<SheepBehaviorComponent, ChunkMembershipComponent, GlobalEntityIdComponent>()
+        .each([&](entt::entity ent, const SheepBehaviorComponent&, const ChunkMembershipComponent& cm, const GlobalEntityIdComponent&) {
+            if (cm.currentChunkId == id) {
+                chunk->entities.insert(ent);
+            }
+        });
+    
     Chunk& ref = *chunk;
     chunks[id] = std::move(chunk);
     return ref;
@@ -289,6 +303,7 @@ void GameEngine::tick() {
     const uint32_t tick = static_cast<uint32_t>(tickCount);
 
     InputSystem::apply(registry);
+    SheepAISystem::apply(registry, tick);
     stepPhysics();
 
     // Phase A: Update chunk membership for moved entities

@@ -1,6 +1,7 @@
 #pragma once
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
+#include <entt/entt.hpp>
 #include <vector>
 #include <cstdint>
 
@@ -49,6 +50,18 @@ public:
      * the voxel above it is AIR.
      */
     int32_t surfaceY(float wx, float wz) const noexcept;
+
+    /**
+     * @brief Spawn entities for a newly activated chunk.
+     *
+     * Called after voxel generation. Spawns passive mobs like sheep
+     * on surface grass blocks.
+     *
+     * @param chunkId    Chunk being activated.
+     * @param registry   Entity registry to create entities in.
+     * @param tick       Current server tick (for state initialization).
+     */
+    void generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick) const;
 };
 
 } // namespace voxelmmo

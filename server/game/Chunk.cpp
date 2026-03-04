@@ -2,6 +2,7 @@
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
+#include "game/components/SheepBehaviorComponent.hpp"
 #include <lz4.h>
 #include <algorithm>
 #include <cstring>
@@ -88,8 +89,21 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
         const auto& gid   = reg.get<GlobalEntityIdComponent>(ent);
         w.write(gid.id);                          // uint32 GlobalEntityId (was uint16 ChunkEntityId)
         w.write(static_cast<uint8_t>(etype.type));
-        w.write<uint8_t>(POSITION_BIT);
+        
+        // Build component flags
+        uint8_t flags = POSITION_BIT;
+        if (etype.type == EntityType::SHEEP) {
+            flags |= SHEEP_BEHAVIOR_BIT;
+        }
+        w.write(flags);
+        
         dyn.serializeFields(w);
+        
+        // Serialize sheep behavior if present
+        if (etype.type == EntityType::SHEEP) {
+            const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
+            behavior.serializeFields(w);
+        }
         ++entityCount;
     }
     scratch.resize(entityOff);
@@ -187,10 +201,13 @@ bool Chunk::buildDeltaImpl(
             const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
             w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
             w.write(gid.id);                          // uint32 GlobalEntityId (was uint16 ChunkEntityId)
-            w.write(static_cast<uint8_t>(reg.get<EntityTypeComponent>(ent).type));
+            const auto etype = reg.get<EntityTypeComponent>(ent).type;
+            w.write(static_cast<uint8_t>(etype));
             w.write(mask);
             if (mask & POSITION_BIT)
                 reg.get<DynamicPositionComponent>(ent).serializeFields(w);
+            if (mask & SHEEP_BEHAVIOR_BIT)
+                reg.get<SheepBehaviorComponent>(ent).serializeFields(w);
             ++entityCount;
         }
     }

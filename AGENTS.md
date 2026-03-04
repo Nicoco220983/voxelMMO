@@ -46,7 +46,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 
 **server/common/**
 - `Types.hpp` — ChunkId, VoxelId, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
-- `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType (PLAYER=0, GHOST_PLAYER=1), ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
+- `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType (PLAYER=0, GHOST_PLAYER=1, SHEEP=2), ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
 - `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
 - `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick)
 - `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
@@ -56,6 +56,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 **server/game/entities/**
 - `PlayerEntity.hpp` — `spawn()` factory for PLAYER (PhysicsMode::FULL, grounded=false)
 - `GhostPlayerEntity.hpp` — `spawn()` factory for GHOST_PLAYER (PhysicsMode::GHOST, grounded=true)
+- `SheepEntity.hpp` — `spawn()` factory for SHEEP (PhysicsMode::FULL, smaller bbox, no PlayerComponent)
 - `EntityFactory.hpp` — `playerFactories` map (`EntityType → PlayerSpawnFn`); pulled in by `GameEngine.hpp`
 
 **server/game/GameEngine.hpp/cpp**
@@ -65,13 +66,14 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `addPlayer()` — delegates to `playerFactories` map; accepts optional `EntityType` (default `GHOST_PLAYER`); used directly by tests
 - `removePlayer()` — cleans chunk membership via ChunkMembershipComponent, then destroys entity
 - `teleportPlayer()` — directly sets player position (for test setup / admin use)
-- `tick()` → `InputSystem::apply()` → `PhysicsSystem::apply()` → `checkEntitiesChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
+- `tick()` → `InputSystem::apply()` → `SheepAISystem::apply()` → `PhysicsSystem::apply()` → `checkEntitiesChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
 - `checkEntitiesChunks()` — phase A: moves entities between chunks on `dyn.moved`; phase B: rebuilds watchedChunks, dispatches snapshots for newly seen chunks
 
 **server/game/WorldGenerator.hpp/cpp**
 - Stateless procedural terrain generator using multi-frequency simplex noise
 - `generate(voxels, cx, cy, cz)` — fills voxel buffer for chunk
 - `surfaceY(wx, wz)` — surface height at world position (matches generation logic)
+- `generateEntities(chunkId, registry, tick)` — spawns passive mobs (sheep) on surface grass
 
 **server/game/Chunk.hpp/cpp**
 - `set<entt::entity> entities` — chunk membership; wire ID from GlobalEntityIdComponent
@@ -92,11 +94,13 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `ChunkMembershipComponent` — `currentChunkId` (assigned at spawn); managed by checkEntitiesChunks()
 - `PhysicsModeComponent` — `PhysicsMode mode` (GHOST/FLYING/FULL); server-only, not serialised
 - `BoundingBoxComponent` — AABB half-extents (hx, hy, hz) in sub-voxels; centered on position
+- `SheepBehaviorComponent` — AI state (IDLE/WALKING), end tick, target pos, yaw; `SHEEP_BEHAVIOR_BIT=1<<1`
 
 **server/game/systems/**
 - `InputSystem.hpp` — `apply(registry)`: translates InputComponent (buttons+yaw+pitch) → DynamicPositionComponent velocity per EntityType; called at top of `tick()` before physics
 - `PhysicsSystem.hpp` — `apply(registry, chunks)`: collision-aware physics sweeps (X/Y/Z) with voxel-context cache; handles GHOST (no collision), FLYING (collision, no gravity), FULL (collision + gravity)
 - `ChunkMembershipSystem.hpp` — `updateEntities(registry, chunks, tick, activationRadius)` + `rebuildGatewayWatchedChunks(...)`: chunk membership management (Phase A: entity movement between chunks; Phase B: rebuild gateway watchedChunks, activate new chunks). Note: SELF_ENTITY is sent once at player creation, not on every chunk change (global entity ID is stable).
+- `SheepAISystem.hpp` — `apply(registry, tick)`: simple state machine (IDLE 2-5s → WALK 2s loop); sets velocity toward random target; runs before physics
 
 **server/gateway/**
 - `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameBatch()` forwards to clients
@@ -110,6 +114,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `Chunk.js` — per-chunk voxel state only (entities moved to EntityRegistry); LZ4 decompression, Three.js mesh rebuild
 - `components/DynamicPositionComponent.js` — mirrors server; `predictAt(tick)` for client-side interpolation
 - `entities/BaseEntity.js`, `PlayerEntity.js` — now includes `chunkId` property to track current chunk
+- `entities/SheepEntity.js` — procedural mesh (body + head + legs); leg swing animation when WALKING; face movement direction
 - `NetworkProtocol.js` — serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader)
 - `main.js` — Three.js scene, render loop, HUD; entity meshes keyed by GlobalEntityId only (not chunkId-entityId composite)
 

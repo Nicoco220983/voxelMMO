@@ -64,6 +64,7 @@ export const DeltaType = Object.freeze({
 export const EntityType = Object.freeze({
   PLAYER:       0,  // Full-physics player (gravity + collision)
   GHOST_PLAYER: 1,  // Ghost player (noclip, no gravity)
+  SHEEP:        2,  // Passive mob: wanders randomly, blocked by voxels
 })
 
 /**
@@ -131,3 +132,4 @@ export const VoxelType = Object.freeze({
 // ── Component dirty-bit constants (must match server DynamicPositionComponent.hpp) ──
 
 /** @type {number} */ export const POSITION_BIT = 1 << 0
+/** @type {number} */ export const SHEEP_BEHAVIOR_BIT = 1 << 1

@@ -1,4 +1,7 @@
 #include "game/WorldGenerator.hpp"
+#include "game/entities/SheepEntity.hpp"
+#include "game/components/GlobalEntityIdComponent.hpp"
+#include "common/Types.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -122,6 +125,52 @@ namespace voxelmmo {
 
 int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
     return static_cast<int32_t>(computeHeight(wx, wz));
+}
+
+void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick) const {
+    // Deterministic sheep spawn: based on chunk coordinates
+    // Use a simple hash of chunk coordinates to decide if/where sheep spawn
+    const int32_t cx = chunkId.x();
+    const int32_t cy = chunkId.y();
+    const int32_t cz = chunkId.z();
+    
+    // Only spawn sheep in surface chunks (cy where grass exists: typically 0 or 1)
+    if (cy < 0 || cy > 1) return;
+    
+    // Hash chunk coords for deterministic spawning
+    const uint32_t hash = static_cast<uint32_t>(cx * 73856093 ^ cz * 19349663);
+    
+    // 30% chance to spawn sheep in eligible chunks
+    if ((hash % 100) >= 30) return;
+    
+    // Spawn 1-3 sheep per chunk
+    const int sheepCount = 1 + (hash % 3);
+    
+    for (int i = 0; i < sheepCount; ++i) {
+        // Deterministic position within chunk
+        const uint32_t posHash = hash + i * 1234567;
+        const int32_t localX = static_cast<int32_t>(posHash % CHUNK_SIZE_X);
+        const int32_t localZ = static_cast<int32_t>((posHash / CHUNK_SIZE_X) % CHUNK_SIZE_Z);
+        
+        // Find surface height at this position
+        const float wx = static_cast<float>(cx * CHUNK_SIZE_X + localX);
+        const float wz = static_cast<float>(cz * CHUNK_SIZE_Z + localZ);
+        const int32_t surface = surfaceY(wx, wz);
+        
+        // Only spawn if surface is in this chunk's Y range
+        const int32_t worldY = surface + 1;  // Spawn one block above grass
+        if (worldY < cy * CHUNK_SIZE_Y || worldY >= (cy + 1) * CHUNK_SIZE_Y) continue;
+        
+        // Convert to sub-voxel coordinates
+        const int32_t sx = (cx * CHUNK_SIZE_X + localX) << SUBVOXEL_BITS;
+        const int32_t sy = worldY << SUBVOXEL_BITS;
+        const int32_t sz = (cz * CHUNK_SIZE_Z + localZ) << SUBVOXEL_BITS;
+        
+        // Create sheep entity
+        const entt::entity ent = registry.create();
+        registry.emplace<GlobalEntityIdComponent>(ent, static_cast<GlobalEntityId>(tick + i + hash));
+        SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick + i);
+    }
 }
 
 void WorldGenerator::generate(std::vector<VoxelType>& voxels,

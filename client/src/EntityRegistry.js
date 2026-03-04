@@ -1,6 +1,7 @@
 // @ts-check
 import { BaseEntity } from './entities/BaseEntity.js'
-import { DeltaType } from './types.js'
+import { SheepEntity } from './entities/SheepEntity.js'
+import { DeltaType, EntityType } from './types.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
@@ -22,6 +23,30 @@ export class EntityRegistry {
 
   /** @type {Map<ChunkIdPacked, Set<number>>} ChunkId → Set of GlobalEntityIds */
   #chunkMembers = new Map()
+
+  /** @type {THREE.Scene|null} Scene reference for creating entity meshes */
+  scene = null
+
+  /**
+   * Set the scene for entity mesh creation.
+   * @param {THREE.Scene} scene
+   */
+  setScene(scene) {
+    this.scene = scene
+  }
+
+  /**
+   * Factory method to create appropriate entity type.
+   * @param {number} globalId
+   * @param {number} entityType
+   * @returns {BaseEntity}
+   */
+  #createEntity(globalId, entityType) {
+    if (entityType === EntityType.SHEEP && this.scene) {
+      return new SheepEntity(globalId, this.scene)
+    }
+    return new BaseEntity(globalId, entityType)
+  }
 
   /**
    * Get an entity by its global ID.
@@ -83,6 +108,10 @@ export class EntityRegistry {
       const entity = this.#entities.get(globalId)
       // Only delete if entity is still in this chunk (might have moved)
       if (entity && entity.chunkId === chunkId) {
+        // Call destroy if entity has a mesh
+        if (entity.destroy && this.scene) {
+          entity.destroy(this.scene)
+        }
         this.#entities.delete(globalId)
       }
     }
@@ -140,7 +169,7 @@ export class EntityRegistry {
       const type = reader.readUint8()
       const componentFlags = reader.readUint8()
 
-      const entity = new BaseEntity(id, type)
+      const entity = this.#createEntity(id, type)
       entity.chunkId = chunkId
       entity.applyComponents(reader, componentFlags, messageTick)
 
@@ -175,7 +204,7 @@ export class EntityRegistry {
         // NEW_ENTITY or UPDATE_ENTITY - upsert
         let entity = this.#entities.get(entityId)
         if (!entity) {
-          entity = new BaseEntity(entityId, entityType)
+          entity = this.#createEntity(entityId, entityType)
           this.#entities.set(entityId, entity)
         }
         entity.chunkId = chunkId

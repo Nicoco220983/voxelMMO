@@ -65,7 +65,14 @@ export class GameClient {
   constructor(url, scene) {
     this.#url   = url
     this.#scene = scene
+    this.#entityRegistry.setScene(scene)
   }
+
+  /**
+   * Current server tick for entity prediction.
+   * @returns {number}
+   */
+  get currentTick() { return this.#latestServerTick }
 
   /**
    * Open the WebSocket connection.
@@ -145,8 +152,26 @@ export class GameClient {
     }
   }
 
+  /**
+   * Update all entity animations. Call once per animation frame.
+   * @param {number} dt  Delta time in seconds.
+   */
+  updateEntities(dt) {
+    for (const entity of this.#entityRegistry.all()) {
+      if (entity.updateAnimation) {
+        entity.updateAnimation(dt)
+      }
+    }
+  }
+
   /** Remove all chunk meshes and clear internal state. */
   clear() {
+    // Destroy entity meshes first
+    for (const entity of this.#entityRegistry.all()) {
+      if (entity.destroy) {
+        entity.destroy(this.#scene)
+      }
+    }
     for (const chunk of this.#chunks.values()) {
       chunk.dispose(this.#scene)
     }

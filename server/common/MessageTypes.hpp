@@ -31,6 +31,7 @@ enum class DeltaType : uint8_t {
 enum class EntityType : uint8_t {
     PLAYER       = 0,  ///< Full-physics player (gravity + collision)
     GHOST_PLAYER = 1,  ///< Ghost player (noclip, no gravity)
+    SHEEP        = 2,  ///< Passive mob: wanders randomly, blocked by voxels
 };
 
 /** @brief First byte of every client → server binary WebSocket frame. */

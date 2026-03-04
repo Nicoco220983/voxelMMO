@@ -43,6 +43,7 @@ const _mode = new URLSearchParams(location.search).get('mode')
 const _entityType = _mode === 'ghost' ? EntityType.GHOST_PLAYER : EntityType.PLAYER
 
 const client = new GameClient(`ws://${location.host}/ws`, scene)
+window.gameClient = client  // Expose for entity prediction
 client.connect().then(() => {
   client.sendJoin(_entityType)
 }).catch((err) => {
@@ -227,23 +228,28 @@ function animate() {
   camera.rotation.y = yaw
   camera.rotation.x = pitch
 
-  // ── Remote entity rendering ───────────────────────────────────────────
-  // Each entity is predicted forward from its last server state using
-  // the same kinematic formula as the server (position + velocity*n - gravity).
-  // The local player's own entity is also rendered (orange box).
+  // ── Entity updates ────────────────────────────────────────────────────
+  // Update entity animations (sheep leg swing, etc.)
+  client.updateEntities(dt)
+
+  // ── Remote entity rendering (legacy box mesh for players without custom meshes) ──
+  // Sheep and other mobs have their own meshes managed by their entity classes.
   /** @type {Set<number>} */
   const seenIds = new Set()
   for (const { entity } of client.allEntities()) {
     const id = entity.id
     seenIds.add(id)
-    let mesh = entityMeshes.get(id)
-    if (!mesh) {
-      mesh = new THREE.Mesh(ENTITY_GEO, ENTITY_MAT)
-      scene.add(mesh)
-      entityMeshes.set(id, mesh)
+    // Only create generic box mesh for entities without custom mesh
+    if (!entity.mesh) {
+      let mesh = entityMeshes.get(id)
+      if (!mesh) {
+        mesh = new THREE.Mesh(ENTITY_GEO, ENTITY_MAT)
+        scene.add(mesh)
+        entityMeshes.set(id, mesh)
+      }
+      const pos = entity.predictAt(currentTick)
+      mesh.position.set(pos.x / SUBVOXEL_SIZE, pos.y / SUBVOXEL_SIZE, pos.z / SUBVOXEL_SIZE)
     }
-    const pos = entity.predictAt(currentTick)
-    mesh.position.set(pos.x / SUBVOXEL_SIZE, pos.y / SUBVOXEL_SIZE, pos.z / SUBVOXEL_SIZE)
   }
   for (const [id, mesh] of entityMeshes) {
     if (!seenIds.has(id)) {
