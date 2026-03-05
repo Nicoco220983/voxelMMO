@@ -3,7 +3,7 @@
 #include "WorldGenerator.hpp"
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
-#include "game/systems/EntityStateSystem.hpp"
+
 #include "game/systems/SheepAISystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/DynamicPositionComponent.hpp"

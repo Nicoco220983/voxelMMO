@@ -1,6 +1,6 @@
 #include "game/GameEngine.hpp"
 #include "game/systems/InputSystem.hpp"
-#include "game/systems/EntityStateSystem.hpp"
+
 #include "game/components/SheepBehaviorComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "common/MessageTypes.hpp"
@@ -113,8 +113,8 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
     fit->second(registry, ent, sx, sy, sz, playerId, chunkId);
     playerEntities[playerId] = ent;
 
-    // Mark for creation - EntityStateSystem will add to chunk during tick
-    EntityStateSystem::markForCreation(registry, ent, chunkId);
+    // Mark for creation - ChunkMembershipSystem will add to chunk during tick
+    ChunkMembershipSystem::markForCreation(registry, ent, chunkId);
 
     // Add to watching radius (generate chunks as needed)
     const uint32_t tick = static_cast<uint32_t>(tickCount);
@@ -167,8 +167,8 @@ void GameEngine::removePlayer(PlayerId playerId) {
         }
     }
 
-    // Mark for deferred deletion - EntityStateSystem will handle cleanup and destroy
-    EntityStateSystem::markForDeletion(registry, ent);
+    // Mark for deferred deletion - ChunkMembershipSystem will handle cleanup and destroy
+    ChunkMembershipSystem::markForDeletion(registry, ent);
     playerEntities.erase(it);
 }
 
@@ -185,7 +185,7 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
         it->second, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
-    ChunkMembershipSystem::updateEntities(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
+    ChunkMembershipSystem::detectChunkCrossings(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
     if (!batchBuf.empty() && outputCallback)
         outputCallback(gwId, batchBuf.data(), batchBuf.size());
     serializeSnapshot(gwId);
@@ -291,18 +291,18 @@ void GameEngine::tick() {
     const uint32_t tick = static_cast<uint32_t>(tickCount);
 
     // Destroy any pending deletions from previous tick first
-    EntityStateSystem::destroyPendingDeletions(registry, pendingDeletions);
+    ChunkMembershipSystem::destroyPendingDeletions(registry, pendingDeletions);
 
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
     stepPhysics();
 
     // Phase A: Mark chunk changes for moved entities
-    ChunkMembershipSystem::updateEntities(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
+    ChunkMembershipSystem::detectChunkCrossings(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
 
     // Phase B: Process all entity lifecycle events (CREATE, DELETE, CHUNK_CHANGE)
     // Deleted entities are NOT destroyed yet - they're stored in pendingDeletions
-    auto entityResult = EntityStateSystem::apply(registry, chunkRegistry, tickCount, worldGenerator);
+    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(registry, chunkRegistry, tickCount, worldGenerator);
     pendingDeletions = std::move(entityResult.entitiesToDestroy);
 
     // Phase C: Rebuild gateway watchedChunks and dispatch snapshots

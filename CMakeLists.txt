@@ -17,7 +17,6 @@ add_executable(voxelmmo
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
-    server/game/systems/EntityStateSystem.cpp
     server/gateway/GatewayEngine.cpp
     server/gateway/StateManager.cpp
 )
@@ -47,7 +46,6 @@ add_executable(voxelmmo_tests
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
     server/game/GameEngine.cpp
-    server/game/systems/EntityStateSystem.cpp
 )
 
 target_include_directories(voxelmmo_tests PRIVATE server/)

@@ -2,7 +2,7 @@
 #include "game/entities/SheepEntity.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/systems/EntityStateSystem.hpp"
+#include "game/systems/ChunkMembershipSystem.hpp"
 #include "common/Types.hpp"
 #include <cmath>
 #include <algorithm>
@@ -173,7 +173,7 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
                 break;
         }
         
-        EntityStateSystem::markForCreation(registry, ent, chunkId);
+        ChunkMembershipSystem::markForCreation(registry, ent, chunkId);
         return;
     }
     
@@ -216,8 +216,8 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
         registry.emplace<DirtyComponent>(ent);  // Ensure DirtyComponent exists
         SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick + i);
         
-        // Mark for creation - EntityStateSystem will add to chunk
-        EntityStateSystem::markForCreation(registry, ent, chunkId);
+        // Mark for creation - ChunkMembershipSystem will add to chunk
+        ChunkMembershipSystem::markForCreation(registry, ent, chunkId);
     }
 }
 
