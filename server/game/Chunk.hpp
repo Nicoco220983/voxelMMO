@@ -52,6 +52,9 @@ public:
     /** @brief Serialised state cache (snapshot, deltas, scratch). */
     ChunkState state;
 
+    /** @brief True if the chunk has been activated (entities spawned). */
+    bool activated = false;
+
     explicit Chunk(ChunkId chunkId);
 
     /**

@@ -44,13 +44,12 @@ void destroyPendingDeletions(entt::registry& registry, std::vector<entt::entity>
 // Main processing function
 EntityStateResult apply(
     entt::registry& registry,
-    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
+    ChunkRegistry& chunkRegistry,
     int32_t tickCount,
-    const WorldGenerator& generator)
+    WorldGenerator& generator)
 {
-    (void)tickCount;
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
     EntityStateResult result;
-    std::vector<ChunkId> activatedChunks;  // Track chunks activated during CHUNK_CHANGE
 
     // ========================================================================
     // PHASE 1: Process chunk changes
@@ -74,15 +73,15 @@ EntityStateResult apply(
             }
 
             // Remove from old chunk
-            if (auto it = chunks.find(oldChunkId); it != chunks.end()) {
-                it->second->entities.erase(ent);
+            if (Chunk* oldChunk = chunkRegistry.getChunkMutable(oldChunkId)) {
+                oldChunk->entities.erase(ent);
             }
 
             // Ensure new chunk exists (activate if needed)
-            Chunk& newChunk = activateChunk(newChunkId, chunks, activatedChunks, generator);
+            Chunk* newChunk = chunkRegistry.activate(generator, newChunkId, registry, tick);
 
             // Add to new chunk
-            newChunk.entities.insert(ent);
+            newChunk->entities.insert(ent);
 
             // Update chunk membership
             cm.currentChunkId = newChunkId;
@@ -118,13 +117,13 @@ EntityStateResult apply(
             cm.currentChunkId = pcc.targetChunkId;
 
             // Ensure chunk exists and add entity
-            Chunk& chunk = activateChunk(pcc.targetChunkId, chunks, activatedChunks, generator);
-            chunk.entities.insert(ent);
+            Chunk* chunk = chunkRegistry.activate(generator, pcc.targetChunkId, registry, tick);
+            chunk->entities.insert(ent);
 
             // Add to present players if it's a player
             if (registry.all_of<PlayerComponent>(ent)) {
                 const auto& pc = registry.get<PlayerComponent>(ent);
-                chunk.presentPlayers.insert(pc.playerId);
+                chunk->presentPlayers.insert(pc.playerId);
             }
 
             processed.push_back(ent);
@@ -149,13 +148,13 @@ EntityStateResult apply(
 
             // Remove from current chunk's entity set immediately
             // (so it won't be considered for future updates, but delta is already marked)
-            if (auto it = chunks.find(cm.currentChunkId); it != chunks.end()) {
-                it->second->entities.erase(ent);
+            if (Chunk* chunk = chunkRegistry.getChunkMutable(cm.currentChunkId)) {
+                chunk->entities.erase(ent);
 
                 // Remove from present players if it's a player
                 if (registry.all_of<PlayerComponent>(ent)) {
                     const auto& pc = registry.get<PlayerComponent>(ent);
-                    it->second->presentPlayers.erase(pc.playerId);
+                    chunk->presentPlayers.erase(pc.playerId);
                 }
             }
 

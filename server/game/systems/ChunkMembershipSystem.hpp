@@ -1,5 +1,5 @@
 #pragma once
-#include "game/Chunk.hpp"
+#include "game/ChunkRegistry.hpp"
 #include "game/systems/EntityStateSystem.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
@@ -9,8 +9,6 @@
 #include "common/GatewayInfo.hpp"
 #include "common/NetworkProtocol.hpp"
 #include <entt/entt.hpp>
-#include <unordered_map>
-#include <memory>
 #include <vector>
 #include <set>
 
@@ -49,14 +47,14 @@ namespace ChunkMembershipSystem {
  * later in EntityStateSystem::apply().
  *
  * @param registry          The ECS registry.
- * @param chunks            Map of loaded chunks (passed through to EntityStateSystem).
+ * @param chunkRegistry     Chunk registry for accessing chunks.
  * @param tickCount         Current server tick.
  * @param activationRadius  Radius for chunk activation around players.
  * @return Result containing activated chunks (from CHUNK_CHANGE activations).
  */
 inline ChunkMembershipSystemResult updateEntities(
     entt::registry& registry,
-    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
+    ChunkRegistry& chunkRegistry,
     int32_t tickCount,
     int32_t activationRadius)
 {
@@ -88,8 +86,8 @@ inline ChunkMembershipSystemResult updateEntities(
             for (int32_t dy = -1; dy <= 1; ++dy)
             for (int32_t dz = -activationRadius; dz <= activationRadius; ++dz) {
                 const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-                if (auto it = chunks.find(cid); it != chunks.end())
-                    it->second->watchingPlayers.erase(pid);
+                if (Chunk* chunk = chunkRegistry.getChunkMutable(cid))
+                    chunk->watchingPlayers.erase(pid);
             }
         }
 
@@ -102,8 +100,8 @@ inline ChunkMembershipSystemResult updateEntities(
             for (int32_t dy = -1; dy <= 1; ++dy)
             for (int32_t dz = -activationRadius; dz <= activationRadius; ++dz) {
                 const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-                if (auto it = chunks.find(cid); it != chunks.end()) {
-                    it->second->watchingPlayers.insert(pid);
+                if (Chunk* chunk = chunkRegistry.getChunkMutable(cid)) {
+                    chunk->watchingPlayers.insert(pid);
                 }
             }
         }
@@ -120,7 +118,7 @@ inline ChunkMembershipSystemResult updateEntities(
  * for newly-seen chunks.
  *
  * @param gwInfo            Gateway info (players, watchedChunks) - will be modified.
- * @param chunks            Map of loaded chunks (may activate new chunks).
+ * @param chunkRegistry     Chunk registry for accessing/activating chunks.
  * @param playerEntities    Map from PlayerId to entt::entity.
  * @param registry          The ECS registry.
  * @param tick              Current server tick.
@@ -131,13 +129,13 @@ inline ChunkMembershipSystemResult updateEntities(
  */
 inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
     GatewayInfo& gwInfo,
-    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
+    ChunkRegistry& chunkRegistry,
     const std::unordered_map<PlayerId, entt::entity>& playerEntities,
     entt::registry& registry,
     uint32_t tick,
     int32_t watchRadius,
     int32_t activationRadius,
-    const WorldGenerator& generator)
+    WorldGenerator& generator)
 {
     std::vector<uint8_t> batchBuf;
     std::vector<ChunkId> activated; // Track locally for this call
@@ -160,9 +158,9 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
 
                     // Ensure activation-radius chunks exist; prepare snapshot on first sight
                     if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
-                        Chunk& chunk = EntityStateSystem::activateChunk(cid, chunks, activated, generator);
+                        Chunk* chunk = chunkRegistry.activate(generator, cid, registry, tick);
                         if (!gwInfo.lastStateTick.count(cid)) {
-                            NetworkProtocol::appendFramed(batchBuf, chunk.buildSnapshot(registry, tick));
+                            NetworkProtocol::appendFramed(batchBuf, chunk->buildSnapshot(registry, tick));
                             gwInfo.lastStateTick[cid] = tick;
                         }
                     }

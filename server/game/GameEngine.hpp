@@ -1,5 +1,5 @@
 #pragma once
-#include "Chunk.hpp"
+#include "ChunkRegistry.hpp"
 #include "WorldGenerator.hpp"
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
@@ -159,7 +159,7 @@ public:
 private:
     entt::registry  registry;
 
-    std::unordered_map<ChunkId,   std::unique_ptr<Chunk>>  chunks;
+    ChunkRegistry chunkRegistry;
     std::unordered_map<GatewayId, GatewayInfo>             gateways;
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
 
@@ -200,10 +200,8 @@ private:
     /** @brief Generate a random seed for world generation. */
     static uint32_t generateRandomSeed();
     
-    Chunk& getOrActivateChunk(ChunkId id);
-
     /** @brief Return the chunk containing sub-voxel position (px, py, pz), or nullptr if not loaded. */
-    Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;
+    const Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;
 
 
     void   serializeSnapshot(GatewayId gwId);

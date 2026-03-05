@@ -4,6 +4,7 @@
 #include "game/components/SheepBehaviorComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "common/MessageTypes.hpp"
+#include "game/components/PlayerComponent.hpp"
 #include <cmath>
 
 namespace voxelmmo {
@@ -115,19 +116,20 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
     // Mark for creation - EntityStateSystem will add to chunk during tick
     EntityStateSystem::markForCreation(registry, ent, chunkId);
 
-    // Add to watching radius
+    // Add to watching radius (generate chunks as needed)
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
     for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
     for (int32_t dy = -1; dy <= 1; ++dy)
     for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
         const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-        getOrActivateChunk(cid).watchingPlayers.insert(playerId);
+        Chunk* chunk = chunkRegistry.generate(worldGenerator, cid, registry, tick);
+        chunk->watchingPlayers.insert(playerId);
     }
 
     if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
 
     // Send SELF_ENTITY message once at creation (global ID is stable across chunk moves)
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
     std::vector<uint8_t> selfEntityBuf;
     const auto msg = NetworkProtocol::buildSelfEntityMessage(chunkId, tick, globalId);
     NetworkProtocol::appendFramed(selfEntityBuf, msg.data(), msg.size());
@@ -160,8 +162,8 @@ void GameEngine::removePlayer(PlayerId playerId) {
         for (int32_t dy = -1; dy <= 1; ++dy)
         for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
             const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-            if (auto cit = chunks.find(cid); cit != chunks.end())
-                cit->second->watchingPlayers.erase(playerId);
+            if (Chunk* chunk = chunkRegistry.getChunkMutable(cid))
+                chunk->watchingPlayers.erase(playerId);
         }
     }
 
@@ -170,24 +172,7 @@ void GameEngine::removePlayer(PlayerId playerId) {
     playerEntities.erase(it);
 }
 
-// ── Chunk activation ──────────────────────────────────────────────────────
 
-Chunk& GameEngine::getOrActivateChunk(ChunkId id) {
-    auto it = chunks.find(id);
-    if (it != chunks.end()) return *it->second;
-
-    auto chunk = std::make_unique<Chunk>(id);
-    worldGenerator.generate(chunk->world.voxels, id.x(), id.y(), id.z());
-    
-    // Generate entities for this chunk (sheep, etc.)
-    // They are automatically marked for creation by generateEntities
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
-    worldGenerator.generateEntities(id, registry, tick);
-    
-    Chunk& ref = *chunk;
-    chunks[id] = std::move(chunk);
-    return ref;
-}
 
 // ── Serialisation helpers ─────────────────────────────────────────────────
 
@@ -199,8 +184,8 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     if (it == gateways.end()) return;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-        it->second, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
-    ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS);
+        it->second, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
+    ChunkMembershipSystem::updateEntities(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
     if (!batchBuf.empty() && outputCallback)
         outputCallback(gwId, batchBuf.data(), batchBuf.size());
     serializeSnapshot(gwId);
@@ -213,9 +198,9 @@ void GameEngine::serializeSnapshot(GatewayId gwId) {
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     batchBuf.clear();
     for (const ChunkId& cid : gwInfo.watchedChunks) {
-        auto cit = chunks.find(cid);
-        if (cit == chunks.end()) continue;
-        NetworkProtocol::appendFramed(batchBuf, cit->second->buildSnapshot(registry, tick));
+        Chunk* chunk = chunkRegistry.getChunkMutable(cid);
+        if (!chunk) continue;
+        NetworkProtocol::appendFramed(batchBuf, chunk->buildSnapshot(registry, tick));
         gwInfo.lastStateTick[cid] = tick;
     }
     if (!batchBuf.empty() && outputCallback)
@@ -225,16 +210,16 @@ void GameEngine::serializeSnapshot(GatewayId gwId) {
 void GameEngine::serializeSnapshotDelta() {
     // Build each chunk's delta once (future: parallelisable over chunks)
     const uint32_t tick = static_cast<uint32_t>(tickCount);
-    for (auto& [cid, chunk] : chunks) {
-        chunk->buildSnapshotDelta(registry, tick);
+    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        chunkPtr->buildSnapshotDelta(registry, tick);
     }
     // Dispatch one batch per gateway (only chunks that produced a new delta)
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf.clear();
         for (const ChunkId& cid : gwInfo.watchedChunks) {
-            auto it = chunks.find(cid);
-            if (it == chunks.end()) continue;
-            const auto& state = it->second->state;
+            Chunk* chunk = chunkRegistry.getChunkMutable(cid);
+            if (!chunk) continue;
+            const auto& state = chunk->state;
             if (!state.hasNewDelta) continue;
             const size_t off = state.deltaOffsets.back().offset;
             NetworkProtocol::appendFramed(batchBuf, state.deltas.data() + off, state.deltas.size() - off);
@@ -244,10 +229,10 @@ void GameEngine::serializeSnapshotDelta() {
             outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
     // Clear snapshot-level dirty state and hasNewDelta flags
-    for (auto& [cid, chunk] : chunks) {
-        chunk->state.hasNewDelta = false;
-        chunk->world.clearSnapshotDelta();
-        for (auto ent : chunk->entities) {
+    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        chunkPtr->state.hasNewDelta = false;
+        chunkPtr->world.clearSnapshotDelta();
+        for (auto ent : chunkPtr->entities) {
             registry.get<DirtyComponent>(ent).clearSnapshot();
         }
     }
@@ -256,16 +241,16 @@ void GameEngine::serializeSnapshotDelta() {
 void GameEngine::serializeTickDelta() {
     // Build each chunk's tick delta once (future: parallelisable over chunks)
     const uint32_t tick = static_cast<uint32_t>(tickCount);
-    for (auto& [cid, chunk] : chunks) {
-        chunk->buildTickDelta(registry, tick);
+    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        chunkPtr->buildTickDelta(registry, tick);
     }
     // Dispatch one batch per gateway (only chunks that produced a new delta)
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf.clear();
         for (const ChunkId& cid : gwInfo.watchedChunks) {
-            auto it = chunks.find(cid);
-            if (it == chunks.end()) continue;
-            const auto& state = it->second->state;
+            Chunk* chunk = chunkRegistry.getChunkMutable(cid);
+            if (!chunk) continue;
+            const auto& state = chunk->state;
             if (!state.hasNewDelta) continue;
             const size_t off = state.deltaOffsets.back().offset;
             NetworkProtocol::appendFramed(batchBuf, state.deltas.data() + off, state.deltas.size() - off);
@@ -275,10 +260,10 @@ void GameEngine::serializeTickDelta() {
             outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
     // Clear tick-level dirty state and hasNewDelta flags
-    for (auto& [cid, chunk] : chunks) {
-        chunk->state.hasNewDelta = false;
-        chunk->world.clearTickDelta();
-        for (auto ent : chunk->entities) {
+    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        chunkPtr->state.hasNewDelta = false;
+        chunkPtr->world.clearTickDelta();
+        for (auto ent : chunkPtr->entities) {
             registry.get<DirtyComponent>(ent).clearTick();
         }
     }
@@ -287,14 +272,13 @@ void GameEngine::serializeTickDelta() {
 // ── Physics ───────────────────────────────────────────────────────────────
 
 void GameEngine::stepPhysics() {
-    PhysicsSystem::apply(registry, chunks);
+    PhysicsSystem::apply(registry, chunkRegistry);
 }
 
 // ── Chunk lookup ──────────────────────────────────────────────────────────
 
-Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
-    const auto it = chunks.find(chunkIdOf(px, py, pz));
-    return it != chunks.end() ? it->second.get() : nullptr;
+const Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
+    return chunkRegistry.getChunk(chunkIdOf(px, py, pz));
 }
 
 
@@ -314,17 +298,17 @@ void GameEngine::tick() {
     stepPhysics();
 
     // Phase A: Mark chunk changes for moved entities
-    ChunkMembershipSystem::updateEntities(registry, chunks, tickCount, ACTIVATION_RADIUS);
+    ChunkMembershipSystem::updateEntities(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
 
     // Phase B: Process all entity lifecycle events (CREATE, DELETE, CHUNK_CHANGE)
     // Deleted entities are NOT destroyed yet - they're stored in pendingDeletions
-    auto entityResult = EntityStateSystem::apply(registry, chunks, tickCount, worldGenerator);
+    auto entityResult = EntityStateSystem::apply(registry, chunkRegistry, tickCount, worldGenerator);
     pendingDeletions = std::move(entityResult.entitiesToDestroy);
 
     // Phase C: Rebuild gateway watchedChunks and dispatch snapshots
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-            gwInfo, chunks, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
+            gwInfo, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
 
         if (!batchBuf.empty() && outputCallback)
             outputCallback(gwId, batchBuf.data(), batchBuf.size());

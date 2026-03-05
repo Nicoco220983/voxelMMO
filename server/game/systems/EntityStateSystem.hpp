@@ -1,14 +1,11 @@
 #pragma once
 #include "common/Types.hpp"
-#include "game/WorldGenerator.hpp"
-#include "game/Chunk.hpp"
+#include "game/ChunkRegistry.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingChunkChangeComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include <entt/entt.hpp>
-#include <unordered_map>
-#include <memory>
 #include <vector>
 #include <set>
 
@@ -71,16 +68,16 @@ struct EntityStateResult {
  * AFTER serialization by calling destroyPendingDeletions().
  *
  * @param registry  The ECS registry.
- * @param chunks    Map of loaded chunks (may activate new chunks on CHUNK_CHANGE).
+ * @param chunkRegistry Chunk registry (may activate new chunks on CHUNK_CHANGE).
  * @param tickCount Current server tick.
  * @param generator WorldGenerator for terrain generation when activating new chunks.
  * @return Statistics about processed entities + list of entities to destroy.
  */
 EntityStateResult apply(
     entt::registry& registry,
-    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
+    ChunkRegistry& chunkRegistry,
     int32_t tickCount,
-    const WorldGenerator& generator);
+    WorldGenerator& generator);
 
 /**
  * @brief Destroy all entities that were marked for deletion.
@@ -126,28 +123,6 @@ void markForDeletion(entt::registry& registry, entt::entity ent);
  * @param newChunkId The destination chunk.
  */
 void markForChunkChange(entt::registry& registry, entt::entity ent, ChunkId newChunkId);
-
-/**
- * @brief Get or activate a chunk, adding it to the activation list.
- * @param generator WorldGenerator for terrain generation (stateless).
- */
-inline Chunk& activateChunk(
-    ChunkId cid,
-    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks,
-    std::vector<ChunkId>& activatedOut,
-    const WorldGenerator& generator)
-{
-    auto it = chunks.find(cid);
-    if (it == chunks.end()) {
-        auto chunk = std::make_unique<Chunk>(cid);
-        generator.generate(chunk->world.voxels, cid.x(), cid.y(), cid.z());
-        Chunk* ptr = chunk.get();
-        chunks[cid] = std::move(chunk);
-        activatedOut.push_back(cid);
-        return *ptr;
-    }
-    return *it->second;
-}
 
 } // namespace EntityStateSystem
 

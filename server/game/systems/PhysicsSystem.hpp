@@ -1,13 +1,11 @@
 #pragma once
-#include "game/Chunk.hpp"
+#include "game/ChunkRegistry.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/BoundingBoxComponent.hpp"
 #include "game/components/PhysicsModeComponent.hpp"
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
 #include <entt/entt.hpp>
-#include <unordered_map>
-#include <memory>
 #include <algorithm>
 
 namespace voxelmmo {
@@ -23,13 +21,13 @@ struct AABB {
 };
 
 /**
- * @brief Thin wrapper around the chunk map that caches the last-used chunk.
+ * @brief Thin wrapper around the chunk registry that caches the last-used chunk.
  *
  * Avoids repeated hash-map lookups when sweeping through consecutive voxels
  * that often fall in the same chunk as the moving entity.
  */
 struct VoxelContext {
-    const std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks;
+    const ChunkRegistry& registry;
     const Chunk* lastChunk   = nullptr;
     ChunkId      lastChunkId = {};
 
@@ -40,9 +38,8 @@ struct VoxelContext {
     VoxelType getAtVoxel(int32_t vx, int32_t vy, int32_t vz) {
         const ChunkId cid = chunkIdOfVoxel(vx, vy, vz);
         if (cid != lastChunkId) {
-            const auto it = chunks.find(cid);
-            lastChunkId   = cid;
-            lastChunk     = (it != chunks.end()) ? it->second.get() : nullptr;
+            lastChunkId = cid;
+            lastChunk   = registry.getChunk(cid);
         }
         if (!lastChunk) return VoxelTypes::AIR;
 
@@ -210,14 +207,13 @@ namespace PhysicsSystem {
  * Iterates chunk-first so that the VoxelContext cache is pre-warmed with each
  * chunk, avoiding redundant hash-map lookups for entities near their chunk centre.
  */
-inline void apply(entt::registry& registry,
-                  std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& chunks)
+inline void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry)
 {
-    Physics::VoxelContext ctx{chunks};
+    Physics::VoxelContext ctx{chunkRegistry};
 
     // Chunk-first iteration: pre-warm the voxel cache with each chunk so that
     // entities near the chunk centre avoid a hash-map lookup per voxel.
-    for (auto& [chunkId, chunkPtr] : chunks) {
+    for (auto& [chunkId, chunkPtr] : chunkRegistry.getAllChunks()) {
         ctx.lastChunk   = chunkPtr.get();
         ctx.lastChunkId = chunkId;
 

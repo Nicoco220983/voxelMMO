@@ -46,6 +46,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 
 **server/common/**
 - `Types.hpp` — ChunkId, VoxelId, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
+- `ChunkRegistry.hpp` — Central chunk registry owning the chunks map. Provides `getChunk()` (read-only) for physics/serialization, and `generate()/activate()/deactivate()` for chunk lifecycle management. All chunk access goes through the registry; systems should use the read-only `getChunk()` when possible.
 - `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType (PLAYER=0, GHOST_PLAYER=1, SHEEP=2), ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
 - `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
 - `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick)
@@ -61,7 +62,8 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 
 **server/game/GameEngine.hpp/cpp**
 - `entt::registry registry` — single source of truth for all entity state
-- `map[ChunkId, Chunk] chunks`, `map[GatewayId, GatewayInfo] gateways`, `map[PlayerId, entt::entity] playerEntities`
+- `ChunkRegistry chunkRegistry` — central chunk registry (replaces raw chunks map)
+- `map[GatewayId, GatewayInfo] gateways`, `map[PlayerId, entt::entity] playerEntities`
 - `queuePendingPlayer()` — called on WebSocket connect; parks player in `pendingPlayers` until JOIN arrives
 - `addPlayer()` — delegates to `playerFactories` map; accepts optional `EntityType` (default `GHOST_PLAYER`); used directly by tests
 - `removePlayer()` — cleans chunk membership via ChunkMembershipComponent, then destroys entity
@@ -77,8 +79,18 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 
 **server/game/Chunk.hpp/cpp**
 - `set<entt::entity> entities` — chunk membership; wire ID from GlobalEntityIdComponent
+- `bool activated` — true if chunk has been activated (entities spawned)
 - `buildSnapshot(reg, tick)` — LZ4(voxels) zero-copy + entity section into scratch, compress if above threshold
 - `buildSnapshotDelta / buildTickDelta` — staging buffer → optional LZ4 → appended to state.deltas
+
+**server/game/ChunkRegistry.hpp**
+- Central registry owning `unordered_map<ChunkId, unique_ptr<Chunk>>`
+- `const Chunk* getChunk(ChunkId)` — read-only access for physics, serialization
+- `Chunk* getChunkMutable(ChunkId)` — non-const access for internal modifications
+- `Chunk* generate(WorldGenerator&, ChunkId, registry, tick)` — generates voxels, activates chunk (simplified: always activate on generate)
+- `Chunk* activate(WorldGenerator&, ChunkId, registry, tick)` — ensures chunk exists and is activated (spawns entities)
+- `bool deactivate(ChunkId, registry)` — removes non-player entities from chunk, sets activated=false
+- Used by GameEngine; systems receive `const ChunkRegistry&` for read-only access
 
 **server/game/WorldChunk.hpp/cpp**
 - `voxels[65536]` — flat Y×X×Z voxel array
