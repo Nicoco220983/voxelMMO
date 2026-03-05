@@ -1,4 +1,5 @@
 #pragma once
+#include "common/EntityType.hpp"
 #include <cstdint>
 
 namespace voxelmmo {
@@ -26,13 +27,6 @@ enum class DeltaType : uint8_t {
     UPDATE_ENTITY      = 1,  ///< Entity already known in this chunk; only dirty components are present.
     DELETE_ENTITY      = 2,  ///< Entity removed from this chunk (despawned or moved elsewhere).
     CHUNK_CHANGE_ENTITY = 3, ///< Entity moved to different chunk; old chunk sends this with new ChunkId.
-};
-
-/** @brief Registered entity types. */
-enum class EntityType : uint8_t {
-    PLAYER       = 0,  ///< Full-physics player (gravity + collision)
-    GHOST_PLAYER = 1,  ///< Ghost player (noclip, no gravity)
-    SHEEP        = 2,  ///< Passive mob: wanders randomly, blocked by voxels
 };
 
 /** @brief First byte of every client → server binary WebSocket frame. */

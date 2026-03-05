@@ -30,7 +30,7 @@ else
   }
   trap cleanup INT TERM EXIT
 
-  "$BUILD_DIR/voxelmmo" &
+  "$BUILD_DIR/voxelmmo" "$@" &
   SERVER_PID=$!
 
   cd "$ROOT_DIR/client"

@@ -1,5 +1,6 @@
 #include "game/GameEngine.hpp"
 #include "gateway/GatewayEngine.hpp"
+#include "common/EntityType.hpp"
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -14,7 +15,8 @@ static void printUsage(const char* program) {
               << "Options:\n"
               << "  --seed <n>           World generation seed (default: random)\n"
               << "  --type <normal|test> World generation type (default: normal)\n"
-              << "  --test-entity-type <sheep> Entity type for TEST mode (default: sheep)\n"
+              << "  --test-entity-type <type> Entity type for TEST mode (default: sheep)\n"
+              << "                       Available types: PLAYER, GHOST_PLAYER, SHEEP\n"
               << "  --help               Show this help message\n";
 }
 
@@ -50,9 +52,7 @@ int main(int argc, char* argv[]) {
         }
         else if (std::strcmp(arg, "--test-entity-type") == 0 && i + 1 < argc) {
             const char* entityStr = argv[++i];
-            if (std::strcmp(entityStr, "sheep") == 0) {
-                testEntityType = voxelmmo::EntityType::SHEEP;
-            } else {
+            if (!voxelmmo::stringToEntityType(entityStr, testEntityType)) {
                 std::cerr << "Unknown test entity type: " << entityStr << "\n";
                 printUsage(argv[0]);
                 return 1;
