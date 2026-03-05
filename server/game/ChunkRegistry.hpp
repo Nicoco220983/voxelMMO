@@ -6,6 +6,7 @@
 #include <entt/entt.hpp>
 #include <unordered_map>
 #include <memory>
+#include <functional>
 
 namespace voxelmmo {
 
@@ -68,10 +69,12 @@ public:
      * @param id Chunk ID to generate.
      * @param registry ECS registry (for entity activation).
      * @param tick Current server tick.
+     * @param acquireId Optional callback to acquire a unique GlobalEntityId.
      * @return Pointer to the generated chunk.
      */
     Chunk* generate(WorldGenerator& generator, ChunkId id,
-                    entt::registry& registry, uint32_t tick) {
+                    entt::registry& registry, uint32_t tick,
+                    std::function<GlobalEntityId()> acquireId = nullptr) {
         auto it = chunks_.find(id);
         if (it != chunks_.end()) {
             return it->second.get();  // Already exists
@@ -82,7 +85,9 @@ public:
         
         // For now: activate immediately on generation
         chunk->activated = true;
-        generator.generateEntities(id, registry, tick);
+        if (acquireId) {
+            generator.generateEntities(id, registry, tick, std::move(acquireId));
+        }
         
         Chunk* ptr = chunk.get();
         chunks_[id] = std::move(chunk);
@@ -99,14 +104,16 @@ public:
      * @param id Chunk ID to activate.
      * @param registry ECS registry (for entity activation).
      * @param tick Current server tick.
+     * @param acquireId Optional callback to acquire a unique GlobalEntityId.
      * @return Pointer to the activated chunk.
      */
     Chunk* activate(WorldGenerator& generator, ChunkId id,
-                    entt::registry& registry, uint32_t tick) {
+                    entt::registry& registry, uint32_t tick,
+                    std::function<GlobalEntityId()> acquireId = nullptr) {
         auto it = chunks_.find(id);
         if (it == chunks_.end()) {
             // Chunk doesn't exist - generate it (which also activates)
-            return generate(generator, id, registry, tick);
+            return generate(generator, id, registry, tick, std::move(acquireId));
         }
 
         Chunk* chunk = it->second.get();
@@ -116,7 +123,9 @@ public:
 
         // Activate: spawn entities
         chunk->activated = true;
-        generator.generateEntities(id, registry, tick);
+        if (acquireId) {
+            generator.generateEntities(id, registry, tick, std::move(acquireId));
+        }
         return chunk;
     }
 

@@ -339,6 +339,7 @@ inline void markForChunkChange(entt::registry& registry, entt::entity ent, Chunk
  * @param watchRadius       Radius for watching chunks around players.
  * @param activationRadius  Radius for activating chunks around players.
  * @param generator         WorldGenerator for terrain generation (stateless).
+ * @param acquireId         Optional callback to acquire a unique GlobalEntityId for entity spawning.
  * @return Vector of framed snapshot messages ready to send.
  */
 inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
@@ -349,7 +350,8 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
     uint32_t tick,
     int32_t watchRadius,
     int32_t activationRadius,
-    WorldGenerator& generator)
+    WorldGenerator& generator,
+    std::function<GlobalEntityId()> acquireId = nullptr)
 {
     std::vector<uint8_t> batchBuf;
     std::vector<ChunkId> activated; // Track locally for this call
@@ -372,7 +374,7 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
 
                     // Ensure activation-radius chunks exist; prepare snapshot on first sight
                     if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
-                        Chunk* chunk = chunkRegistry.activate(generator, cid, registry, tick);
+                        Chunk* chunk = chunkRegistry.activate(generator, cid, registry, tick, acquireId);
                         if (!gwInfo.lastStateTick.count(cid)) {
                             NetworkProtocol::appendFramed(batchBuf, chunk->buildSnapshot(registry, tick));
                             gwInfo.lastStateTick[cid] = tick;

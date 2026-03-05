@@ -138,7 +138,8 @@ int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
     return static_cast<int32_t>(computeHeight(wx + seedOffsetX, wz + seedOffsetZ));
 }
 
-void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick) const {
+void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick,
+                                      std::function<GlobalEntityId()> acquireId) const {
     const int32_t cx = chunkId.x();
     const int32_t cy = chunkId.y();
     const int32_t cz = chunkId.z();
@@ -163,19 +164,13 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
         // Mark as spawned
         testEntitySpawned_ = true;
         
-        // Create test entity
-        const entt::entity ent = registry.create();
-        registry.emplace<GlobalEntityIdComponent>(ent, static_cast<GlobalEntityId>(1));
-        registry.emplace<DirtyComponent>(ent);
-        
+        // Spawn test entity (BaseEntity::spawn handles common components)
         switch (testEntityType_) {
             case EntityType::SHEEP:
             default:
-                SheepEntity::spawn(registry, ent, testX, testY, testZ, chunkId, tick);
+                SheepEntity::spawn(registry, acquireId(), testX, testY, testZ, tick);
                 break;
         }
-        
-        ChunkMembershipSystem::markForCreation(registry, ent, chunkId);
         return;
     }
     
@@ -212,14 +207,9 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
         const int32_t sy = worldY << SUBVOXEL_BITS;
         const int32_t sz = (cz * CHUNK_SIZE_Z + localZ) << SUBVOXEL_BITS;
         
-        // Create sheep entity and mark for creation
-        const entt::entity ent = registry.create();
-        registry.emplace<GlobalEntityIdComponent>(ent, static_cast<GlobalEntityId>(tick + i + hash));
-        registry.emplace<DirtyComponent>(ent);  // Ensure DirtyComponent exists
-        SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick + i);
-        
-        // Mark for creation - ChunkMembershipSystem will add to chunk
-        ChunkMembershipSystem::markForCreation(registry, ent, chunkId);
+        // Spawn sheep (BaseEntity::spawn handles GlobalEntityId, DirtyComponent,
+        // ChunkMembershipComponent, and PendingCreateComponent)
+        SheepEntity::spawn(registry, acquireId(), sx, sy, sz, tick + i);
     }
 }
 

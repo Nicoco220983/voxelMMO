@@ -5,6 +5,7 @@
 #include <entt/entt.hpp>
 #include <vector>
 #include <cstdint>
+#include <functional>
 
 namespace voxelmmo {
 
@@ -93,11 +94,13 @@ public:
      * Called after voxel generation. Spawns passive mobs like sheep
      * on surface grass blocks.
      *
-     * @param chunkId    Chunk being activated.
-     * @param registry   Entity registry to create entities in.
-     * @param tick       Current server tick (for state initialization).
+     * @param chunkId     Chunk being activated.
+     * @param registry    Entity registry to create entities in.
+     * @param tick        Current server tick (for state initialization).
+     * @param acquireId   Callback to acquire a unique GlobalEntityId.
      */
-    void generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick) const;
+    void generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick,
+                          std::function<GlobalEntityId()> acquireId) const;
     
 private:
     uint32_t seed_;

@@ -95,37 +95,30 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
     const auto fit = playerFactories.find(type);
     if (fit == playerFactories.end()) return;
 
-    // Compute initial chunk from spawn position
-    const int32_t cx = sx >> CHUNK_SHIFT_X;
-    const int32_t cy = sy >> CHUNK_SHIFT_Y;
-    const int32_t cz = sz >> CHUNK_SHIFT_Z;
-    const ChunkId chunkId = ChunkId::make(cy, cx, cz);
+    // Compute initial chunk from spawn position (needed for watch radius and SELF_ENTITY)
+    const ChunkId chunkId = chunkIdOf(sx, sy, sz);
+    const int32_t cx = chunkId.x();
+    const int32_t cy = chunkId.y();
+    const int32_t cz = chunkId.z();
 
-    const entt::entity ent = registry.create();
-
-    // Assign stable global entity ID (persists across chunk moves)
+    // Acquire global entity ID and spawn player entity
+    // Entity spawn handles: GlobalEntityIdComponent, DirtyComponent,
+    // ChunkMembershipComponent (computed from position), and PendingCreateComponent
     const GlobalEntityId globalId = acquireEntityId();
-    registry.emplace<GlobalEntityIdComponent>(ent, globalId);
-
-    // Ensure DirtyComponent exists for lifecycle tracking
-    registry.emplace<DirtyComponent>(ent);
-
-    fit->second(registry, ent, sx, sy, sz, playerId, chunkId);
+    const entt::entity ent = fit->second(registry, globalId, sx, sy, sz, playerId);
     playerEntities[playerId] = ent;
-
-    // Mark for creation - ChunkMembershipSystem will add to chunk during tick
-    ChunkMembershipSystem::markForCreation(registry, ent, chunkId);
 
     // Set player spawn position for TEST mode entity spawning
     worldGenerator.setPlayerSpawnPos(sx, sy, sz);
     
     // Add to watching radius (generate chunks as needed)
     const uint32_t tick = static_cast<uint32_t>(tickCount);
+    auto acquireId = [this]() { return acquireEntityId(); };
     for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
     for (int32_t dy = -1; dy <= 1; ++dy)
     for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
         const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-        Chunk* chunk = chunkRegistry.generate(worldGenerator, cid, registry, tick);
+        Chunk* chunk = chunkRegistry.generate(worldGenerator, cid, registry, tick, acquireId);
         chunk->watchingPlayers.insert(playerId);
     }
 
@@ -186,8 +179,9 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     auto it = gateways.find(gwId);
     if (it == gateways.end()) return;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
+    auto acquireId = [this]() { return acquireEntityId(); };
     batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-        it->second, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
+        it->second, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, acquireId);
     ChunkMembershipSystem::detectChunkCrossings(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
     if (!batchBuf.empty() && outputCallback)
         outputCallback(gwId, batchBuf.data(), batchBuf.size());
@@ -309,9 +303,10 @@ void GameEngine::tick() {
     pendingDeletions = std::move(entityResult.entitiesToDestroy);
 
     // Phase C: Rebuild gateway watchedChunks and dispatch snapshots
+    auto acquireId = [this]() { return acquireEntityId(); };
     for (auto& [gwId, gwInfo] : gateways) {
         batchBuf = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-            gwInfo, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
+            gwInfo, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, acquireId);
 
         if (!batchBuf.empty() && outputCallback)
             outputCallback(gwId, batchBuf.data(), batchBuf.size());
