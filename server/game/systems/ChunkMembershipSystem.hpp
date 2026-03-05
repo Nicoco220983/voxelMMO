@@ -166,21 +166,38 @@ inline ChunkCrossingResult detectChunkCrossings(
  * Entities marked for deletion are NOT destroyed immediately - they're returned
  * in result.entitiesToDestroy and must be destroyed AFTER serialization.
  *
+ * Also sends SELF_ENTITY messages to gateways when player entities are created.
+ *
  * This function DOES NOT generate entities for chunks - that is the caller's
  * responsibility via WorldGenerator::generateEntities().
  *
  * @param registry      The ECS registry.
  * @param chunkRegistry Chunk registry for accessing/activating chunks.
- * @param tickCount     Current server tick.
+ * @param gateways      Gateway info map (for routing SELF_ENTITY messages).
+ * @param tick          Current server tick (for SELF_ENTITY message).
+ * @param outputCb      Callback to send SELF_ENTITY messages (can be null).
  * @return Statistics about processed entities + list of entities to destroy.
  */
 inline EntityChunkResult updateEntitiesChunks(
     entt::registry& registry,
     ChunkRegistry& chunkRegistry,
-    int32_t tickCount)
+    std::unordered_map<GatewayId, GatewayInfo>& gateways,
+    uint32_t tick,
+    std::function<void(GatewayId, const uint8_t*, size_t)>& outputCb)
 {
-    (void)tickCount;
     EntityChunkResult result;
+    
+    // Helper to send SELF_ENTITY message to the player's gateway
+    auto sendSelfEntity = [&](PlayerId playerId, const ChunkId& chunkId, GlobalEntityId globalId) {
+        if (!outputCb) return;
+        for (auto& [gwId, gwInfo] : gateways) {
+            if (gwInfo.players.count(playerId)) {
+                const auto msg = NetworkProtocol::buildSelfEntityMessage(chunkId, tick, globalId);
+                outputCb(gwId, msg.data(), msg.size());
+                break;
+            }
+        }
+    };
 
     // ========================================================================
     // Phase 1: Process chunk changes
@@ -260,10 +277,14 @@ inline EntityChunkResult updateEntitiesChunks(
             }
             chunk->entities.insert(ent);
 
-            // Add to present players if it's a player
+            // Add to present players if it's a player, and send SELF_ENTITY
             if (registry.all_of<PlayerComponent>(ent)) {
                 const auto& pc = registry.get<PlayerComponent>(ent);
                 chunk->presentPlayers.insert(pc.playerId);
+                
+                // Send SELF_ENTITY message to the player's gateway
+                const auto& globalIdComp = registry.get<GlobalEntityIdComponent>(ent);
+                sendSelfEntity(pc.playerId, cm.currentChunkId, globalIdComp.id);
             }
 
             processed.push_back(ent);

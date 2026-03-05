@@ -102,18 +102,12 @@ void GameEngine::queuePendingPlayer(GatewayId gwId, PlayerId playerId,
 }
 
 void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
-                            int32_t sx, int32_t sy, int32_t sz, EntityType type)
+                            int32_t /*sx*/, int32_t /*sy*/, int32_t /*sz*/, EntityType type)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
 
-    // Compute initial chunk from spawn position (needed for watch radius and SELF_ENTITY)
-    const ChunkId chunkId = chunkIdOf(sx, sy, sz);
-    const int32_t cx = chunkId.x();
-    const int32_t cy = chunkId.y();
-    const int32_t cz = chunkId.z();
-
-    // Queue player spawn in factory
-    entityFactory.spawnPlayer(type, sx, sy, sz, playerId);
+    // Queue player spawn at world generator's spawn position
+    worldGenerator.addPlayer(entityFactory, type, playerId);
 
     // Create all pending entities (including the player)
     auto created = createPendingEntities();
@@ -121,32 +115,13 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
 
     // The last created entity should be our player
     const entt::entity ent = created.back();
-    const GlobalEntityId globalId = registry.get<GlobalEntityIdComponent>(ent).id;
     playerEntities[playerId] = ent;
-
-    // Add to watching radius (generate and activate chunks as needed)
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
-    for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-    for (int32_t dy = -1; dy <= 1; ++dy)
-    for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-        const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-        Chunk* chunk = chunkRegistry.generateAndActivate(worldGenerator, cid);
-        if (chunk) {
-            chunk->watchingPlayers.insert(playerId);
-            // Queue entity generation for this chunk (deferred to next tick start)
-            worldGenerator.generateEntities(cid, entityFactory, tick);
-        }
-    }
 
     if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
 
-    // Send SELF_ENTITY message once at creation (global ID is stable across chunk moves)
-    std::vector<uint8_t> selfEntityBuf;
-    const auto msg = NetworkProtocol::buildSelfEntityMessage(chunkId, tick, globalId);
-    NetworkProtocol::appendFramed(selfEntityBuf, msg.data(), msg.size());
-    if (!selfEntityBuf.empty() && outputCallback)
-        outputCallback(gwId, selfEntityBuf.data(), selfEntityBuf.size());
+    // Note: Chunk generation and SELF_ENTITY message are handled later in the flow
+    // by rebuildGatewayWatchedChunks() and updateEntitiesChunks() respectively.
 }
 
 void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz) {
@@ -333,7 +308,8 @@ void GameEngine::tick() {
 
     // Phase B: Process all entity lifecycle events (CREATE, DELETE, CHUNK_CHANGE)
     // Deleted entities are NOT destroyed yet - they're stored in pendingDeletions
-    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(registry, chunkRegistry, tickCount);
+    // Also sends SELF_ENTITY messages to gateways when player entities are created
+    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(registry, chunkRegistry, gateways, tick, outputCallback);
     pendingDeletions = std::move(entityResult.entitiesToDestroy);
 
     // Phase C: Rebuild gateway watchedChunks and dispatch snapshots

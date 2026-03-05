@@ -253,6 +253,7 @@ export class GameClient {
         this.#applyVoxelDelta(view, true, chunkId, messageTick)
         break
       case ChunkMessageType.SELF_ENTITY:
+        console.log("TMP SELF_ENTITY")
         if (view.byteLength >= 17) {
           this.#selfEntityId = view.getUint32(13, true)
         }
