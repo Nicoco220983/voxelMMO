@@ -8,7 +8,18 @@
 
 namespace voxelmmo {
 
-GameEngine::GameEngine() = default;
+GameEngine::GameEngine(uint32_t seed, bool seedProvided,
+                       GeneratorType type, EntityType testEntityType)
+    : worldGenerator(seedProvided ? seed : generateRandomSeed(), type, testEntityType)
+{
+}
+
+uint32_t GameEngine::generateRandomSeed() {
+    std::random_device rd;
+    std::mt19937_64 rng(rd());
+    std::uniform_int_distribution<uint32_t> dist;
+    return dist(rng);
+}
 
 void GameEngine::setOutputCallback(OutputCallback cb) {
     outputCallback = std::move(cb);

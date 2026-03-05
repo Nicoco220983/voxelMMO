@@ -1,6 +1,7 @@
 #pragma once
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
+#include "common/MessageTypes.hpp"
 #include <entt/entt.hpp>
 #include <vector>
 #include <cstdint>
@@ -8,7 +9,15 @@
 namespace voxelmmo {
 
 /**
- * @brief Stateless procedural terrain generator.
+ * @brief World generator type.
+ */
+enum class GeneratorType : uint8_t {
+    NORMAL = 0,  ///< Procedural terrain with noise
+    TEST   = 1   ///< Test world: flat terrain + single configurable entity
+};
+
+/**
+ * @brief Stateful procedural terrain generator.
  *
  * Fills a flat voxel buffer (row-major y, x, z) using a multi-frequency
  * 2D simplex noise heightmap:
@@ -24,11 +33,25 @@ namespace voxelmmo {
  *   cy ≤ -1  (worldY ≤ -1)   → all STONE  (surface ≥ 4)
  *   cy ≥  2  (worldY ≥ 32)   → all AIR    (surface ≤ 30)
  *
- * The generator is deterministic: same (cx, cy, cz) always yields the
- * same voxel data.
+ * The generator is deterministic for a given seed: same (cx, cy, cz) always
+ * yields the same voxel data.
  */
 class WorldGenerator {
 public:
+    /**
+     * @brief Construct a world generator with the given seed and type.
+     * @param seed           Random seed for deterministic generation.
+     * @param type           Generator type (NORMAL or TEST).
+     * @param testEntityType Entity type to spawn in TEST mode (default: SHEEP).
+     */
+    WorldGenerator(uint32_t seed = 0, GeneratorType type = GeneratorType::NORMAL,
+                   EntityType testEntityType = EntityType::SHEEP);
+    
+    /** @return The seed used for generation. */
+    uint32_t getSeed() const noexcept { return seed_; }
+    
+    /** @return The generator type. */
+    GeneratorType getType() const noexcept { return type_; }
     /**
      * @brief Fill @p voxels with terrain data for chunk (cx, cy, cz).
      *
@@ -62,6 +85,12 @@ public:
      * @param tick       Current server tick (for state initialization).
      */
     void generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick) const;
+    
+private:
+    uint32_t seed_;
+    GeneratorType type_;
+    EntityType testEntityType_;
+    mutable bool testEntitySpawned_ = false;  ///< Track if test entity was already spawned
 };
 
 } // namespace voxelmmo

@@ -125,17 +125,59 @@ static float computeHeight(float wx, float wz) noexcept {
 
 namespace voxelmmo {
 
+WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, EntityType testEntityType)
+    : seed_(seed), type_(type), testEntityType_(testEntityType), testEntitySpawned_(false) {}
+
 int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
-    return static_cast<int32_t>(computeHeight(wx, wz));
+    if (type_ == GeneratorType::TEST) {
+        return 4;  // Test world: grass at worldY = 4
+    }
+    // Offset noise coordinates by seed for deterministic variation
+    const float seedOffsetX = static_cast<float>(seed_ & 0xFFFF);
+    const float seedOffsetZ = static_cast<float>((seed_ >> 16) & 0xFFFF);
+    return static_cast<int32_t>(computeHeight(wx + seedOffsetX, wz + seedOffsetZ));
 }
 
 void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick) const {
-    // Deterministic sheep spawn: based on chunk coordinates
-    // Use a simple hash of chunk coordinates to decide if/where sheep spawn
     const int32_t cx = chunkId.x();
     const int32_t cy = chunkId.y();
     const int32_t cz = chunkId.z();
     
+    // ── TEST mode: spawn exactly one entity at spawn chunk (0,0,0) ────────────
+    if (type_ == GeneratorType::TEST) {
+        // Only spawn in chunk (0,0,0) and only once
+        if (cx != 0 || cy != 0 || cz != 0 || testEntitySpawned_) return;
+        
+        // Mark as spawned (mutable flag)
+        testEntitySpawned_ = true;
+        
+        // Fixed spawn position: center of chunk at y=5 (one above grass at y=4)
+        constexpr int32_t localX = CHUNK_SIZE_X / 2;
+        constexpr int32_t localZ = CHUNK_SIZE_Z / 2;
+        const int32_t sx = localX << SUBVOXEL_BITS;
+        const int32_t sy = 5 << SUBVOXEL_BITS;  // One block above grass
+        const int32_t sz = localZ << SUBVOXEL_BITS;
+        
+        // Create entity based on testEntityType_
+        const entt::entity ent = registry.create();
+        registry.emplace<GlobalEntityIdComponent>(ent, static_cast<GlobalEntityId>(1));  // Fixed ID for test
+        registry.emplace<DirtyComponent>(ent);
+        
+        switch (testEntityType_) {
+            case EntityType::SHEEP:
+                SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick);
+                break;
+            default:
+                // For unsupported types, default to sheep
+                SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick);
+                break;
+        }
+        
+        EntityStateSystem::markForCreation(registry, ent, chunkId);
+        return;
+    }
+    
+    // ── NORMAL mode: procedural entity spawning ──────────────────────────────
     // Only spawn sheep in surface chunks (cy where grass exists: typically 0 or 1)
     if (cy < 0 || cy > 1) return;
     
@@ -182,6 +224,33 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
 void WorldGenerator::generate(std::vector<VoxelType>& voxels,
                                int32_t chunkX, int32_t chunkY, int32_t chunkZ) const
 {
+    // ── TEST world generation ───────────────────────────────────────────────
+    if (type_ == GeneratorType::TEST) {
+        constexpr int FLAT_SURFACE_Y = 4;  // Grass at worldY = 4
+        for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
+            const int32_t worldY = chunkY * CHUNK_SIZE_Y + y;
+            VoxelType type;
+            if      (worldY > FLAT_SURFACE_Y)     type = VoxelTypes::AIR;
+            else if (worldY == FLAT_SURFACE_Y)    type = VoxelTypes::GRASS;
+            else if (worldY >= FLAT_SURFACE_Y - 3) type = VoxelTypes::DIRT;
+            else                                  type = VoxelTypes::STONE;
+            
+            for (int x = 0; x < CHUNK_SIZE_X; ++x) {
+                for (int z = 0; z < CHUNK_SIZE_Z; ++z) {
+                    voxels[static_cast<size_t>(y) * CHUNK_SIZE_X * CHUNK_SIZE_Z
+                         + static_cast<size_t>(x) * CHUNK_SIZE_Z
+                         + static_cast<size_t>(z)] = type;
+                }
+            }
+        }
+        return;
+    }
+    
+    // ── NORMAL (procedural) world generation ─────────────────────────────────
+    // Offset noise coordinates by seed for deterministic variation
+    const float seedOffsetX = static_cast<float>(seed_ & 0xFFFF);
+    const float seedOffsetZ = static_cast<float>((seed_ >> 16) & 0xFFFF);
+    
     // ── Step 1: sample height on a coarse (STEP-voxel) grid ──────────────────
     // CHUNK_SIZE_X = CHUNK_SIZE_Z = 64, STEP = 4  →  17 × 17 = 289 evaluations
     // instead of 64 × 64 = 4 096  (~14× fewer noise calls).
@@ -192,8 +261,8 @@ void WorldGenerator::generate(std::vector<VoxelType>& voxels,
     float heightGrid[GRID_X][GRID_Z];
     for (int gx = 0; gx < GRID_X; ++gx) {
         for (int gz = 0; gz < GRID_Z; ++gz) {
-            const float wx = static_cast<float>(chunkX * CHUNK_SIZE_X + gx * STEP);
-            const float wz = static_cast<float>(chunkZ * CHUNK_SIZE_Z + gz * STEP);
+            const float wx = static_cast<float>(chunkX * CHUNK_SIZE_X + gx * STEP) + seedOffsetX;
+            const float wz = static_cast<float>(chunkZ * CHUNK_SIZE_Z + gz * STEP) + seedOffsetZ;
             heightGrid[gx][gz] = computeHeight(wx, wz);
         }
     }

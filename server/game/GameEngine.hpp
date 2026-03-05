@@ -12,12 +12,14 @@
 #include "common/Types.hpp"
 #include "common/GatewayInfo.hpp"
 #include "common/NetworkProtocol.hpp"
+#include "game/WorldGenerator.hpp"
 #include <entt/entt.hpp>
 #include <unordered_map>
 #include <set>
 #include <memory>
 #include <functional>
 #include <mutex>
+#include <random>
 #include <cstdint>
 
 namespace voxelmmo {
@@ -41,7 +43,16 @@ namespace voxelmmo {
  */
 class GameEngine {
 public:
-    GameEngine();
+    /**
+     * @brief Construct a GameEngine with configurable world generation.
+     * @param seed           World generation seed (0 = random if seedProvided is false).
+     * @param seedProvided   Whether the seed was explicitly provided.
+     * @param type           World generator type (NORMAL or TEST).
+     * @param testEntityType Entity type for TEST mode.
+     */
+    GameEngine(uint32_t seed = 0, bool seedProvided = false,
+               GeneratorType type = GeneratorType::NORMAL,
+               EntityType testEntityType = EntityType::SHEEP);
 
     // ── Gateway management ────────────────────────────────────────────────
 
@@ -185,7 +196,10 @@ private:
     WorldGenerator worldGenerator;
 
     // ── Internal helpers ──────────────────────────────────────────────────
-
+    
+    /** @brief Generate a random seed for world generation. */
+    static uint32_t generateRandomSeed();
+    
     Chunk& getOrActivateChunk(ChunkId id);
 
     /** @brief Return the chunk containing sub-voxel position (px, py, pz), or nullptr if not loaded. */

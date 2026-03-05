@@ -4,20 +4,78 @@
 #include <thread>
 #include <atomic>
 #include <chrono>
+#include <cstring>
+#include <cstdlib>
 
 static constexpr int GATEWAY_PORT = 8080;
 
-int main() {
-    voxelmmo::GameEngine    game;
+static void printUsage(const char* program) {
+    std::cout << "Usage: " << program << " [options]\n"
+              << "Options:\n"
+              << "  --seed <n>           World generation seed (default: random)\n"
+              << "  --type <normal|test> World generation type (default: normal)\n"
+              << "  --test-entity-type <sheep> Entity type for TEST mode (default: sheep)\n"
+              << "  --help               Show this help message\n";
+}
+
+int main(int argc, char* argv[]) {
+    // ── Parse CLI arguments ────────────────────────────────────────────────
+    uint32_t seed = 0;
+    bool seedProvided = false;
+    voxelmmo::GeneratorType genType = voxelmmo::GeneratorType::NORMAL;
+    voxelmmo::EntityType testEntityType = voxelmmo::EntityType::SHEEP;
+    
+    for (int i = 1; i < argc; ++i) {
+        const char* arg = argv[i];
+        
+        if (std::strcmp(arg, "--help") == 0 || std::strcmp(arg, "-h") == 0) {
+            printUsage(argv[0]);
+            return 0;
+        }
+        else if (std::strcmp(arg, "--seed") == 0 && i + 1 < argc) {
+            seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+            seedProvided = true;
+        }
+        else if (std::strcmp(arg, "--type") == 0 && i + 1 < argc) {
+            const char* typeStr = argv[++i];
+            if (std::strcmp(typeStr, "normal") == 0) {
+                genType = voxelmmo::GeneratorType::NORMAL;
+            } else if (std::strcmp(typeStr, "test") == 0) {
+                genType = voxelmmo::GeneratorType::TEST;
+            } else {
+                std::cerr << "Unknown generator type: " << typeStr << "\n";
+                printUsage(argv[0]);
+                return 1;
+            }
+        }
+        else if (std::strcmp(arg, "--test-entity-type") == 0 && i + 1 < argc) {
+            const char* entityStr = argv[++i];
+            if (std::strcmp(entityStr, "sheep") == 0) {
+                testEntityType = voxelmmo::EntityType::SHEEP;
+            } else {
+                std::cerr << "Unknown test entity type: " << entityStr << "\n";
+                printUsage(argv[0]);
+                return 1;
+            }
+        }
+        else {
+            std::cerr << "Unknown argument: " << arg << "\n";
+            printUsage(argv[0]);
+            return 1;
+        }
+    }
+    
+    // ── Initialize GameEngine with configured parameters ───────────────────
+    voxelmmo::GameEngine game(seed, seedProvided, genType, testEntityType);
     voxelmmo::GatewayEngine gateway;
 
-    // ── Wire GameEngine → GatewayEngine ──────────────────────────────────
+    // ── Wire GameEngine → GatewayEngine ────────────────────────────────────
     game.setOutputCallback(
         [&](voxelmmo::GatewayId /*gwId*/, const uint8_t* data, size_t size) {
             gateway.receiveGameBatch(data, size);
         });
 
-    // ── Wire GatewayEngine → GameEngine ──────────────────────────────────
+    // ── Wire GatewayEngine → GameEngine ────────────────────────────────────
     game.registerGateway(0);
 
     // Compute spawn position: one voxel above the terrain surface at (32, 32).
@@ -42,7 +100,7 @@ int main() {
         game.handlePlayerInput(pid, data, size);
     });
 
-    // ── Game loop (separate thread) ───────────────────────────────────────
+    // ── Game loop (separate thread) ────────────────────────────────────────
     std::atomic<bool> running{true};
     std::thread gameThread([&]() {
         using Clock = std::chrono::steady_clock;
@@ -56,8 +114,10 @@ int main() {
         }
     });
 
-    // ── Gateway (blocks main thread with uWS event loop) ─────────────────
+    // ── Gateway (blocks main thread with uWS event loop) ───────────────────
     std::cout << "[main] Starting voxelmmo server...\n";
+    std::cout << "[main] World type: " << (genType == voxelmmo::GeneratorType::TEST ? "test" : "normal")
+              << ", seed: " << game.getWorldGenerator().getSeed() << "\n";
     gateway.listen(GATEWAY_PORT); // blocks
 
     running = false;

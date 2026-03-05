@@ -290,9 +290,10 @@ TEST_CASE("stepPhysics - FULL player jump impulse when grounded",
 {
     GameEngine engine;
     engine.registerGateway(1);
-    // Spawn above the terrain surface (terrain surface ≤ 30 voxels globally in cy=0).
-    // y=50 ensures the player is in free air and will land cleanly on terrain.
-    engine.addPlayer(1, 1, 0, 50 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
+    // Spawn well above the terrain surface (terrain surface ≤ 30 voxels globally in cy=0).
+    // y=100 ensures the player is in free air and will land cleanly on terrain,
+    // regardless of random seed variations.
+    engine.addPlayer(1, 1, 0, 100 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
 
     std::vector<ParsedEntity> states;
     engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
@@ -300,7 +301,7 @@ TEST_CASE("stepPhysics - FULL player jump impulse when grounded",
         states.insert(states.end(), s.begin(), s.end());
     });
 
-    // Let the player land first (falls ~30 voxels in ~50 ticks).
+    // Let the player land first (falls ~80 voxels in ~100 ticks).
     const auto zeroInput = makeInput(0);
     engine.handlePlayerInput(1, zeroInput.data(), zeroInput.size());
     for (int t = 0; t < 200; ++t) {
