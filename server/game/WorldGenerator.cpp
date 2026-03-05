@@ -126,7 +126,7 @@ static float computeHeight(float wx, float wz) noexcept {
 namespace voxelmmo {
 
 WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, EntityType testEntityType)
-    : seed_(seed), type_(type), testEntityType_(testEntityType), testEntitySpawned_(false) {}
+    : seed_(seed), type_(type), testEntityType_(testEntityType) {}
 
 int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
     if (type_ == GeneratorType::TEST) {
@@ -143,33 +143,35 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
     const int32_t cy = chunkId.y();
     const int32_t cz = chunkId.z();
     
-    // ── TEST mode: spawn exactly one entity at spawn chunk (0,0,0) ────────────
+    // ── TEST mode: spawn test entity relative to stored player spawn position ─
     if (type_ == GeneratorType::TEST) {
-        // Only spawn in chunk (0,0,0) and only once
-        if (cx != 0 || cy != 0 || cz != 0 || testEntitySpawned_) return;
+        // Only spawn once in the chunk that contains the test entity position
+        if (testEntitySpawned_) return;
         
-        // Mark as spawned (mutable flag)
+        // Calculate test entity spawn position: 5 meters in front (+X) of player
+        const int32_t testX = playerSpawnPos_[0] + 5 * SUBVOXEL_SIZE;
+        const int32_t testY = playerSpawnPos_[1];
+        const int32_t testZ = playerSpawnPos_[2];
+        
+        // Check if this chunk contains the test entity spawn position
+        const int32_t testCx = testX >> CHUNK_SHIFT_X;
+        const int32_t testCy = testY >> CHUNK_SHIFT_Y;
+        const int32_t testCz = testZ >> CHUNK_SHIFT_Z;
+        
+        if (cx != testCx || cy != testCy || cz != testCz) return;
+        
+        // Mark as spawned
         testEntitySpawned_ = true;
         
-        // Fixed spawn position: center of chunk at y=5 (one above grass at y=4)
-        constexpr int32_t localX = CHUNK_SIZE_X / 2;
-        constexpr int32_t localZ = CHUNK_SIZE_Z / 2;
-        const int32_t sx = localX << SUBVOXEL_BITS;
-        const int32_t sy = 5 << SUBVOXEL_BITS;  // One block above grass
-        const int32_t sz = localZ << SUBVOXEL_BITS;
-        
-        // Create entity based on testEntityType_
+        // Create test entity
         const entt::entity ent = registry.create();
-        registry.emplace<GlobalEntityIdComponent>(ent, static_cast<GlobalEntityId>(1));  // Fixed ID for test
+        registry.emplace<GlobalEntityIdComponent>(ent, static_cast<GlobalEntityId>(1));
         registry.emplace<DirtyComponent>(ent);
         
         switch (testEntityType_) {
             case EntityType::SHEEP:
-                SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick);
-                break;
             default:
-                // For unsupported types, default to sheep
-                SheepEntity::spawn(registry, ent, sx, sy, sz, chunkId, tick);
+                SheepEntity::spawn(registry, ent, testX, testY, testZ, chunkId, tick);
                 break;
         }
         

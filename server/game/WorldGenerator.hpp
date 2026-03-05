@@ -52,6 +52,19 @@ public:
     
     /** @return The generator type. */
     GeneratorType getType() const noexcept { return type_; }
+    
+    /** @return The test entity type (for TEST mode). */
+    EntityType getTestEntityType() const noexcept { return testEntityType_; }
+    
+    /**
+     * @brief Set the player spawn position for TEST mode entity spawning.
+     * @param x,y,z  Player spawn position in sub-voxels.
+     */
+    void setPlayerSpawnPos(int32_t x, int32_t y, int32_t z) noexcept {
+        playerSpawnPos_[0] = x;
+        playerSpawnPos_[1] = y;
+        playerSpawnPos_[2] = z;
+    }
     /**
      * @brief Fill @p voxels with terrain data for chunk (cx, cy, cz).
      *
@@ -90,7 +103,8 @@ private:
     uint32_t seed_;
     GeneratorType type_;
     EntityType testEntityType_;
-    mutable bool testEntitySpawned_ = false;  ///< Track if test entity was already spawned
+    mutable bool testEntitySpawned_ = false;      ///< Track if test entity was spawned
+    mutable int32_t playerSpawnPos_[3] = {0, 0, 0};  ///< Player spawn for TEST mode
 };
 
 } // namespace voxelmmo

@@ -116,6 +116,9 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
     // Mark for creation - ChunkMembershipSystem will add to chunk during tick
     ChunkMembershipSystem::markForCreation(registry, ent, chunkId);
 
+    // Set player spawn position for TEST mode entity spawning
+    worldGenerator.setPlayerSpawnPos(sx, sy, sz);
+    
     // Add to watching radius (generate chunks as needed)
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
