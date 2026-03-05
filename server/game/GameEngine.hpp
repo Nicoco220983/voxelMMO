@@ -79,8 +79,8 @@ public:
     /**
      * @brief Spawn a new player entity with the given type.
      *
-     * Delegates to playerFactories[type].  Default type is GHOST_PLAYER for
-     * backward compatibility with tests that call addPlayer() directly.
+     * Delegates to entityFactory->spawnPlayer() for deferred creation.
+     * Entities are actually created during createPendingEntities().
      *
      * @param gwId     Gateway the player connected through.
      * @param playerId Persistent player identifier.
@@ -102,6 +102,21 @@ public:
      * @param sx/sy/sz Position in sub-voxels (1 voxel = SUBVOXEL_SIZE units).
      */
     void teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz);
+
+    // ── Entity Factory Access ─────────────────────────────────────────────
+
+    /** @brief Get the entity factory (for queueing spawns). */
+    EntityFactory* getEntityFactory() { return &entityFactory; }
+
+    /**
+     * @brief Create all pending entities queued in the entity factory.
+     *
+     * Call this at a precise step in the game loop to ensure all entities
+     * are created at the same logical time.
+     *
+     * @return Vector of created entity handles.
+     */
+    std::vector<entt::entity> createPendingEntities();
 
     // ── Main loop ─────────────────────────────────────────────────────────
 
@@ -182,9 +197,11 @@ private:
     /** @brief Monotonically increasing global entity ID counter (starts at 1, 0 reserved). */
     GlobalEntityId nextEntityId_{1};
 
-    // TODO: remove it when migrated to sockets using writev
     /** @brief Acquire a new unique global entity ID. */
     GlobalEntityId acquireEntityId() { return nextEntityId_++; }
+
+    /** @brief Entity factory for deferred entity creation. */
+    EntityFactory entityFactory;
 
     /** @brief Reused batch buffer — cleared and refilled every serialize call. */
     std::vector<uint8_t> batchBuf;
@@ -195,19 +212,33 @@ private:
     /** @brief Stateless procedural terrain generator for world generation. */
     WorldGenerator worldGenerator;
 
-    // ── Internal helpers ──────────────────────────────────────────────────
-    
-    /** @brief Generate a random seed for world generation. */
+    /** @brief Generate a deterministic random seed. */
     static uint32_t generateRandomSeed();
-    
-    /** @brief Return the chunk containing sub-voxel position (px, py, pz), or nullptr if not loaded. */
+
+    /**
+     * @brief Serialise a full snapshot for all watched chunks of a gateway.
+     */
+    void serializeSnapshot(GatewayId gwId);
+
+    /**
+     * @brief Serialise a snapshot delta (all entities that changed since last snapshot).
+     */
+    void serializeSnapshotDelta();
+
+    /**
+     * @brief Serialise a tick delta (entities that changed since last tick).
+     */
+    void serializeTickDelta();
+
+    /**
+     * @brief Step physics simulation for all entities.
+     */
+    void stepPhysics();
+
+    /**
+     * @brief Get the chunk containing the given world position.
+     */
     const Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;
-
-
-    void   serializeSnapshot(GatewayId gwId);
-    void   serializeSnapshotDelta();
-    void   serializeTickDelta();
-    void   stepPhysics();
 };
 
 } // namespace voxelmmo

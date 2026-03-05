@@ -1,8 +1,6 @@
 #include "game/WorldGenerator.hpp"
-#include "game/entities/SheepEntity.hpp"
-#include "game/components/GlobalEntityIdComponent.hpp"
-#include "game/components/DirtyComponent.hpp"
-#include "game/systems/ChunkMembershipSystem.hpp"
+#include "game/ChunkRegistry.hpp"
+#include "game/entities/EntityFactory.hpp"
 #include "common/Types.hpp"
 #include <cmath>
 #include <algorithm>
@@ -107,14 +105,21 @@ static float simplex2D(float x, float y) noexcept {
 //   chunkY = -1  (worldY -16 .. -1)  → always STONE  (surface ≥ 4 > -1)
 //   chunkY =  2  (worldY 32  .. 47)  → always AIR    (surface ≤ 30 < 32)
 //
-static float computeHeight(float wx, float wz) noexcept {
+static float computeHeight(float wx, float wz, uint32_t seed) noexcept {
+    // Offset noise coordinates by seed for deterministic variation
+    const float seedOffsetX = static_cast<float>(seed & 0xFFFF);
+    const float seedOffsetZ = static_cast<float>((seed >> 16) & 0xFFFF);
+    
+    const float x = wx + seedOffsetX;
+    const float z = wz + seedOffsetZ;
+    
     // fBm: 3 octaves — large hills, medium bumps, fine detail
-    const float base = simplex2D(wx / 128.0f, wz / 128.0f) * 4.0f
-                     + simplex2D(wx /  64.0f, wz /  64.0f) * 2.0f
-                     + simplex2D(wx /  32.0f, wz /  32.0f) * 1.0f;
+    const float base = simplex2D(x / 128.0f, z / 128.0f) * 4.0f
+                     + simplex2D(x /  64.0f, z /  64.0f) * 2.0f
+                     + simplex2D(x /  32.0f, z /  32.0f) * 1.0f;
 
     // Ridged noise: cubed to concentrate height gain at rare ridge peaks
-    const float r     = simplex2D(wx / 256.0f, wz / 256.0f);
+    const float r     = simplex2D(x / 256.0f, z / 256.0f);
     const float ridge = 1.0f - std::abs(r);
     const float mountain = ridge * ridge * ridge * 18.0f;
 
@@ -126,27 +131,78 @@ static float computeHeight(float wx, float wz) noexcept {
 namespace voxelmmo {
 
 WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, EntityType testEntityType)
-    : seed_(seed), type_(type), testEntityType_(testEntityType) {}
+    : seed_(seed), type_(type), testEntityType_(testEntityType) {
+    // Lean constructor - no chunk generation here
+}
+
+void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
+                                    int32_t centerX, int32_t centerY, int32_t centerZ,
+                                    int32_t initialActivationRadius,
+                                    entt::registry& registry,
+                                    uint32_t tick) {
+    (void)registry;
+    (void)tick;
+    
+    // Convert center position to chunk coordinates
+    const int32_t centerCx = centerX >> CHUNK_SHIFT_X;
+    const int32_t centerCy = centerY >> CHUNK_SHIFT_Y;
+    const int32_t centerCz = centerZ >> CHUNK_SHIFT_Z;
+    
+    // Generate chunks within initialActivationRadius of center (voxels only, no entities)
+    for (int32_t dx = -initialActivationRadius; dx <= initialActivationRadius; ++dx) {
+        for (int32_t dy = -initialActivationRadius; dy <= initialActivationRadius; ++dy) {
+            for (int32_t dz = -initialActivationRadius; dz <= initialActivationRadius; ++dz) {
+                const int32_t cx = centerCx + dx;
+                const int32_t cy = centerCy + dy;
+                const int32_t cz = centerCz + dz;
+                const ChunkId chunkId = ChunkId::make(cy, cx, cz);
+                // Generate voxels only - entity generation is caller's responsibility
+                chunkRegistry.generate(*this, chunkId);
+            }
+        }
+    }
+}
+
+void WorldGenerator::computePlayerSpawnPos() {
+    if (type_ == GeneratorType::TEST) {
+        // Test world: flat terrain with grass at worldY = 4
+        // Spawn 1 meter above the grass surface
+        playerSpawnPos_[0] = 0;
+        playerSpawnPos_[1] = (4 + 1) * SUBVOXEL_SIZE;  // 5 * 256 = 1280
+        playerSpawnPos_[2] = 0;
+        return;
+    }
+    
+    // NORMAL mode: find top solid voxel at column (0,0)
+    // World column (0,0) corresponds to local chunk position (0,0) in chunk (0,?,0)
+    
+    // First, find the surface Y using surfaceY function
+    const int32_t surfaceYValue = surfaceY(0.0f, 0.0f);
+    
+    // The surface voxel is grass, spawn 1 meter above it
+    // 1 meter = SUBVOXEL_SIZE sub-voxel units
+    const int32_t spawnY = (surfaceYValue + 1) * SUBVOXEL_SIZE;
+    
+    playerSpawnPos_[0] = 0;
+    playerSpawnPos_[1] = spawnY;
+    playerSpawnPos_[2] = 0;
+}
 
 int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
     if (type_ == GeneratorType::TEST) {
         return 4;  // Test world: grass at worldY = 4
     }
-    // Offset noise coordinates by seed for deterministic variation
-    const float seedOffsetX = static_cast<float>(seed_ & 0xFFFF);
-    const float seedOffsetZ = static_cast<float>((seed_ >> 16) & 0xFFFF);
-    return static_cast<int32_t>(computeHeight(wx + seedOffsetX, wz + seedOffsetZ));
+    return static_cast<int32_t>(computeHeight(wx, wz, seed_));
 }
 
-void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick,
-                                      std::function<GlobalEntityId()> acquireId) const {
+void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick) const {
     const int32_t cx = chunkId.x();
     const int32_t cy = chunkId.y();
     const int32_t cz = chunkId.z();
     
-    // ── TEST mode: spawn test entity relative to stored player spawn position ─
+    // ── TEST mode: queue test entity spawn relative to stored player spawn position ─
     if (type_ == GeneratorType::TEST) {
-        // Only spawn once in the chunk that contains the test entity position
+        // Only queue once in the chunk that contains the test entity position
         if (testEntitySpawned_) return;
         
         // Calculate test entity spawn position: 5 meters in front (+X) of player
@@ -164,11 +220,11 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
         // Mark as spawned
         testEntitySpawned_ = true;
         
-        // Spawn test entity (BaseEntity::spawn handles common components)
+        // Queue test entity spawn in factory (deferred creation)
         switch (testEntityType_) {
             case EntityType::SHEEP:
             default:
-                SheepEntity::spawn(registry, acquireId(), testX, testY, testZ, tick);
+                entityFactory.spawnAI(EntityType::SHEEP, testX, testY, testZ, tick);
                 break;
         }
         return;
@@ -207,9 +263,9 @@ void WorldGenerator::generateEntities(ChunkId chunkId, entt::registry& registry,
         const int32_t sy = worldY << SUBVOXEL_BITS;
         const int32_t sz = (cz * CHUNK_SIZE_Z + localZ) << SUBVOXEL_BITS;
         
-        // Spawn sheep (BaseEntity::spawn handles GlobalEntityId, DirtyComponent,
-        // ChunkMembershipComponent, and PendingCreateComponent)
-        SheepEntity::spawn(registry, acquireId(), sx, sy, sz, tick + i);
+        // Queue sheep spawn in factory (deferred creation)
+        // Entities will be created later via entityFactory.createEntities(registry, acquireId)
+        entityFactory.spawnAI(EntityType::SHEEP, sx, sy, sz, tick + i);
     }
 }
 
@@ -244,23 +300,22 @@ void WorldGenerator::generate(std::vector<VoxelType>& voxels,
     const float seedOffsetZ = static_cast<float>((seed_ >> 16) & 0xFFFF);
     
     // ── Step 1: sample height on a coarse (STEP-voxel) grid ──────────────────
-    // CHUNK_SIZE_X = CHUNK_SIZE_Z = 64, STEP = 4  →  17 × 17 = 289 evaluations
-    // instead of 64 × 64 = 4 096  (~14× fewer noise calls).
+    // CHUNK_SIZE_X = CHUNK_SIZE_Z = 32, STEP = 4  →  9 × 9 = 81 evaluations
     constexpr int STEP   = 4;
-    constexpr int GRID_X = CHUNK_SIZE_X / STEP + 1;  // 17
-    constexpr int GRID_Z = CHUNK_SIZE_Z / STEP + 1;  // 17
+    constexpr int GRID_X = CHUNK_SIZE_X / STEP + 1;  // 9
+    constexpr int GRID_Z = CHUNK_SIZE_Z / STEP + 1;  // 9
 
     float heightGrid[GRID_X][GRID_Z];
     for (int gx = 0; gx < GRID_X; ++gx) {
         for (int gz = 0; gz < GRID_Z; ++gz) {
             const float wx = static_cast<float>(chunkX * CHUNK_SIZE_X + gx * STEP) + seedOffsetX;
             const float wz = static_cast<float>(chunkZ * CHUNK_SIZE_Z + gz * STEP) + seedOffsetZ;
-            heightGrid[gx][gz] = computeHeight(wx, wz);
+            heightGrid[gx][gz] = computeHeight(wx, wz, seed_);
         }
     }
 
     // ── Step 2: fill voxels via bilinear interpolation over 4×4 cells ────────
-    constexpr int CELLS = CHUNK_SIZE_X / STEP;  // 16  (same in X and Z)
+    constexpr int CELLS = CHUNK_SIZE_X / STEP;  // 8 (same in X and Z)
 
     for (int cell_x = 0; cell_x < CELLS; ++cell_x) {
         for (int cell_z = 0; cell_z < CELLS; ++cell_z) {

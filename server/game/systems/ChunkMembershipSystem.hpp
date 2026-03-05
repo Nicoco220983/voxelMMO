@@ -17,6 +17,10 @@
 
 namespace voxelmmo {
 
+// Forward declarations
+class WorldGenerator;
+class EntityFactory;
+
 // ── Result structures ─────────────────────────────────────────────────────────
 
 /**
@@ -30,11 +34,19 @@ struct EntityChunkResult {
 };
 
 /**
- * @brief Result of detectChunkCrossings() containing detected crossings.
+ * @brief Result of detectChunkCrossings containing detected crossings.
  */
 struct ChunkCrossingResult {
     /** Chunks that were activated (created) during the update. */
     std::vector<ChunkId> activatedChunks;
+};
+
+/**
+ * @brief Result of rebuildGatewayWatchedChunks containing activated chunks.
+ */
+struct WatchedChunksResult {
+    std::vector<uint8_t> snapshotBatch;
+    std::vector<ChunkId> activatedChunks;  ///< Chunks that were activated this call
 };
 
 // ── Forward declarations ──────────────────────────────────────────────────────
@@ -154,19 +166,20 @@ inline ChunkCrossingResult detectChunkCrossings(
  * Entities marked for deletion are NOT destroyed immediately - they're returned
  * in result.entitiesToDestroy and must be destroyed AFTER serialization.
  *
+ * This function DOES NOT generate entities for chunks - that is the caller's
+ * responsibility via WorldGenerator::generateEntities().
+ *
  * @param registry      The ECS registry.
- * @param chunkRegistry Chunk registry (may activate new chunks on CHUNK_CHANGE).
+ * @param chunkRegistry Chunk registry for accessing/activating chunks.
  * @param tickCount     Current server tick.
- * @param generator     WorldGenerator for terrain generation when activating new chunks.
  * @return Statistics about processed entities + list of entities to destroy.
  */
 inline EntityChunkResult updateEntitiesChunks(
     entt::registry& registry,
     ChunkRegistry& chunkRegistry,
-    int32_t tickCount,
-    WorldGenerator& generator)
+    int32_t tickCount)
 {
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
+    (void)tickCount;
     EntityChunkResult result;
 
     // ========================================================================
@@ -195,8 +208,13 @@ inline EntityChunkResult updateEntitiesChunks(
                 oldChunk->entities.erase(ent);
             }
 
-            // Ensure new chunk exists (activate if needed)
-            Chunk* newChunk = chunkRegistry.activate(generator, newChunkId, registry, tick);
+            // Activate new chunk (chunk must already exist - caller must generate first)
+            Chunk* newChunk = chunkRegistry.activate(newChunkId);
+            if (!newChunk) {
+                // Chunk doesn't exist - skip this entity for now
+                // Caller should ensure chunks exist before calling this function
+                continue;
+            }
 
             // Add to new chunk
             newChunk->entities.insert(ent);
@@ -234,8 +252,12 @@ inline EntityChunkResult updateEntitiesChunks(
             // Update chunk membership to target chunk
             cm.currentChunkId = pcc.targetChunkId;
 
-            // Ensure chunk exists and add entity
-            Chunk* chunk = chunkRegistry.activate(generator, pcc.targetChunkId, registry, tick);
+            // Ensure chunk is activated and add entity
+            Chunk* chunk = chunkRegistry.activate(pcc.targetChunkId);
+            if (!chunk) {
+                // Chunk doesn't exist - skip
+                continue;
+            }
             chunk->entities.insert(ent);
 
             // Add to present players if it's a player
@@ -328,8 +350,11 @@ inline void markForChunkChange(entt::registry& registry, entt::entity ent, Chunk
  * @brief Rebuild watched chunks for a gateway based on its players' positions.
  *
  * Phase C: Clears and rebuilds the gateway's watchedChunks set from scratch,
- * activates chunks in the activation radius, and builds snapshot messages
+ * generates/activates chunks in the activation radius, and builds snapshot messages
  * for newly-seen chunks.
+ *
+ * Entity generation is the caller's responsibility - this function returns the list
+ * of activated chunks so the caller can call WorldGenerator::generateEntities().
  *
  * @param gwInfo            Gateway info (players, watchedChunks) - will be modified.
  * @param chunkRegistry     Chunk registry for accessing/activating chunks.
@@ -339,10 +364,9 @@ inline void markForChunkChange(entt::registry& registry, entt::entity ent, Chunk
  * @param watchRadius       Radius for watching chunks around players.
  * @param activationRadius  Radius for activating chunks around players.
  * @param generator         WorldGenerator for terrain generation (stateless).
- * @param acquireId         Optional callback to acquire a unique GlobalEntityId for entity spawning.
- * @return Vector of framed snapshot messages ready to send.
+ * @return WatchedChunksResult containing snapshot batch and list of activated chunks.
  */
-inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
+inline WatchedChunksResult rebuildGatewayWatchedChunks(
     GatewayInfo& gwInfo,
     ChunkRegistry& chunkRegistry,
     const std::unordered_map<PlayerId, entt::entity>& playerEntities,
@@ -350,11 +374,9 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
     uint32_t tick,
     int32_t watchRadius,
     int32_t activationRadius,
-    WorldGenerator& generator,
-    std::function<GlobalEntityId()> acquireId = nullptr)
+    WorldGenerator& generator)
 {
-    std::vector<uint8_t> batchBuf;
-    std::vector<ChunkId> activated; // Track locally for this call
+    WatchedChunksResult result;
     gwInfo.watchedChunks.clear();
 
     for (PlayerId pid : gwInfo.players) {
@@ -374,9 +396,13 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
 
                     // Ensure activation-radius chunks exist; prepare snapshot on first sight
                     if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
-                        Chunk* chunk = chunkRegistry.activate(generator, cid, registry, tick, acquireId);
-                        if (!gwInfo.lastStateTick.count(cid)) {
-                            NetworkProtocol::appendFramed(batchBuf, chunk->buildSnapshot(registry, tick));
+                        bool wasNew = !chunkRegistry.hasChunk(cid);
+                        Chunk* chunk = chunkRegistry.generateAndActivate(generator, cid);
+                        if (chunk && wasNew) {
+                            result.activatedChunks.push_back(cid);
+                        }
+                        if (chunk && !gwInfo.lastStateTick.count(cid)) {
+                            NetworkProtocol::appendFramed(result.snapshotBatch, chunk->buildSnapshot(registry, tick));
                             gwInfo.lastStateTick[cid] = tick;
                         }
                     }
@@ -385,7 +411,7 @@ inline std::vector<uint8_t> rebuildGatewayWatchedChunks(
         }
     }
 
-    return batchBuf;
+    return result;
 }
 
 } // namespace ChunkMembershipSystem

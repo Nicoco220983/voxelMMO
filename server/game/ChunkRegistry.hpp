@@ -1,27 +1,29 @@
 #pragma once
 #include "Chunk.hpp"
-#include "WorldGenerator.hpp"
 #include "common/Types.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include <entt/entt.hpp>
 #include <unordered_map>
 #include <memory>
-#include <functional>
 
 namespace voxelmmo {
+
+// Forward declaration
+class WorldGenerator;
 
 /**
  * @brief Central registry for all chunks in the game world.
  *
  * Owns the chunk map and controls chunk lifecycle:
  * - Generation: creates chunk voxel data
- * - Activation: spawns entities in the chunk
+ * - Activation: marks chunks as active (entity generation is caller's responsibility)
  * - Deactivation: removes entities from the chunk
  *
  * Provides read-only access via getChunk() for systems that only need
  * to query chunk state (physics, serialization, etc.).
  *
- * Note: For now, chunks are always activated when generated (simplification).
+ * NOTE: Entity generation is NOT done by ChunkRegistry. Callers should use
+ * WorldGenerator::generateEntities() after activating/creating chunks if needed.
  */
 class ChunkRegistry {
 public:
@@ -62,72 +64,51 @@ public:
     /**
      * @brief Generate a chunk's voxel data.
      *
-     * For now, chunks are always activated when generated (simplification).
-     * This creates the chunk, generates voxels, and marks it as activated.
+     * Creates the chunk and generates voxels using the provided WorldGenerator.
+     * The chunk is NOT activated by this method - activation is a separate step.
      *
      * @param generator WorldGenerator for terrain generation.
      * @param id Chunk ID to generate.
-     * @param registry ECS registry (for entity activation).
-     * @param tick Current server tick.
-     * @param acquireId Optional callback to acquire a unique GlobalEntityId.
      * @return Pointer to the generated chunk.
      */
-    Chunk* generate(WorldGenerator& generator, ChunkId id,
-                    entt::registry& registry, uint32_t tick,
-                    std::function<GlobalEntityId()> acquireId = nullptr) {
-        auto it = chunks_.find(id);
-        if (it != chunks_.end()) {
-            return it->second.get();  // Already exists
-        }
-
-        auto chunk = std::make_unique<Chunk>(id);
-        generator.generate(chunk->world.voxels, id.x(), id.y(), id.z());
-        
-        // For now: activate immediately on generation
-        chunk->activated = true;
-        if (acquireId) {
-            generator.generateEntities(id, registry, tick, std::move(acquireId));
-        }
-        
-        Chunk* ptr = chunk.get();
-        chunks_[id] = std::move(chunk);
-        return ptr;
-    }
+    Chunk* generate(WorldGenerator& generator, ChunkId id);
 
     /**
-     * @brief Activate a chunk, spawning its entities.
+     * @brief Create or get a chunk without generating voxels.
      *
-     * If the chunk doesn't exist, it will be generated first.
+     * If the chunk doesn't exist, creates it with empty voxels.
+     * If it exists, returns the existing chunk.
+     *
+     * @param id Chunk ID to create/get.
+     * @return Pointer to the chunk.
+     */
+    Chunk* createOrGet(ChunkId id);
+
+    /**
+     * @brief Activate a chunk.
+     *
+     * If the chunk doesn't exist, this returns nullptr (does NOT generate).
      * If already activated, this is a no-op.
      *
-     * @param generator WorldGenerator for terrain/entity generation.
+     * NOTE: Entity generation is the caller's responsibility. After activating
+     * a chunk, call WorldGenerator::generateEntities() if needed.
+     *
      * @param id Chunk ID to activate.
-     * @param registry ECS registry (for entity activation).
-     * @param tick Current server tick.
-     * @param acquireId Optional callback to acquire a unique GlobalEntityId.
-     * @return Pointer to the activated chunk.
+     * @return Pointer to the activated chunk, or nullptr if chunk doesn't exist.
      */
-    Chunk* activate(WorldGenerator& generator, ChunkId id,
-                    entt::registry& registry, uint32_t tick,
-                    std::function<GlobalEntityId()> acquireId = nullptr) {
-        auto it = chunks_.find(id);
-        if (it == chunks_.end()) {
-            // Chunk doesn't exist - generate it (which also activates)
-            return generate(generator, id, registry, tick, std::move(acquireId));
-        }
+    Chunk* activate(ChunkId id);
 
-        Chunk* chunk = it->second.get();
-        if (chunk->activated) {
-            return chunk;  // Already activated
-        }
-
-        // Activate: spawn entities
-        chunk->activated = true;
-        if (acquireId) {
-            generator.generateEntities(id, registry, tick, std::move(acquireId));
-        }
-        return chunk;
-    }
+    /**
+     * @brief Generate and activate a chunk in one step.
+     *
+     * Convenience method that generates voxels and marks as activated.
+     * Entity generation is still the caller's responsibility.
+     *
+     * @param generator WorldGenerator for terrain generation.
+     * @param id Chunk ID to generate and activate.
+     * @return Pointer to the generated and activated chunk.
+     */
+    Chunk* generateAndActivate(WorldGenerator& generator, ChunkId id);
 
     /**
      * @brief Deactivate a chunk, removing all its entities.
@@ -139,35 +120,7 @@ public:
      * @param registry ECS registry (for entity destruction).
      * @return true if the chunk was deactivated, false if not found or not active.
      */
-    bool deactivate(ChunkId id, entt::registry& registry) {
-        auto it = chunks_.find(id);
-        if (it == chunks_.end() || !it->second->activated) {
-            return false;
-        }
-
-        Chunk* chunk = it->second.get();
-        chunk->activated = false;
-
-        // Remove all non-player entities from this chunk
-        std::vector<entt::entity> toRemove;
-        toRemove.reserve(chunk->entities.size());
-        
-        for (entt::entity ent : chunk->entities) {
-            // Keep players (they persist across chunk deactivation)
-            if (registry.valid(ent) && !registry.all_of<PlayerComponent>(ent)) {
-                toRemove.push_back(ent);
-            }
-        }
-
-        for (entt::entity ent : toRemove) {
-            chunk->entities.erase(ent);
-            if (registry.valid(ent)) {
-                registry.destroy(ent);
-            }
-        }
-
-        return true;
-    }
+    bool deactivate(ChunkId id, entt::registry& registry);
 
     /**
      * @brief Get all loaded chunks (for iteration).

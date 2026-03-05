@@ -9,6 +9,10 @@
 
 namespace voxelmmo {
 
+// Forward declarations to avoid circular includes
+class ChunkRegistry;
+class EntityFactory;
+
 /**
  * @brief World generator type.
  */
@@ -40,7 +44,7 @@ enum class GeneratorType : uint8_t {
 class WorldGenerator {
 public:
     /**
-     * @brief Construct a world generator with the given seed and type.
+     * @brief Construct a lean world generator with the given seed and type.
      * @param seed           Random seed for deterministic generation.
      * @param type           Generator type (NORMAL or TEST).
      * @param testEntityType Entity type to spawn in TEST mode (default: SHEEP).
@@ -58,14 +62,37 @@ public:
     EntityType getTestEntityType() const noexcept { return testEntityType_; }
     
     /**
-     * @brief Set the player spawn position for TEST mode entity spawning.
-     * @param x,y,z  Player spawn position in sub-voxels.
+     * @brief Get the computed player spawn position.
+     * @return Spawn position in sub-voxels as {x, y, z}.
      */
-    void setPlayerSpawnPos(int32_t x, int32_t y, int32_t z) noexcept {
-        playerSpawnPos_[0] = x;
-        playerSpawnPos_[1] = y;
-        playerSpawnPos_[2] = z;
-    }
+    const int32_t* getPlayerSpawnPos() const noexcept { return playerSpawnPos_; }
+    
+    /**
+     * @brief Generate initial chunks around a center position.
+     *
+     * Populates the chunkRegistry with chunks within radius of the center position.
+     * Chunks are generated with voxels but without entities (entities spawn on demand).
+     *
+     * @param chunkRegistry        Registry to populate with generated chunks.
+     * @param centerX/centerY/centerZ Center position in sub-voxels (typically 0,0,0).
+     * @param initialActivationRadius Radius around center to generate chunks.
+     * @param registry             ECS registry (for chunk creation).
+     * @param tick                 Current server tick.
+     */
+    void generateChunks(ChunkRegistry& chunkRegistry,
+                        int32_t centerX, int32_t centerY, int32_t centerZ,
+                        int32_t initialActivationRadius,
+                        entt::registry& registry,
+                        uint32_t tick);
+    
+    /**
+     * @brief Compute player spawn position at column (0,0).
+     *
+     * Finds the top solid voxel at world column (0,0) and sets spawn
+     * 1 meter (SUBVOXEL_SIZE units) above it.
+     */
+    void computePlayerSpawnPos();
+    
     /**
      * @brief Fill @p voxels with terrain data for chunk (cx, cy, cz).
      *
@@ -89,25 +116,23 @@ public:
     int32_t surfaceY(float wx, float wz) const noexcept;
 
     /**
-     * @brief Spawn entities for a newly activated chunk.
+     * @brief Queue entity spawn requests for a newly activated chunk.
      *
-     * Called after voxel generation. Spawns passive mobs like sheep
-     * on surface grass blocks.
+     * Called after voxel generation. Queues passive mobs like sheep
+     * on surface grass blocks into the entity factory (deferred creation).
      *
-     * @param chunkId     Chunk being activated.
-     * @param registry    Entity registry to create entities in.
-     * @param tick        Current server tick (for state initialization).
-     * @param acquireId   Callback to acquire a unique GlobalEntityId.
+     * @param chunkId       Chunk being activated.
+     * @param entityFactory Entity factory to queue spawn requests into.
+     * @param tick          Current server tick (for state initialization).
      */
-    void generateEntities(ChunkId chunkId, entt::registry& registry, uint32_t tick,
-                          std::function<GlobalEntityId()> acquireId) const;
+    void generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick) const;
     
 private:
     uint32_t seed_;
     GeneratorType type_;
     EntityType testEntityType_;
     mutable bool testEntitySpawned_ = false;      ///< Track if test entity was spawned
-    mutable int32_t playerSpawnPos_[3] = {0, 0, 0};  ///< Player spawn for TEST mode
+    int32_t playerSpawnPos_[3] = {0, 0, 0};       ///< Player spawn (computed separately)
 };
 
 } // namespace voxelmmo

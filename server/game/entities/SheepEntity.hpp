@@ -9,6 +9,10 @@
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 
+namespace voxelmmo {
+struct EntitySpawnRequest;
+}
+
 namespace voxelmmo::SheepEntity {
 
 /** @brief Sheep dimensions in sub-voxels (slightly smaller than player). */
@@ -57,5 +61,12 @@ inline entt::entity spawn(entt::registry& reg,
 
     return ent;
 }
+
+/**
+ * @brief Spawn implementation for EntityFactory (uses EntitySpawnRequest).
+ */
+entt::entity spawnImpl(entt::registry& reg,
+                       GlobalEntityId globalId,
+                       const EntitySpawnRequest& req);
 
 } // namespace voxelmmo::SheepEntity
