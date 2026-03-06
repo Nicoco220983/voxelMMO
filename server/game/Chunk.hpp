@@ -104,7 +104,8 @@ public:
      * @brief Update chunk state based on current conditions.
      *
      * Logic:
-     * - If no snapshot exists (state.snapshot empty), calls buildSnapshot.
+     * - If no snapshot exists (state.snapshot empty),
+     *   calls buildSnapshot.
      * - Else if first call after snapshot OR every 20 calls, calls buildSnapshotDelta.
      * - Otherwise, calls buildTickDelta.
      *

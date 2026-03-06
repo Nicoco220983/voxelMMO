@@ -35,11 +35,10 @@ namespace voxelmmo {
  *
  * Typical call sequence per tick:
  *   1. Receive player inputs → modify ECS components via Component::modify().
- *   2. tick() → stepPhysics → checkPlayersChunks → serializeTickDelta.
- *   Every N ticks:
- *   3. serializeSnapshotDelta() – clears snapshot dirty flags.
+ *   2. tick() → stepPhysics → checkPlayersChunks → serializeChunks.
+ *      Each chunk's updateState() decides snapshot/snapshot-delta/tick-delta.
  *   On new player join:
- *   4. addPlayer() → serializeSnapshot() for all chunks in watch radius.
+ *   3. addPlayer() → chunk.updateState() for all chunks in watch radius.
  */
 class GameEngine {
 public:
@@ -179,8 +178,6 @@ public:
     static constexpr int32_t ACTIVATION_RADIUS = 2;
     /** Number of chunk radii around a player position to include in state messages. */
     static constexpr int32_t WATCH_RADIUS = 3;
-    /** Ticks between full snapshot-delta sends. */
-    static constexpr int32_t SNAPSHOT_DELTA_INTERVAL = 10;
 
 private:
     entt::registry  registry;
@@ -227,19 +224,13 @@ private:
     static uint32_t generateRandomSeed();
 
     /**
-     * @brief Serialise a full snapshot for all watched chunks of a gateway.
+     * @brief Serialise all chunks by calling updateState() on each.
+     *
+     * Each chunk's updateState() will decide whether to build a snapshot,
+     * snapshot delta, or tick delta based on its current state.
+     * Then dispatches new deltas to all watching gateways.
      */
-    void serializeSnapshot(GatewayId gwId);
-
-    /**
-     * @brief Serialise a snapshot delta (all entities that changed since last snapshot).
-     */
-    void serializeSnapshotDelta();
-
-    /**
-     * @brief Serialise a tick delta (entities that changed since last tick).
-     */
-    void serializeTickDelta();
+    void serializeChunks();
 
     /**
      * @brief Step physics simulation for all entities.
