@@ -1,7 +1,6 @@
 #pragma once
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/systems/ChunkMembershipSystem.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 
@@ -29,7 +28,7 @@ namespace voxelmmo {
  * common components are properly initialized:
  * - GlobalEntityIdComponent: stable wire ID
  * - DirtyComponent: lifecycle and change tracking
- * - PendingCreateComponent + markCreated(): lifecycle tracking for network sync
+ * - DirtyComponent::markCreated(): lifecycle tracking for network sync (CREATED_BIT)
  *
  * This centralizes entity creation and eliminates duplicate code in GameEngine
  * and WorldGenerator.
@@ -60,27 +59,25 @@ struct BaseEntity {
         // Dirty tracking for lifecycle (CREATED/DELETED) and component changes
         reg.emplace<DirtyComponent>(ent);
 
-        // Compute chunk from position and mark for creation
-        // ChunkMembershipSystem will add to chunk's entity set during tick
-        const ChunkId chunkId = chunkIdFromPosition(x, y, z);
-        markForCreation(reg, ent, chunkId);
+        // Mark entity as newly created for network sync
+        // Chunk is determined from position during tick processing
+        markForCreation(reg, ent);
 
         return ent;
     }
 
 
     /**
-    * @brief Mark an entity for creation in the specified chunk.
+    * @brief Mark an entity as newly created for network synchronization.
     *
-    * The entity will be added to the chunk during the next processEntities() call.
-    * This should be called immediately after registry.create().
+    * Sets the CREATED_BIT in DirtyComponent so the entity's initial state
+    * is sent to watching clients. The entity will be added to its chunk
+    * during the next tick based on its position.
     *
     * @param registry  The ECS registry.
     * @param ent       The entity to mark.
-    * @param chunkId   Target chunk for the entity.
     */
-    static inline void markForCreation(entt::registry& registry, entt::entity ent, ChunkId chunkId) {
-        registry.emplace<PendingCreateComponent>(ent, chunkId);
+    static inline void markForCreation(entt::registry& registry, entt::entity ent) {
         registry.get<DirtyComponent>(ent).markCreated();
     }
 };

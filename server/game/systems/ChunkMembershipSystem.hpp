@@ -3,7 +3,6 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/components/PendingCreateComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
 #include "common/Types.hpp"
 #include "common/GatewayInfo.hpp"
