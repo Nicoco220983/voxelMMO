@@ -63,6 +63,9 @@ public:
     /** @brief True if the chunk has been activated (entities spawned). */
     bool activated = false;
 
+    /** @brief Counter for delta type selection (reset after snapshot). */
+    uint32_t deltaCallCount = 0;
+
     explicit Chunk(ChunkId chunkId);
 
     /**
@@ -96,6 +99,18 @@ public:
      * @return true if a delta was appended; false if nothing changed.
      */
     bool buildTickDelta(entt::registry& reg, uint32_t tickCount);
+
+    /**
+     * @brief Update chunk state based on current conditions.
+     *
+     * Logic:
+     * - If no snapshot exists (state.snapshot empty), calls buildSnapshot.
+     * - Else if first call after snapshot OR every 20 calls, calls buildSnapshotDelta.
+     * - Otherwise, calls buildTickDelta.
+     *
+     * @return true if any state was built/appended; false otherwise.
+     */
+    bool updateState(entt::registry& reg, uint32_t tickCount);
 
     /** @brief Byte length of the always-uncompressed message header. */
     static constexpr size_t HEADER_SIZE = 1 + sizeof(int64_t) + sizeof(uint32_t); // type(1) + ChunkId(8) + tick(4)

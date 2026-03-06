@@ -284,4 +284,26 @@ bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
         ChunkMessageType::TICK_DELTA_COMPRESSED);
 }
 
+// ── State update ───────────────────────────────────────────────────────────
+
+bool Chunk::updateState(entt::registry& reg, uint32_t tickCount)
+{
+    // No snapshot yet: build full snapshot
+    if (state.snapshot.empty()) {
+        deltaCallCount = 0;
+        buildSnapshot(reg, tickCount);
+        return true;
+    }
+
+    // First call after snapshot, or every 20 calls: build snapshot delta
+    if (deltaCallCount == 0 || deltaCallCount % 20 == 0) {
+        ++deltaCallCount;
+        return buildSnapshotDelta(reg, tickCount);
+    }
+
+    // Otherwise: build tick delta
+    ++deltaCallCount;
+    return buildTickDelta(reg, tickCount);
+}
+
 } // namespace voxelmmo

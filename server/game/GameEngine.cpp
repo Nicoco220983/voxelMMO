@@ -68,7 +68,7 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
         const PendingPlayer p = pit->second;
         pendingPlayers.erase(pit);
         addPlayer(p.gwId, playerId, p.sx, p.sy, p.sz, msg->entityType);
-        sendSnapshot(p.gwId);
+        //sendSnapshot(p.gwId);
         break;
     }
 
@@ -162,30 +162,30 @@ void GameEngine::removePlayer(PlayerId playerId) {
 
 // ── Serialisation helpers ─────────────────────────────────────────────────
 
-void GameEngine::sendSnapshot(GatewayId gwId) {
-    std::lock_guard<std::recursive_mutex> lock(mtx_);
-    // watchedChunks is populated by ChunkMembershipSystem; run it now so a
-    // snapshot requested immediately after addPlayer() is not empty.
-    auto it = gateways.find(gwId);
-    if (it == gateways.end()) return;
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
+// void GameEngine::sendSnapshot(GatewayId gwId) {
+//     std::lock_guard<std::recursive_mutex> lock(mtx_);
+//     // watchedChunks is populated by ChunkMembershipSystem; run it now so a
+//     // snapshot requested immediately after addPlayer() is not empty.
+//     auto it = gateways.find(gwId);
+//     if (it == gateways.end()) return;
+//     const uint32_t tick = static_cast<uint32_t>(tickCount);
     
-    // Update watched chunks for all gateways (generates/activates chunks and entities)
-    auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
-        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
+//     // Update watched chunks for all gateways (generates/activates chunks and entities)
+//     auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
+//         gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
     
-    // Create entities immediately for snapshot
-    createPendingEntities();
+//     // Create entities immediately for snapshot
+//     createPendingEntities();
     
-    // Check chunk membership and process entity lifecycle
-    // ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
-    // auto entityResult = ChunkMembershipSystem::processEntities(registry, chunkRegistry);
-    // pendingDeletions.insert(pendingDeletions.end(), 
-    //     entityResult.entitiesToDestroy.begin(), entityResult.entitiesToDestroy.end());
+//     // Check chunk membership and process entity lifecycle
+//     // ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
+//     // auto entityResult = ChunkMembershipSystem::processEntities(registry, chunkRegistry);
+//     // pendingDeletions.insert(pendingDeletions.end(), 
+//     //     entityResult.entitiesToDestroy.begin(), entityResult.entitiesToDestroy.end());
     
-    // Send snapshot for this gateway
-    serializeSnapshot(gwId);
-}
+//     // Send snapshot for this gateway
+//     serializeSnapshot(gwId);
+// }
 
 void GameEngine::serializeSnapshot(GatewayId gwId) {
     auto it = gateways.find(gwId);
