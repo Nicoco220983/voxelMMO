@@ -3,6 +3,7 @@
 
 #include "game/components/SheepBehaviorComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
+#include "game/components/PendingDeleteComponent.hpp"
 #include "common/MessageTypes.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/entities/PlayerEntity.hpp"
@@ -233,7 +234,9 @@ void GameEngine::tick() {
     const uint32_t tick = static_cast<uint32_t>(tickCount);
 
     // Destroy any pending deletions from previous tick first
-    //ChunkMembershipSystem::destroyPendingDeletions(registry, pendingDeletions);
+    // (their DELETE deltas have already been serialized and sent)
+    auto pendingDeletionView = registry.view<PendingDeleteComponent>();
+    registry.destroy(pendingDeletionView.begin(), pendingDeletionView.end());
 
     // Create any pending entities at the start of the tick
     createPendingEntities();
