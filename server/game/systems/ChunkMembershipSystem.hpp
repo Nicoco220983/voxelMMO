@@ -1,11 +1,9 @@
 #pragma once
 #include "game/ChunkRegistry.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
-#include "game/components/ChunkMembershipComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/components/PendingChunkChangeComponent.hpp"
 #include "game/components/PendingCreateComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
 #include "common/Types.hpp"
@@ -14,6 +12,7 @@
 #include <entt/entt.hpp>
 #include <vector>
 #include <set>
+#include <optional>
 
 namespace voxelmmo {
 
@@ -53,8 +52,16 @@ struct WatchedChunksResult {
 
 namespace ChunkMembershipSystem {
 
-// Forward declarations for helper functions (defined after main functions)
-inline void markForChunkChange(entt::registry& registry, entt::entity ent, ChunkId newChunkId);
+/**
+ * @brief Compute ChunkId from entity's position.
+ */
+inline ChunkId chunkIdFromPosition(const DynamicPositionComponent& dyn) {
+    return ChunkId::make(
+        dyn.y >> CHUNK_SHIFT_Y,
+        dyn.x >> CHUNK_SHIFT_X,
+        dyn.z >> CHUNK_SHIFT_Z
+    );
+}
 
 /**
  * @brief Mark an entity for creation in the specified chunk.
@@ -92,7 +99,7 @@ inline void markForDeletion(entt::registry& registry, entt::entity ent) {
  * @brief Detect entities that have crossed chunk boundaries.
  *
  * Phase A: For entities with `moved=true`, compute new chunk from position,
- * and mark for chunk change via PendingChunkChangeComponent. The actual move
+ * and add to the old chunk's `movedEntities` set. The actual move
  * happens later in updateEntitiesChunks().
  *
  * @param registry          The ECS registry.
@@ -110,40 +117,59 @@ inline ChunkCrossingResult detectChunkCrossings(
     (void)tickCount;
     ChunkCrossingResult result;
 
-    auto view = registry.view<DynamicPositionComponent, ChunkMembershipComponent>();
-    view.each([&](entt::entity ent, DynamicPositionComponent& dyn, ChunkMembershipComponent& cm) {
+    // Find entities that have moved and mark them in their old chunk's movedEntities set
+    auto view = registry.view<DynamicPositionComponent>();
+    view.each([&](entt::entity ent, DynamicPositionComponent& dyn) {
         if (!dyn.moved) return;
         dyn.moved = false;
 
-        const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
-        const int32_t cy = dyn.y >> CHUNK_SHIFT_Y;
-        const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
-        const ChunkId newChunk = ChunkId::make(cy, cx, cz);
-
-        if (newChunk == cm.currentChunkId) return;
+        const ChunkId newChunkId = chunkIdFromPosition(dyn);
+        const int32_t cx = newChunkId.x();
+        const int32_t cy = newChunkId.y();
+        const int32_t cz = newChunkId.z();
 
         const bool isPlayer = registry.all_of<PlayerComponent>(ent);
         const PlayerId pid = isPlayer ? registry.get<PlayerComponent>(ent).playerId : 0u;
 
-        // Remove from old chunk lists immediately (watchingPlayers only)
-        const int32_t ocx = cm.currentChunkId.x();
-        const int32_t ocy = cm.currentChunkId.y();
-        const int32_t ocz = cm.currentChunkId.z();
-
-        if (isPlayer) {
-            for (int32_t dx = -activationRadius; dx <= activationRadius; ++dx)
-            for (int32_t dy = -1; dy <= 1; ++dy)
-            for (int32_t dz = -activationRadius; dz <= activationRadius; ++dz) {
-                const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-                if (Chunk* chunk = chunkRegistry.getChunkMutable(cid))
-                    chunk->watchingPlayers.erase(pid);
+        // Find which chunk currently owns this entity (search in likely chunks)
+        // For simplicity, we check chunks around the new position and old watching radius
+        bool found = false;
+        for (int32_t dx = -1; dx <= 1 && !found; ++dx)
+        for (int32_t dy = -1; dy <= 1 && !found; ++dy)
+        for (int32_t dz = -1; dz <= 1 && !found; ++dz) {
+            const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
+            if (Chunk* chunk = chunkRegistry.getChunkMutable(cid)) {
+                if (chunk->entities.count(ent)) {
+                    // Entity is currently in this chunk
+                    if (cid == newChunkId) {
+                        // Still in same chunk, no change
+                        found = true;
+                        break;
+                    }
+                    
+                    // Mark as moved
+                    chunk->movedEntities.insert(ent);
+                    found = true;
+                    
+                    // Remove from old chunk's watchingPlayers if player
+                    if (isPlayer) {
+                        const int32_t ocx = cid.x();
+                        const int32_t ocy = cid.y();
+                        const int32_t ocz = cid.z();
+                        for (int32_t odx = -activationRadius; odx <= activationRadius; ++odx)
+                        for (int32_t ody = -1; ody <= 1; ++ody)
+                        for (int32_t odz = -activationRadius; odz <= activationRadius; ++odz) {
+                            const ChunkId oldCid = ChunkId::make(ocy + ody, ocx + odx, ocz + odz);
+                            if (Chunk* oldChunk = chunkRegistry.getChunkMutable(oldCid))
+                                oldChunk->watchingPlayers.erase(pid);
+                        }
+                    }
+                    break;
+                }
             }
         }
 
-        // Mark for chunk change - actual move happens in updateEntitiesChunks()
-        markForChunkChange(registry, ent, newChunk);
-
-        // For players, set up watching in new radius (chunk will be activated in Phase B)
+        // For players, set up watching in new radius
         if (isPlayer) {
             for (int32_t dx = -activationRadius; dx <= activationRadius; ++dx)
             for (int32_t dy = -1; dy <= 1; ++dy)
@@ -200,57 +226,42 @@ inline EntityChunkResult updateEntitiesChunks(
     };
 
     // ========================================================================
-    // Phase 1: Process chunk changes
+    // Phase 1: Process chunk changes (from Chunk.movedEntities)
     // ========================================================================
     {
-        auto view = registry.view<PendingChunkChangeComponent, ChunkMembershipComponent, DirtyComponent>();
-        std::vector<entt::entity> processed;
-        processed.reserve(view.size_hint());
+        for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+            for (entt::entity ent : chunkPtr->movedEntities) {
+                if (!registry.valid(ent)) continue;
+                
+                auto* dyn = registry.try_get<DynamicPositionComponent>(ent);
+                if (!dyn) continue;
+                
+                const ChunkId newChunkId = chunkIdFromPosition(*dyn);
+                if (newChunkId == cid) {
+                    // Still in same chunk, skip
+                    continue;
+                }
 
-        for (auto ent : view) {
-            auto& pcc = view.get<PendingChunkChangeComponent>(ent);
-            auto& cm = view.get<ChunkMembershipComponent>(ent);
+                // Remove from old chunk's entity set
+                chunkPtr->entities.erase(ent);
 
-            const ChunkId oldChunkId = cm.currentChunkId;
-            const ChunkId newChunkId = pcc.newChunkId;
+                // Activate new chunk and add entity
+                Chunk* newChunk = chunkRegistry.activate(newChunkId);
+                if (!newChunk) {
+                    // Chunk doesn't exist - skip this entity for now
+                    continue;
+                }
+                newChunk->entities.insert(ent);
 
-            if (oldChunkId == newChunkId) {
-                // No actual change, skip
-                processed.push_back(ent);
-                continue;
+                // Mark as CREATED in new chunk (for viewers who haven't seen it)
+                if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
+                    dirty->markCreated();
+                }
+
+                ++result.chunkChanged;
             }
-
-            // Remove from old chunk
-            if (Chunk* oldChunk = chunkRegistry.getChunkMutable(oldChunkId)) {
-                oldChunk->entities.erase(ent);
-            }
-
-            // Activate new chunk (chunk must already exist - caller must generate first)
-            Chunk* newChunk = chunkRegistry.activate(newChunkId);
-            if (!newChunk) {
-                // Chunk doesn't exist - skip this entity for now
-                // Caller should ensure chunks exist before calling this function
-                continue;
-            }
-
-            // Add to new chunk
-            newChunk->entities.insert(ent);
-
-            // Update chunk membership
-            cm.currentChunkId = newChunkId;
-
-            // Mark as CREATED in new chunk (for viewers who haven't seen it)
-            // The old chunk will send CHUNK_CHANGE delta (it still has the entity in its set)
-            auto& dirty = view.get<DirtyComponent>(ent);
-            dirty.markCreated();
-
-            processed.push_back(ent);
-            ++result.chunkChanged;
-        }
-
-        // Remove PendingChunkChangeComponent from processed entities
-        for (auto ent : processed) {
-            registry.remove<PendingChunkChangeComponent>(ent);
+            // Clear movedEntities after processing
+            chunkPtr->movedEntities.clear();
         }
     }
 
@@ -258,33 +269,47 @@ inline EntityChunkResult updateEntitiesChunks(
     // Phase 2: Process creations
     // ========================================================================
     {
-        auto view = registry.view<PendingCreateComponent, ChunkMembershipComponent, DirtyComponent>();
+        auto view = registry.view<PendingCreateComponent, DynamicPositionComponent, DirtyComponent>();
         std::vector<entt::entity> processed;
         processed.reserve(view.size_hint());
 
         for (auto ent : view) {
             auto& pcc = view.get<PendingCreateComponent>(ent);
-            auto& cm = view.get<ChunkMembershipComponent>(ent);
+            auto& dyn = view.get<DynamicPositionComponent>(ent);
 
-            // Update chunk membership to target chunk
-            cm.currentChunkId = pcc.targetChunkId;
+            // Use current position to determine chunk (may differ from target if entity moved)
+            const ChunkId chunkId = chunkIdFromPosition(dyn);
 
             // Ensure chunk is activated and add entity
-            Chunk* chunk = chunkRegistry.activate(pcc.targetChunkId);
+            Chunk* chunk = chunkRegistry.activate(chunkId);
             if (!chunk) {
-                // Chunk doesn't exist - skip
-                continue;
-            }
-            chunk->entities.insert(ent);
-
-            // Add to present players if it's a player, and send SELF_ENTITY
-            if (registry.all_of<PlayerComponent>(ent)) {
-                const auto& pc = registry.get<PlayerComponent>(ent);
-                chunk->presentPlayers.insert(pc.playerId);
+                // Also try the target chunk from PendingCreateComponent
+                Chunk* targetChunk = chunkRegistry.activate(pcc.targetChunkId);
+                if (!targetChunk) {
+                    // Chunk doesn't exist - skip
+                    continue;
+                }
+                targetChunk->entities.insert(ent);
                 
-                // Send SELF_ENTITY message to the player's gateway
-                const auto& globalIdComp = registry.get<GlobalEntityIdComponent>(ent);
-                sendSelfEntity(pc.playerId, cm.currentChunkId, globalIdComp.id);
+                // Add to present players if it's a player, and send SELF_ENTITY
+                if (registry.all_of<PlayerComponent>(ent)) {
+                    const auto& pc = registry.get<PlayerComponent>(ent);
+                    targetChunk->presentPlayers.insert(pc.playerId);
+                    
+                    const auto& globalIdComp = registry.get<GlobalEntityIdComponent>(ent);
+                    sendSelfEntity(pc.playerId, pcc.targetChunkId, globalIdComp.id);
+                }
+            } else {
+                chunk->entities.insert(ent);
+
+                // Add to present players if it's a player, and send SELF_ENTITY
+                if (registry.all_of<PlayerComponent>(ent)) {
+                    const auto& pc = registry.get<PlayerComponent>(ent);
+                    chunk->presentPlayers.insert(pc.playerId);
+                    
+                    const auto& globalIdComp = registry.get<GlobalEntityIdComponent>(ent);
+                    sendSelfEntity(pc.playerId, chunkId, globalIdComp.id);
+                }
             }
 
             processed.push_back(ent);
@@ -301,21 +326,35 @@ inline EntityChunkResult updateEntitiesChunks(
     // Phase 3: Collect deletions (do NOT destroy yet - serialization needs them)
     // ========================================================================
     {
-        auto view = registry.view<PendingDeleteComponent, ChunkMembershipComponent, DirtyComponent>();
+        auto view = registry.view<PendingDeleteComponent, DirtyComponent>();
         
         for (auto ent : view) {
-            auto& cm = view.get<ChunkMembershipComponent>(ent);
             auto& dirty = view.get<DirtyComponent>(ent);
 
-            // Remove from current chunk's entity set immediately
-            // (so it won't be considered for future updates, but delta is already marked)
-            if (Chunk* chunk = chunkRegistry.getChunkMutable(cm.currentChunkId)) {
-                chunk->entities.erase(ent);
-
-                // Remove from present players if it's a player
-                if (registry.all_of<PlayerComponent>(ent)) {
-                    const auto& pc = registry.get<PlayerComponent>(ent);
-                    chunk->presentPlayers.erase(pc.playerId);
+            // Find and remove from chunk's entity set
+            // Search in chunks around the entity's last known position if available
+            ChunkId lastChunkId;
+            bool foundChunk = false;
+            
+            if (auto* dyn = registry.try_get<DynamicPositionComponent>(ent)) {
+                lastChunkId = chunkIdFromPosition(*dyn);
+                foundChunk = true;
+            }
+            
+            if (foundChunk) {
+                if (Chunk* chunk = chunkRegistry.getChunkMutable(lastChunkId)) {
+                    chunk->entities.erase(ent);
+                    
+                    // Remove from present players if it's a player
+                    if (registry.all_of<PlayerComponent>(ent)) {
+                        const auto& pc = registry.get<PlayerComponent>(ent);
+                        chunk->presentPlayers.erase(pc.playerId);
+                    }
+                }
+                
+                // Also check if entity is in movedEntities of any chunk
+                for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+                    chunkPtr->movedEntities.erase(ent);
                 }
             }
 
@@ -346,25 +385,6 @@ inline void destroyPendingDeletions(entt::registry& registry, std::vector<entt::
         }
     }
     entitiesToDestroy.clear();
-}
-
-/**
- * @brief Mark an entity for chunk change.
- *
- * Called by detectChunkCrossings() when entity crosses chunk boundary.
- * The actual move happens during updateEntitiesChunks().
- *
- * @param registry   The ECS registry.
- * @param ent        The entity to move.
- * @param newChunkId The destination chunk.
- */
-inline void markForChunkChange(entt::registry& registry, entt::entity ent, ChunkId newChunkId) {
-    // Update or add PendingChunkChangeComponent
-    if (registry.all_of<PendingChunkChangeComponent>(ent)) {
-        registry.get<PendingChunkChangeComponent>(ent).newChunkId = newChunkId;
-    } else {
-        registry.emplace<PendingChunkChangeComponent>(ent, newChunkId);
-    }
 }
 
 /**

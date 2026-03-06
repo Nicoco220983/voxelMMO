@@ -3,7 +3,6 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
 #include "game/components/SheepBehaviorComponent.hpp"
-#include "game/components/PendingChunkChangeComponent.hpp"
 #include <lz4.h>
 #include <algorithm>
 #include <cstring>
@@ -202,11 +201,11 @@ bool Chunk::buildDeltaImpl(
             const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
             const auto etype = reg.get<EntityTypeComponent>(ent).type;
             
-            // Determine delta type based on lifecycle flags and pending operations
+            // Determine delta type based on lifecycle flags and movedEntities
             DeltaType deltaType;
             if (mask & DirtyComponent::DELETED_BIT) {
                 deltaType = DeltaType::DELETE_ENTITY;
-            } else if (reg.all_of<PendingChunkChangeComponent>(ent)) {
+            } else if (movedEntities.count(ent)) {
                 // Entity is leaving this chunk - old chunk sends CHUNK_CHANGE
                 deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
             } else if (mask & DirtyComponent::CREATED_BIT) {
@@ -225,9 +224,14 @@ bool Chunk::buildDeltaImpl(
             }
             
             if (deltaType == DeltaType::CHUNK_CHANGE_ENTITY) {
-                // CHUNK_CHANGE: include new chunk ID (int64 packed)
-                const auto& pcc = reg.get<PendingChunkChangeComponent>(ent);
-                w.write(pcc.newChunkId.packed);
+                // CHUNK_CHANGE: include new chunk ID computed from position
+                const auto& dyn = reg.get<DynamicPositionComponent>(ent);
+                const ChunkId newChunkId = ChunkId::make(
+                    dyn.y >> CHUNK_SHIFT_Y,
+                    dyn.x >> CHUNK_SHIFT_X,
+                    dyn.z >> CHUNK_SHIFT_Z
+                );
+                w.write(newChunkId.packed);
                 ++entityCount;
                 continue;
             }

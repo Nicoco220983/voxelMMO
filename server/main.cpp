@@ -97,6 +97,8 @@ int main(int argc, char* argv[]) {
 
     gateway.setPlayerInputCallback([&](voxelmmo::PlayerId pid,
                                        const uint8_t* data, size_t size) {
+        // TODO: just stack on a pre-allocated gameEngine.playersInputsBuffer
+        // [size][pid][data][size][pid][data]...
         game.handlePlayerInput(pid, data, size);
     });
 

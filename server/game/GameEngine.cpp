@@ -140,11 +140,10 @@ void GameEngine::removePlayer(PlayerId playerId) {
     const entt::entity ent = it->second;
 
     // Remove from watching radius immediately (so they stop receiving updates)
-    if (registry.all_of<ChunkMembershipComponent>(ent)) {
-        const auto& cm = registry.get<ChunkMembershipComponent>(ent);
-        const int32_t ocx = cm.currentChunkId.x();
-        const int32_t ocy = cm.currentChunkId.y();
-        const int32_t ocz = cm.currentChunkId.z();
+    if (auto* dyn = registry.try_get<DynamicPositionComponent>(ent)) {
+        const int32_t ocx = dyn->x >> CHUNK_SHIFT_X;
+        const int32_t ocy = dyn->y >> CHUNK_SHIFT_Y;
+        const int32_t ocz = dyn->z >> CHUNK_SHIFT_Z;
         for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
         for (int32_t dy = -1; dy <= 1; ++dy)
         for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
@@ -183,6 +182,13 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     createPendingEntities();
     
     ChunkMembershipSystem::detectChunkCrossings(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
+    
+    // Process entity lifecycle to ensure they're added to chunks before serializing
+    // This also sends SELF_ENTITY for newly created players
+    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(
+        registry, chunkRegistry, gateways, tick, outputCallback);
+    pendingDeletions.insert(pendingDeletions.end(), 
+        entityResult.entitiesToDestroy.begin(), entityResult.entitiesToDestroy.end());
     
     if (!result.snapshotBatch.empty() && outputCallback)
         outputCallback(gwId, result.snapshotBatch.data(), result.snapshotBatch.size());
@@ -293,6 +299,19 @@ void GameEngine::tick() {
     ++tickCount;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
 
+
+    // TODO: fit to ideal flow:
+    // - ingest input inputs (from gameEngine.playersInputsBuffer)
+    // - create new entities (from EntityFactory)
+    // - update existing entities
+    // - stepPhysics
+    // - syncEntitiesChunkMembership
+    //   - updates Chunk.movedEntities based on position changes
+    // - sendStates
+    //   - loop all entities
+    //   - clean dirty tags
+
+
     // Destroy any pending deletions from previous tick first
     ChunkMembershipSystem::destroyPendingDeletions(registry, pendingDeletions);
 
@@ -306,13 +325,9 @@ void GameEngine::tick() {
     // Phase A: Mark chunk changes for moved entities
     ChunkMembershipSystem::detectChunkCrossings(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
 
-    // Phase B: Process all entity lifecycle events (CREATE, DELETE, CHUNK_CHANGE)
-    // Deleted entities are NOT destroyed yet - they're stored in pendingDeletions
-    // Also sends SELF_ENTITY messages to gateways when player entities are created
-    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(registry, chunkRegistry, gateways, tick, outputCallback);
-    pendingDeletions = std::move(entityResult.entitiesToDestroy);
-
-    // Phase C: Rebuild gateway watchedChunks and dispatch snapshots
+    // Phase B: Rebuild gateway watchedChunks and generate/activate chunks
+    // This must happen BEFORE updateEntitiesChunks so that chunks exist when
+    // entities are being added to them (otherwise SELF_ENTITY won't be sent)
     for (auto& [gwId, gwInfo] : gateways) {
         auto result = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
             gwInfo, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
@@ -325,6 +340,12 @@ void GameEngine::tick() {
         if (!result.snapshotBatch.empty() && outputCallback)
             outputCallback(gwId, result.snapshotBatch.data(), result.snapshotBatch.size());
     }
+
+    // Phase C: Process all entity lifecycle events (CREATE, DELETE, CHUNK_CHANGE)
+    // Deleted entities are NOT destroyed yet - they're stored in pendingDeletions
+    // Also sends SELF_ENTITY messages to gateways when player entities are created
+    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(registry, chunkRegistry, gateways, tick, outputCallback);
+    pendingDeletions = std::move(entityResult.entitiesToDestroy);
 
     if (tickCount % SNAPSHOT_DELTA_INTERVAL == 0) {
         serializeSnapshotDelta();

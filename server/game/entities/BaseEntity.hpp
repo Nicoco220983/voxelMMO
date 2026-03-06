@@ -1,7 +1,6 @@
 #pragma once
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/components/ChunkMembershipComponent.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
@@ -30,7 +29,6 @@ namespace voxelmmo {
  * common components are properly initialized:
  * - GlobalEntityIdComponent: stable wire ID
  * - DirtyComponent: lifecycle and change tracking
- * - ChunkMembershipComponent: chunk assignment (computed from position)
  * - PendingCreateComponent + markCreated(): lifecycle tracking for network sync
  *
  * This centralizes entity creation and eliminates duplicate code in GameEngine
@@ -40,9 +38,9 @@ struct BaseEntity {
     /**
      * @brief Spawn base components for a new entity.
      *
-     * This is the SINGLE place where GlobalEntityIdComponent, DirtyComponent,
-     * and ChunkMembershipComponent are assigned. All entity spawn methods
-     * must call this before adding type-specific components.
+     * This is the SINGLE place where GlobalEntityIdComponent and DirtyComponent
+     * are assigned. All entity spawn methods must call this before adding
+     * type-specific components.
      *
      * The chunk is computed from position using chunkIdFromPosition().
      *
@@ -62,11 +60,9 @@ struct BaseEntity {
         // Dirty tracking for lifecycle (CREATED/DELETED) and component changes
         reg.emplace<DirtyComponent>(ent);
 
-        // Chunk assignment - computed from position for consistency
+        // Compute chunk from position and mark for creation
+        // ChunkMembershipSystem will add to chunk's entity set during tick
         const ChunkId chunkId = chunkIdFromPosition(x, y, z);
-        reg.emplace<ChunkMembershipComponent>(ent, chunkId);
-
-        // Mark for creation - ChunkMembershipSystem will add to chunk during tick
         ChunkMembershipSystem::markForCreation(reg, ent, chunkId);
 
         return ent;
