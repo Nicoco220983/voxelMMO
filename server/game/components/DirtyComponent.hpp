@@ -10,9 +10,10 @@ namespace voxelmmo {
  *   - POSITION_BIT = 1 << 0 (DynamicPositionComponent.hpp)
  *   - SHEEP_BEHAVIOR_BIT = 1 << 1 (SheepBehaviorComponent.hpp)
  *
- * Lifecycle bits (6-7): defined here
+ * Lifecycle bit (6): defined here
  *   - CREATED_BIT: entity newly created this tick
- *   - DELETED_BIT: entity marked for deletion
+ *
+ * Deletion is tracked via PendingDeleteComponent, not a dirty bit.
  *
  * Granularity:
  *   - snapshotDirtyFlags: persists until snapshot delta is sent (every N ticks)
@@ -22,9 +23,8 @@ struct DirtyComponent {
     uint8_t snapshotDirtyFlags{0};
     uint8_t tickDirtyFlags{0};
 
-    // Entity lifecycle bits (high bits reserved for system use)
+    // Entity lifecycle bit (high bits reserved for system use)
     static constexpr uint8_t CREATED_BIT = 1 << 6;  ///< Entity newly created
-    static constexpr uint8_t DELETED_BIT = 1 << 7;  ///< Entity marked for deletion
 
     /** @brief Mark a component/lifecycle bit dirty at both snapshot and tick granularity. */
     void mark(uint8_t bit) noexcept {
@@ -34,10 +34,8 @@ struct DirtyComponent {
 
     // Lifecycle helpers
     void markCreated() noexcept { mark(CREATED_BIT); }
-    void markDeleted() noexcept { mark(DELETED_BIT); }
 
     bool isCreated() const noexcept { return (snapshotDirtyFlags & CREATED_BIT) != 0; }
-    bool isDeleted() const noexcept { return (snapshotDirtyFlags & DELETED_BIT) != 0; }
 
     /** @brief Check if any component bits (excluding lifecycle) are dirty. */
     bool hasComponentChanges() const noexcept {

@@ -47,7 +47,7 @@ inline void markForDeletion(entt::registry& registry, entt::entity ent) {
     // Avoid double-marking
     if (!registry.all_of<PendingDeleteComponent>(ent)) {
         registry.emplace<PendingDeleteComponent>(ent);
-        registry.get<DirtyComponent>(ent).markDeleted();
+        // DirtyComponent is not modified - PendingDeleteComponent is the source of truth
     }
 }
 

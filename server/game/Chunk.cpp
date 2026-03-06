@@ -3,6 +3,7 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
 #include "game/components/SheepBehaviorComponent.hpp"
+#include "game/components/PendingDeleteComponent.hpp"
 #include <lz4.h>
 #include <algorithm>
 #include <cstring>
@@ -159,7 +160,9 @@ bool Chunk::buildDeltaImpl(
     const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
     uint8_t DirtyComponent::* flagsField,
     ChunkMessageType rawType,
-    ChunkMessageType compressedType)
+    ChunkMessageType compressedType,
+    bool clearSnapshot,
+    bool clearTick)
 {
     // Early exit: nothing to send
     if (voxelDeltas.empty()) {
@@ -196,14 +199,15 @@ bool Chunk::buildDeltaImpl(
     {
         BufWriter w{staging.data(), off};
         for (auto ent : entities) {
-            const uint8_t mask = reg.get<DirtyComponent>(ent).*flagsField;
+            auto& dirty = reg.get<DirtyComponent>(ent);
+            const uint8_t mask = dirty.*flagsField;
             if (!mask) continue;
             const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
             const auto etype = reg.get<EntityTypeComponent>(ent).type;
             
             // Determine delta type based on lifecycle flags and movedEntities
             DeltaType deltaType;
-            if (mask & DirtyComponent::DELETED_BIT) {
+            if (reg.all_of<PendingDeleteComponent>(ent)) {
                 deltaType = DeltaType::DELETE_ENTITY;
             } else if (leftEntities.count(ent)) {
                 // Entity is leaving this chunk - old chunk sends CHUNK_CHANGE
@@ -248,6 +252,10 @@ bool Chunk::buildDeltaImpl(
             if (componentMask & SHEEP_BEHAVIOR_BIT)
                 reg.get<SheepBehaviorComponent>(ent).serializeFields(w);
             ++entityCount;
+
+            // Clear dirty flags after successful serialization
+            if (clearSnapshot) dirty.clearSnapshot();
+            if (clearTick) dirty.clearTick();
         }
     }
     std::memcpy(staging.data() + entityCountOff, &entityCount, sizeof(int32_t));
@@ -259,6 +267,7 @@ bool Chunk::buildDeltaImpl(
     state.deltaOffsets.push_back({tickCount, state.deltas.size()});
     state.deltas.insert(state.deltas.end(), staging.begin(), staging.end());
     state.hasNewDelta = true;
+
     return true;
 }
 
@@ -270,7 +279,9 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
         world.voxelsSnapshotDeltas,
         &DirtyComponent::snapshotDirtyFlags,
         ChunkMessageType::SNAPSHOT_DELTA,
-        ChunkMessageType::SNAPSHOT_DELTA_COMPRESSED);
+        ChunkMessageType::SNAPSHOT_DELTA_COMPRESSED,
+        true,   // clearSnapshot
+        true);  // clearTick
 }
 
 // ── Tick delta ────────────────────────────────────────────────────────────
@@ -281,7 +292,9 @@ bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
         world.voxelsTickDeltas,
         &DirtyComponent::tickDirtyFlags,
         ChunkMessageType::TICK_DELTA,
-        ChunkMessageType::TICK_DELTA_COMPRESSED);
+        ChunkMessageType::TICK_DELTA_COMPRESSED,
+        false,  // clearSnapshot
+        true);  // clearTick
 }
 
 // ── State update ───────────────────────────────────────────────────────────

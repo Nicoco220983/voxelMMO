@@ -131,10 +131,12 @@ private:
     /**
      * @brief Shared implementation for buildSnapshotDelta and buildTickDelta.
      *
-     * @param voxelDeltas  The per-granularity changed-voxel list.
-     * @param flagsField   Pointer-to-member selecting snapshotDirtyFlags or tickDirtyFlags.
-     * @param rawType      Message type written into the header (uncompressed variant).
-     * @param compressedType  Message type to use if LZ4 compression is applied.
+     * @param voxelDeltas    The per-granularity changed-voxel list.
+     * @param flagsField     Pointer-to-member selecting snapshotDirtyFlags or tickDirtyFlags.
+     * @param rawType        Message type written into the header (uncompressed variant).
+     * @param compressedType Message type to use if LZ4 compression is applied.
+     * @param clearSnapshot  If true, clear snapshotDirtyFlags after serializing.
+     * @param clearTick      If true, clear tickDirtyFlags after serializing.
      */
     bool buildDeltaImpl(
         entt::registry& reg,
@@ -142,7 +144,9 @@ private:
         const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
         uint8_t DirtyComponent::* flagsField,
         ChunkMessageType rawType,
-        ChunkMessageType compressedType);
+        ChunkMessageType compressedType,
+        bool clearSnapshot,
+        bool clearTick);
 };
 
 } // namespace voxelmmo
