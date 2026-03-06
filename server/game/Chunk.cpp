@@ -205,7 +205,7 @@ bool Chunk::buildDeltaImpl(
             DeltaType deltaType;
             if (mask & DirtyComponent::DELETED_BIT) {
                 deltaType = DeltaType::DELETE_ENTITY;
-            } else if (movedEntities.count(ent)) {
+            } else if (leftEntities.count(ent)) {
                 // Entity is leaving this chunk - old chunk sends CHUNK_CHANGE
                 deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
             } else if (mask & DirtyComponent::CREATED_BIT) {

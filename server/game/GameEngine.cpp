@@ -170,28 +170,25 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     if (it == gateways.end()) return;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     
-    // Rebuild watched chunks - this generates/activates chunks and returns which ones are new
-    auto result = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-        it->second, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
+    // Update watched chunks for all gateways (generates/activates chunks)
+    auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
+        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
     
-    // Generate entities for newly activated chunks (deferred via factory)
-    for (const ChunkId& cid : result.activatedChunks) {
+    // Generate entities for newly activated chunks
+    for (const ChunkId& cid : watchedResult.activatedChunks) {
         worldGenerator.generateEntities(cid, entityFactory, tick);
     }
+    
     // Create entities immediately for snapshot
     createPendingEntities();
     
-    ChunkMembershipSystem::detectChunkCrossings(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
+    // Check chunk membership and process entity lifecycle
+    // ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
+    // auto entityResult = ChunkMembershipSystem::processEntities(registry, chunkRegistry);
+    // pendingDeletions.insert(pendingDeletions.end(), 
+    //     entityResult.entitiesToDestroy.begin(), entityResult.entitiesToDestroy.end());
     
-    // Process entity lifecycle to ensure they're added to chunks before serializing
-    // This also sends SELF_ENTITY for newly created players
-    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(
-        registry, chunkRegistry, gateways, tick, outputCallback);
-    pendingDeletions.insert(pendingDeletions.end(), 
-        entityResult.entitiesToDestroy.begin(), entityResult.entitiesToDestroy.end());
-    
-    if (!result.snapshotBatch.empty() && outputCallback)
-        outputCallback(gwId, result.snapshotBatch.data(), result.snapshotBatch.size());
+    // Send snapshot for this gateway
     serializeSnapshot(gwId);
 }
 
@@ -299,21 +296,8 @@ void GameEngine::tick() {
     ++tickCount;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
 
-
-    // TODO: fit to ideal flow:
-    // - ingest input inputs (from gameEngine.playersInputsBuffer)
-    // - create new entities (from EntityFactory)
-    // - update existing entities
-    // - stepPhysics
-    // - syncEntitiesChunkMembership
-    //   - updates Chunk.movedEntities based on position changes
-    // - sendStates
-    //   - loop all entities
-    //   - clean dirty tags
-
-
     // Destroy any pending deletions from previous tick first
-    ChunkMembershipSystem::destroyPendingDeletions(registry, pendingDeletions);
+    //ChunkMembershipSystem::destroyPendingDeletions(registry, pendingDeletions);
 
     // Create any pending entities at the start of the tick
     createPendingEntities();
@@ -322,31 +306,21 @@ void GameEngine::tick() {
     SheepAISystem::apply(registry, tick);
     stepPhysics();
 
-    // Phase A: Mark chunk changes for moved entities
-    ChunkMembershipSystem::detectChunkCrossings(registry, chunkRegistry, tickCount, ACTIVATION_RADIUS);
+    // Phase A: Check chunk membership for moved entities
+    // Updates chunk.leftEntities and chunk.presentPlayers
+    ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
 
-    // Phase B: Rebuild gateway watchedChunks and generate/activate chunks
-    // This must happen BEFORE updateEntitiesChunks so that chunks exist when
-    // entities are being added to them (otherwise SELF_ENTITY won't be sent)
-    for (auto& [gwId, gwInfo] : gateways) {
-        auto result = ChunkMembershipSystem::rebuildGatewayWatchedChunks(
-            gwInfo, chunkRegistry, playerEntities, registry, tick, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
-        
-        // Generate entities for newly activated chunks (deferred via factory)
-        for (const ChunkId& cid : result.activatedChunks) {
-            worldGenerator.generateEntities(cid, entityFactory, tick);
-        }
-
-        if (!result.snapshotBatch.empty() && outputCallback)
-            outputCallback(gwId, result.snapshotBatch.data(), result.snapshotBatch.size());
+    // Phase B: Update watched chunks and generate/activate needed chunks
+    // Updates gateway.watchedChunks and chunk.watchingPlayers
+    auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
+        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
+    
+    // Generate entities for newly activated chunks
+    for (const ChunkId& cid : watchedResult.activatedChunks) {
+        worldGenerator.generateEntities(cid, entityFactory, tick);
     }
 
-    // Phase C: Process all entity lifecycle events (CREATE, DELETE, CHUNK_CHANGE)
-    // Deleted entities are NOT destroyed yet - they're stored in pendingDeletions
-    // Also sends SELF_ENTITY messages to gateways when player entities are created
-    auto entityResult = ChunkMembershipSystem::updateEntitiesChunks(registry, chunkRegistry, gateways, tick, outputCallback);
-    pendingDeletions = std::move(entityResult.entitiesToDestroy);
-
+    // Send state updates to clients
     if (tickCount % SNAPSHOT_DELTA_INTERVAL == 0) {
         serializeSnapshotDelta();
     } else {

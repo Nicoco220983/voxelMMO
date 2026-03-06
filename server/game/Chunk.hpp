@@ -50,12 +50,12 @@ public:
     std::set<entt::entity> entities;
     
     /**
-     * @brief Set of entities that have moved out of this chunk this tick.
+     * @brief Set of entities that have left this chunk this tick.
      *
-     * These entities are still in `entities` but need to be processed for
-     * chunk change. After processing, they're removed from both sets.
+     * These entities have been removed from `entities` and are waiting
+     * to be added to their new chunk. After processing, this set is cleared.
      */
-    std::set<entt::entity> movedEntities;
+    std::set<entt::entity> leftEntities;
 
     /** @brief Serialised state cache (snapshot, deltas, scratch). */
     ChunkState state;

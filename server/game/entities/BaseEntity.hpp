@@ -63,9 +63,25 @@ struct BaseEntity {
         // Compute chunk from position and mark for creation
         // ChunkMembershipSystem will add to chunk's entity set during tick
         const ChunkId chunkId = chunkIdFromPosition(x, y, z);
-        ChunkMembershipSystem::markForCreation(reg, ent, chunkId);
+        markForCreation(reg, ent, chunkId);
 
         return ent;
+    }
+
+
+    /**
+    * @brief Mark an entity for creation in the specified chunk.
+    *
+    * The entity will be added to the chunk during the next processEntities() call.
+    * This should be called immediately after registry.create().
+    *
+    * @param registry  The ECS registry.
+    * @param ent       The entity to mark.
+    * @param chunkId   Target chunk for the entity.
+    */
+    static inline void markForCreation(entt::registry& registry, entt::entity ent, ChunkId chunkId) {
+        registry.emplace<PendingCreateComponent>(ent, chunkId);
+        registry.get<DirtyComponent>(ent).markCreated();
     }
 };
 
