@@ -24,7 +24,7 @@ GameEngine::GameEngine(uint32_t seed, bool seedProvided,
     // Generate initial chunks around (0,0,0) and compute player spawn position
     // This is done here rather than in WorldGenerator constructor because
     // chunkRegistry and registry must be initialized first.
-    worldGenerator.generateChunks(chunkRegistry, 0, 0, 0, ACTIVATION_RADIUS, registry, 0);
+    worldGenerator.generateChunks(chunkRegistry, 0, 0, 0, ACTIVATION_RADIUS, entityFactory, 0);
     worldGenerator.computePlayerSpawnPos();
 }
 
@@ -170,14 +170,9 @@ void GameEngine::sendSnapshot(GatewayId gwId) {
     if (it == gateways.end()) return;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
     
-    // Update watched chunks for all gateways (generates/activates chunks)
+    // Update watched chunks for all gateways (generates/activates chunks and entities)
     auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
-        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
-    
-    // Generate entities for newly activated chunks
-    for (const ChunkId& cid : watchedResult.activatedChunks) {
-        worldGenerator.generateEntities(cid, entityFactory, tick);
-    }
+        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
     
     // Create entities immediately for snapshot
     createPendingEntities();
@@ -311,14 +306,9 @@ void GameEngine::tick() {
     ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
 
     // Phase B: Update watched chunks and generate/activate needed chunks
-    // Updates gateway.watchedChunks and chunk.watchingPlayers
+    // Updates gateway.watchedChunks and chunk.watchingPlayers, generates entities
     auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
-        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator);
-    
-    // Generate entities for newly activated chunks
-    for (const ChunkId& cid : watchedResult.activatedChunks) {
-        worldGenerator.generateEntities(cid, entityFactory, tick);
-    }
+        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
 
     // Send state updates to clients
     if (tickCount % SNAPSHOT_DELTA_INTERVAL == 0) {

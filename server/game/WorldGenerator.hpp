@@ -68,21 +68,21 @@ public:
     const int32_t* getPlayerSpawnPos() const noexcept { return playerSpawnPos_; }
     
     /**
-     * @brief Generate initial chunks around a center position.
+     * @brief Generate and activate initial chunks around a center position.
      *
      * Populates the chunkRegistry with chunks within radius of the center position.
-     * Chunks are generated with voxels but without entities (entities spawn on demand).
+     * Chunks are generated with voxels, activated, and entities are spawned.
      *
      * @param chunkRegistry        Registry to populate with generated chunks.
      * @param centerX/centerY/centerZ Center position in sub-voxels (typically 0,0,0).
      * @param initialActivationRadius Radius around center to generate chunks.
-     * @param registry             ECS registry (for chunk creation).
+     * @param entityFactory        Factory to queue entity spawn requests.
      * @param tick                 Current server tick.
      */
     void generateChunks(ChunkRegistry& chunkRegistry,
                         int32_t centerX, int32_t centerY, int32_t centerZ,
                         int32_t initialActivationRadius,
-                        entt::registry& registry,
+                        EntityFactory& entityFactory,
                         uint32_t tick);
     
     /**

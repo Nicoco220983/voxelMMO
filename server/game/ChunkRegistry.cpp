@@ -1,5 +1,6 @@
 #include "game/ChunkRegistry.hpp"
 #include "game/WorldGenerator.hpp"
+#include "game/entities/EntityFactory.hpp"
 
 namespace voxelmmo {
 
@@ -29,7 +30,7 @@ Chunk* ChunkRegistry::createOrGet(ChunkId id) {
     return ptr;
 }
 
-Chunk* ChunkRegistry::activate(ChunkId id) {
+Chunk* ChunkRegistry::activate(ChunkId id, WorldGenerator& generator, EntityFactory& entityFactory, uint32_t tick) {
     auto it = chunks_.find(id);
     if (it == chunks_.end()) {
         return nullptr;  // Chunk doesn't exist - caller must generate first
@@ -41,13 +42,19 @@ Chunk* ChunkRegistry::activate(ChunkId id) {
     }
 
     chunk->activated = true;
+    
+    // Generate entities for the newly activated chunk
+    generator.generateEntities(id, entityFactory, tick);
+    
     return chunk;
 }
 
-Chunk* ChunkRegistry::generateAndActivate(WorldGenerator& generator, ChunkId id) {
+Chunk* ChunkRegistry::generateAndActivate(WorldGenerator& generator, ChunkId id, EntityFactory& entityFactory, uint32_t tick) {
     Chunk* chunk = generate(generator, id);
     if (chunk) {
         chunk->activated = true;
+        // Generate entities for the newly activated chunk
+        generator.generateEntities(id, entityFactory, tick);
     }
     return chunk;
 }

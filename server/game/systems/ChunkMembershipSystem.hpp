@@ -118,6 +118,7 @@ inline void checkChunkMembership(
  * - Clears and rebuilds the gateway's watchedChunks set
  * - Generates/activates chunks in the watch radius
  * - Updates Chunk.watchingPlayers for all affected chunks
+ * - Generates entities for newly activated chunks
  *
  * This function does NOT send snapshots - caller is responsible for that.
  *
@@ -127,7 +128,9 @@ inline void checkChunkMembership(
  * @param registry          The ECS registry.
  * @param watchRadius       Radius for watching chunks around players.
  * @param activationRadius  Radius for activating chunks around players.
- * @param generator         WorldGenerator for terrain generation.
+ * @param generator         WorldGenerator for terrain and entity generation.
+ * @param entityFactory     Factory to queue entity spawn requests.
+ * @param tick              Current server tick.
  * @return WatchedChunksResult containing list of activated chunks.
  */
 inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
@@ -137,7 +140,9 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
     entt::registry& registry,
     int32_t watchRadius,
     int32_t activationRadius,
-    WorldGenerator& generator)
+    WorldGenerator& generator,
+    EntityFactory& entityFactory,
+    uint32_t tick)
 {
     WatchedChunksResult result;
     
@@ -168,7 +173,7 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
                         // Ensure activation-radius chunks exist
                         if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
                             bool wasNew = !chunkRegistry.hasChunk(cid);
-                            Chunk* chunk = chunkRegistry.generateAndActivate(generator, cid);
+                            Chunk* chunk = chunkRegistry.generateAndActivate(generator, cid, entityFactory, tick);
                             if (chunk && wasNew) {
                                 result.activatedChunks.push_back(cid);
                             }

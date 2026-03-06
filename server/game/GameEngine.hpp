@@ -162,6 +162,17 @@ public:
     /** @brief Access the world generator for terrain queries. */
     const WorldGenerator& getWorldGenerator() const { return worldGenerator; }
 
+    // ── Test accessors ────────────────────────────────────────────────────
+
+    /** @brief Access the ECS registry (for testing only). */
+    entt::registry& getRegistry() { return registry; }
+
+    /** @brief Access the chunk registry (for testing only). */
+    ChunkRegistry& getChunkRegistry() { return chunkRegistry; }
+
+    /** @brief Access the player entities map (for testing only). */
+    const std::unordered_map<PlayerId, entt::entity>& getPlayerEntities() const { return playerEntities; }
+
     // ── Configuration ─────────────────────────────────────────────────────
 
     /** Number of chunk radii around a player position to activate (load). */

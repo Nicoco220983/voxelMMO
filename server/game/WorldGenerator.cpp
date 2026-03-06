@@ -138,17 +138,14 @@ WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, EntityType tes
 void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
                                     int32_t centerX, int32_t centerY, int32_t centerZ,
                                     int32_t initialActivationRadius,
-                                    entt::registry& registry,
+                                    EntityFactory& entityFactory,
                                     uint32_t tick) {
-    (void)registry;
-    (void)tick;
-    
     // Convert center position to chunk coordinates
     const int32_t centerCx = centerX >> CHUNK_SHIFT_X;
     const int32_t centerCy = centerY >> CHUNK_SHIFT_Y;
     const int32_t centerCz = centerZ >> CHUNK_SHIFT_Z;
     
-    // Generate chunks within initialActivationRadius of center (voxels only, no entities)
+    // Generate and activate chunks within initialActivationRadius of center
     for (int32_t dx = -initialActivationRadius; dx <= initialActivationRadius; ++dx) {
         for (int32_t dy = -initialActivationRadius; dy <= initialActivationRadius; ++dy) {
             for (int32_t dz = -initialActivationRadius; dz <= initialActivationRadius; ++dz) {
@@ -156,8 +153,8 @@ void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
                 const int32_t cy = centerCy + dy;
                 const int32_t cz = centerCz + dz;
                 const ChunkId chunkId = ChunkId::make(cy, cx, cz);
-                // Generate voxels only - entity generation is caller's responsibility
-                chunkRegistry.generate(*this, chunkId);
+                // Generate voxels, activate chunk, and generate entities
+                chunkRegistry.generateAndActivate(*this, chunkId, entityFactory, tick);
             }
         }
     }

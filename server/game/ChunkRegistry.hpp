@@ -8,22 +8,20 @@
 
 namespace voxelmmo {
 
-// Forward declaration
+// Forward declarations
 class WorldGenerator;
+class EntityFactory;
 
 /**
  * @brief Central registry for all chunks in the game world.
  *
  * Owns the chunk map and controls chunk lifecycle:
  * - Generation: creates chunk voxel data
- * - Activation: marks chunks as active (entity generation is caller's responsibility)
+ * - Activation: marks chunks as active and generates entities
  * - Deactivation: removes entities from the chunk
  *
  * Provides read-only access via getChunk() for systems that only need
  * to query chunk state (physics, serialization, etc.).
- *
- * NOTE: Entity generation is NOT done by ChunkRegistry. Callers should use
- * WorldGenerator::generateEntities() after activating/creating chunks if needed.
  */
 class ChunkRegistry {
 public:
@@ -90,25 +88,29 @@ public:
      * If the chunk doesn't exist, this returns nullptr (does NOT generate).
      * If already activated, this is a no-op.
      *
-     * NOTE: Entity generation is the caller's responsibility. After activating
-     * a chunk, call WorldGenerator::generateEntities() if needed.
+     * Entity generation is performed automatically using the provided WorldGenerator.
      *
      * @param id Chunk ID to activate.
+     * @param generator WorldGenerator for entity generation.
+     * @param entityFactory Factory to queue entity spawn requests.
+     * @param tick Current server tick.
      * @return Pointer to the activated chunk, or nullptr if chunk doesn't exist.
      */
-    Chunk* activate(ChunkId id);
+    Chunk* activate(ChunkId id, WorldGenerator& generator, EntityFactory& entityFactory, uint32_t tick);
 
     /**
      * @brief Generate and activate a chunk in one step.
      *
-     * Convenience method that generates voxels and marks as activated.
-     * Entity generation is still the caller's responsibility.
+     * Convenience method that generates voxels, marks as activated,
+     * and generates entities for the chunk.
      *
-     * @param generator WorldGenerator for terrain generation.
+     * @param generator WorldGenerator for terrain and entity generation.
      * @param id Chunk ID to generate and activate.
+     * @param entityFactory Factory to queue entity spawn requests.
+     * @param tick Current server tick.
      * @return Pointer to the generated and activated chunk.
      */
-    Chunk* generateAndActivate(WorldGenerator& generator, ChunkId id);
+    Chunk* generateAndActivate(WorldGenerator& generator, ChunkId id, EntityFactory& entityFactory, uint32_t tick);
 
     /**
      * @brief Deactivate a chunk, removing all its entities.
