@@ -1,5 +1,6 @@
 #pragma once
 #include "common/MessageTypes.hpp"
+#include "common/EntityType.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 #include <functional>

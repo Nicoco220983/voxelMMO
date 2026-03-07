@@ -2,6 +2,7 @@
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
 #include "common/MessageTypes.hpp"
+#include "common/EntityType.hpp"
 #include <entt/entt.hpp>
 #include <vector>
 #include <cstdint>

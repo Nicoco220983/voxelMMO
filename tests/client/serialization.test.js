@@ -37,8 +37,9 @@ vi.mock('../../client/src/utils.js', () => ({
 import { Chunk } from '../../client/src/Chunk.js'
 import {
   CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT,
-  VoxelType, ChunkMessageType,
+  VoxelType,
 } from '../../client/src/types.js'
+import { ServerMessageType } from '../../client/src/NetworkProtocol.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -55,21 +56,24 @@ function packVoxelId(y, x, z) {
 }
 
 /**
- * Build a SNAPSHOT_COMPRESSED message using raw voxels as the "compressed"
+ * Build a CHUNK_SNAPSHOT_COMPRESSED message using raw voxels as the "compressed"
  * payload.  The lz4Decompress mock copies src into a full CHUNK_VOXEL_COUNT
  * buffer, so passing raw voxels here produces correct decompressed output.
+ *
+ * New format: [type(1)][size(2)][chunkId(8)][tick(4)][flags(1)][cvs(4)][voxels][ess(4)]
  */
 function buildSnapshotMsg(chunkId, tick, voxels) {
   const cvs = voxels.length  // "compressed size" == raw size (no real compression)
 
-  // type(1) + chunkId(8) + tick(4) + flags(1) + cvs(4) + raw_voxels + ess(4)
-  const totalSize = 1 + 8 + 4 + 1 + 4 + cvs + 4
+  // type(1) + size(2) + chunkId(8) + tick(4) + flags(1) + cvs(4) + raw_voxels + ess(4)
+  const totalSize = 1 + 2 + 8 + 4 + 1 + 4 + cvs + 4
   const buf = new ArrayBuffer(totalSize)
   const view = new DataView(buf)
   const raw = new Uint8Array(buf)
   let off = 0
 
-  view.setUint8(off++, ChunkMessageType.SNAPSHOT_COMPRESSED)
+  view.setUint8(off++, ServerMessageType.CHUNK_SNAPSHOT_COMPRESSED)
+  view.setUint16(off, totalSize, true); off += 2  // size field
   view.setBigInt64(off, chunkId, true); off += 8
   view.setUint32(off, tick, true);      off += 4
   view.setUint8(off++, 0)               // flags = 0 (entity section uncompressed)
@@ -81,20 +85,23 @@ function buildSnapshotMsg(chunkId, tick, voxels) {
 }
 
 /**
- * Build an uncompressed TICK_DELTA or SNAPSHOT_DELTA message.
+ * Build an uncompressed CHUNK_TICK_DELTA or CHUNK_SNAPSHOT_DELTA message.
  * @param {bigint} chunkId
  * @param {number} tick
  * @param {Array<{vy:number,vx:number,vz:number,vtype:number}>} mods
  * @param {number} [msgType]
+ *
+ * New format: [type(1)][size(2)][chunkId(8)][tick(4)][count(4)][mods...]
  */
-function buildDeltaMsg(chunkId, tick, mods, msgType = ChunkMessageType.TICK_DELTA) {
-  // type(1) + chunkId(8) + tick(4) + count(4) + mods*(vid_u16 + vtype_u8)
-  const totalSize = 13 + 4 + mods.length * 3
+function buildDeltaMsg(chunkId, tick, mods, msgType = ServerMessageType.CHUNK_TICK_DELTA) {
+  // type(1) + size(2) + chunkId(8) + tick(4) + count(4) + mods*(vid_u16 + vtype_u8)
+  const totalSize = 15 + 4 + mods.length * 3
   const buf = new ArrayBuffer(totalSize)
   const view = new DataView(buf)
   let off = 0
 
   view.setUint8(off++, msgType)
+  view.setUint16(off, totalSize, true); off += 2  // size field
   view.setBigInt64(off, chunkId, true); off += 8
   view.setUint32(off, tick, true);      off += 4
   view.setInt32(off, mods.length, true); off += 4
@@ -284,5 +291,19 @@ describe('batch framing (length-prefixed messages)', () => {
 
     expect(chunk.getVoxel(1, 1, 1)).toBe(VoxelType.STONE)
     expect(chunk.getVoxel(2, 2, 2)).toBe(VoxelType.GRASS)
+  })
+})
+
+// ── ServerMessageType enum values ─────────────────────────────────────────────
+
+describe('ServerMessageType enum', () => {
+  it('has correct values for chunk state messages', () => {
+    expect(ServerMessageType.CHUNK_SNAPSHOT).toBe(0)
+    expect(ServerMessageType.CHUNK_SNAPSHOT_COMPRESSED).toBe(1)
+    expect(ServerMessageType.CHUNK_SNAPSHOT_DELTA).toBe(2)
+    expect(ServerMessageType.CHUNK_SNAPSHOT_DELTA_COMPRESSED).toBe(3)
+    expect(ServerMessageType.CHUNK_TICK_DELTA).toBe(4)
+    expect(ServerMessageType.CHUNK_TICK_DELTA_COMPRESSED).toBe(5)
+    expect(ServerMessageType.SELF_ENTITY).toBe(6)
   })
 })

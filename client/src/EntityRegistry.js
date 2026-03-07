@@ -1,7 +1,8 @@
 // @ts-check
 import { BaseEntity } from './entities/BaseEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
-import { DeltaType, EntityType } from './types.js'
+import { EntityType } from './types.js'
+import { DeltaType } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */

@@ -1,6 +1,7 @@
 #pragma once
 #include "common/MessageTypes.hpp"
 #include "common/Types.hpp"
+#include "common/EntityType.hpp"
 #include <array>
 #include <cstdint>
 #include <cstring>
@@ -16,6 +17,17 @@ namespace voxelmmo {
  * Game logic (dispatching, registry updates) remains in GameEngine.
  */
 namespace NetworkProtocol {
+
+// ── Message header constants ──────────────────────────────────────────────
+
+/** @brief Size of the universal message header: [type(1)][size(2)] = 3 bytes. */
+inline constexpr size_t MESSAGE_HEADER_SIZE = 3;
+
+/** @brief Size of chunk message additional header: [chunk_id(8)][tick(4)] = 12 bytes. */
+inline constexpr size_t CHUNK_HEADER_SIZE = 12;
+
+/** @brief Total chunk message header size: 3 + 12 = 15 bytes. */
+inline constexpr size_t CHUNK_MESSAGE_HEADER_SIZE = MESSAGE_HEADER_SIZE + CHUNK_HEADER_SIZE;
 
 // ── Parsed message structs ────────────────────────────────────────────────
 
@@ -35,42 +47,44 @@ struct JoinMessage {
 
 /**
  * @brief Parse an INPUT frame.
- * Wire: type(1) + buttons uint8(1) + yaw float32LE(4) + pitch float32LE(4) = 10 bytes.
- * @return Parsed struct, or std::nullopt if @p size < 10.
+ * Wire: type(1) + size(2) + buttons uint8(1) + yaw float32LE(4) + pitch float32LE(4) = 13 bytes.
+ * @return Parsed struct, or std::nullopt if @p size < 13.
  */
 inline std::optional<InputMessage> parseInput(const uint8_t* data, size_t size) {
-    if (size < 10) return std::nullopt;
+    if (size < 13) return std::nullopt;
     InputMessage m;
-    m.buttons = data[1];
-    std::memcpy(&m.yaw,   data + 2, sizeof(float));
-    std::memcpy(&m.pitch, data + 6, sizeof(float));
+    m.buttons = data[3];
+    std::memcpy(&m.yaw,   data + 4, sizeof(float));
+    std::memcpy(&m.pitch, data + 8, sizeof(float));
     return m;
 }
 
 /**
  * @brief Parse a JOIN frame.
- * Wire: type(1) + EntityType uint8(1) = 2 bytes.
- * @return Parsed struct, or std::nullopt if @p size < 2.
+ * Wire: type(1) + size(2) + EntityType uint8(1) = 5 bytes.
+ * @return Parsed struct, or std::nullopt if @p size < 5.
  */
 inline std::optional<JoinMessage> parseJoin(const uint8_t* data, size_t size) {
-    if (size < 2) return std::nullopt;
-    return JoinMessage{static_cast<EntityType>(data[1])};
+    if (size < 5) return std::nullopt;
+    return JoinMessage{static_cast<EntityType>(data[3])};
 }
 
 // ── Server → Client (serialization) ──────────────────────────────────────
 
 /**
- * @brief Build a 17-byte SELF_ENTITY message.
- * Wire: type(1) + ChunkId int64LE(8) + tick uint32LE(4) + GlobalEntityId uint32LE(4).
+ * @brief Build a SELF_ENTITY message (21 bytes).
+ * Wire: type(1) + size(2) + GlobalEntityId uint32LE(4) + ChunkId int64LE(8) + tick uint32LE(4).
  */
-inline std::array<uint8_t, 17> buildSelfEntityMessage(
-    const ChunkId& chunkId, uint32_t tick, GlobalEntityId entityId)
+inline std::array<uint8_t, 21> buildSelfEntityMessage(
+    GlobalEntityId entityId, const ChunkId& chunkId, uint32_t tick)
 {
-    std::array<uint8_t, 17> msg;
-    msg[0] = static_cast<uint8_t>(ChunkMessageType::SELF_ENTITY);
-    std::memcpy(msg.data() + 1,  &chunkId.packed, 8);
-    std::memcpy(msg.data() + 9,  &tick,            sizeof(uint32_t));
-    std::memcpy(msg.data() + 13, &entityId,         sizeof(uint32_t));
+    std::array<uint8_t, 21> msg;
+    msg[0] = static_cast<uint8_t>(ServerMessageType::SELF_ENTITY);
+    msg[1] = 21;  // size low byte
+    msg[2] = 0;   // size high byte
+    std::memcpy(msg.data() + 3, &entityId, sizeof(uint32_t));
+    std::memcpy(msg.data() + 7, &chunkId.packed, 8);
+    std::memcpy(msg.data() + 15, &tick, sizeof(uint32_t));
     return msg;
 }
 

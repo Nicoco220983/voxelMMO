@@ -1,26 +1,29 @@
 #include "gateway/StateManager.hpp"
 #include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include <cstring>
 
 namespace voxelmmo {
 
 void StateManager::receiveChunkMessage(const uint8_t* data, size_t size) {
-    if (size < 1 + sizeof(int64_t)) return;
+    // Minimum header: [type(1)][size(2)][chunk_id(8)][tick(4)] = 15 bytes
+    if (size < NetworkProtocol::CHUNK_MESSAGE_HEADER_SIZE) return;
 
-    const auto msgType = static_cast<ChunkMessageType>(data[0]);
+    const auto msgType = static_cast<ServerMessageType>(data[0]);
+    // size is at bytes 1-2, chunk_id at bytes 3-10
     ChunkId cid;
-    std::memcpy(&cid.packed, data + 1, sizeof(int64_t));
+    std::memcpy(&cid.packed, data + 3, sizeof(int64_t));
 
     ChunkState& state = getChunkState(cid);
 
     switch (msgType) {
-        case ChunkMessageType::SNAPSHOT_COMPRESSED:
+        case ServerMessageType::CHUNK_SNAPSHOT_COMPRESSED:
             state.receiveSnapshot(data, size);
             break;
-        case ChunkMessageType::SNAPSHOT_DELTA:
-        case ChunkMessageType::SNAPSHOT_DELTA_COMPRESSED:
-        case ChunkMessageType::TICK_DELTA:
-        case ChunkMessageType::TICK_DELTA_COMPRESSED:
+        case ServerMessageType::CHUNK_SNAPSHOT_DELTA:
+        case ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED:
+        case ServerMessageType::CHUNK_TICK_DELTA:
+        case ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED:
             state.receiveDelta(data, size);
             break;
         default:

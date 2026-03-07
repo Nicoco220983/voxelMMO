@@ -12,6 +12,11 @@
 #include <cstdint>
 
 namespace voxelmmo {
+    // Chunk header: [entity_type(1)][size(2)][chunk_id(8)][tick(4)] = 15 bytes
+    static constexpr size_t CHUNK_MESSAGE_HEADER_SIZE = 1 + 2 + 8 + 4;
+}
+
+namespace voxelmmo {
     class WorldGenerator;
 }
 
@@ -113,12 +118,16 @@ public:
      */
     bool updateState(entt::registry& reg, uint32_t tickCount);
 
-    /** @brief Byte length of the always-uncompressed message header. */
-    static constexpr size_t HEADER_SIZE = 1 + sizeof(int64_t) + sizeof(uint32_t); // type(1) + ChunkId(8) + tick(4)
+    /** @brief Byte length of the chunk message header (including entity_type + size prefix). */
+    static constexpr size_t HEADER_SIZE = CHUNK_MESSAGE_HEADER_SIZE; // entity_type(1) + size(2) + ChunkId(8) + tick(4)
 
 private:
-    /** @brief Write type byte + ChunkId + tick into buf; return bytes written (= HEADER_SIZE). */
-    size_t writeHeader(uint8_t* buf, ChunkMessageType msgType, uint32_t tickCount) const;
+    /**
+     * @brief Write chunk message header into buf; return bytes written (= HEADER_SIZE).
+     * Format: [type(1)][size(2)][chunk_id(8)][tick(4)]
+     * The size field is written as 0 and must be filled in later when the final size is known.
+     */
+    size_t writeHeader(uint8_t* buf, ServerMessageType msgType, uint32_t tickCount) const;
 
     /**
      * @brief If buf's payload exceeds LZ4_COMPRESSION_THRESHOLD, copy the
@@ -126,7 +135,7 @@ private:
      *        (replacing the payload), prepend the uncompressed-size int32,
      *        and update the type byte to the *_COMPRESSED variant.
      */
-    void maybeCompressDelta(std::vector<uint8_t>& buf, ChunkMessageType compressedType);
+    void maybeCompressDelta(std::vector<uint8_t>& buf, ServerMessageType compressedType);
 
     /**
      * @brief Shared implementation for buildSnapshotDelta and buildTickDelta.
@@ -143,8 +152,8 @@ private:
         uint32_t tickCount,
         const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
         uint8_t DirtyComponent::* flagsField,
-        ChunkMessageType rawType,
-        ChunkMessageType compressedType,
+        ServerMessageType rawType,
+        ServerMessageType compressedType,
         bool clearSnapshot,
         bool clearTick);
 };

@@ -12,16 +12,18 @@ using namespace voxelmmo;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Build a 10-byte INPUT message. */
-static std::array<uint8_t, 10> makeInput(uint8_t buttons = 0,
+/** Build a 13-byte INPUT message: [type(1)][size(2)][buttons(1)][yaw(4)][pitch(4)]. */
+static std::array<uint8_t, 13> makeInput(uint8_t buttons = 0,
                                           float yaw = 0.0f,
                                           float pitch = 0.0f)
 {
-    std::array<uint8_t, 10> buf{};
+    std::array<uint8_t, 13> buf{};
     buf[0] = static_cast<uint8_t>(ClientMessageType::INPUT);
-    buf[1] = buttons;
-    std::memcpy(buf.data() + 2, &yaw,   sizeof(float));
-    std::memcpy(buf.data() + 6, &pitch, sizeof(float));
+    buf[1] = 13;  // size low byte
+    buf[2] = 0;   // size high byte
+    buf[3] = buttons;
+    std::memcpy(buf.data() + 4, &yaw,   sizeof(float));
+    std::memcpy(buf.data() + 8, &pitch, sizeof(float));
     return buf;
 }
 
@@ -36,7 +38,7 @@ struct ParsedEntity {
 
 /**
  * Parse entities from the payload of an uncompressed TICK_DELTA message.
- * Layout (after the 13-byte header):
+ * Layout (after the 15-byte header: [type(1)][size(2)][chunk_id(8)][tick(4)]):
  *   int32 voxel_count
  *   repeat: VoxelId(2) + VoxelType(1)
  *   int32 entity_count
@@ -45,10 +47,10 @@ struct ParsedEntity {
 static std::vector<ParsedEntity> parseTickDeltaEntities(const uint8_t* msg, size_t len)
 {
     std::vector<ParsedEntity> result;
-    if (len < 13) return result;
+    if (len < 15) return result;
 
-    // Skip 13-byte header
-    const uint8_t* p   = msg + 13;
+    // Skip 15-byte header
+    const uint8_t* p   = msg + 15;
     const uint8_t* end = msg + len;
 
     if (p + 4 > end) return result;
@@ -100,10 +102,10 @@ static std::vector<ParsedEntity> collectFromBatch(const uint8_t* data, size_t si
         if (off + msgLen > size) break;
 
         const uint8_t* msg = data + off;
-        if (msgLen >= 13) {
+        if (msgLen >= 15) {
             const auto t = msg[0];
-            if (t == static_cast<uint8_t>(ChunkMessageType::TICK_DELTA) ||
-                t == static_cast<uint8_t>(ChunkMessageType::SNAPSHOT_DELTA))
+            if (t == static_cast<uint8_t>(ServerMessageType::CHUNK_TICK_DELTA) ||
+                t == static_cast<uint8_t>(ServerMessageType::CHUNK_SNAPSHOT_DELTA))
             {
                 auto ents = parseTickDeltaEntities(msg, msgLen);
                 result.insert(result.end(), ents.begin(), ents.end());

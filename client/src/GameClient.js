@@ -1,7 +1,7 @@
 // @ts-check
 import * as THREE from 'three'
-import { ChunkMessageType, CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
-import { NetworkProtocol } from './NetworkProtocol.js'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
+import { NetworkProtocol, ServerMessageType } from './NetworkProtocol.js'
 import { Chunk } from './Chunk.js'
 import { EntityRegistry } from './EntityRegistry.js'
 import { lz4Decompress, BufReader } from './utils.js'
@@ -11,17 +11,20 @@ import { BaseEntity } from './entities/BaseEntity.js'
 
 /** @type {Record<number, string>} */
 const MSG_TYPE_NAMES = Object.fromEntries(
-  Object.entries(ChunkMessageType).map(([k, v]) => [v, k])
+  Object.entries(ServerMessageType).map(([k, v]) => [v, k])
 )
 
 /**
  * @class GameClient
  * @description Manages the WebSocket connection, chunk state, and Three.js meshes.
  *
- * All incoming binary messages follow the chunk-state wire format:
- *   byte[0]    – ChunkMessageType
- *   byte[1:9]  – ChunkId packed as little-endian int64
- *   byte[9:]   – payload (voxel section + entity section)
+ * All incoming binary messages follow the wire format:
+ *   byte[0]         – ServerMessageType (uint8)
+ *   byte[1:3]       – message size (uint16 LE)
+ *   For chunk state messages (types 0-5):
+ *     byte[3:11]    – ChunkId packed as little-endian int64
+ *     byte[11:15]   – tick (uint32 LE)
+ *   byte[15:]       – payload (voxel section + entity section)
  */
 export class GameClient {
   /** @type {WebSocket|null} */
@@ -226,50 +229,62 @@ export class GameClient {
   }
 
   /**
-   * Dispatch one parsed message to the appropriate chunk.
-   * Minimum valid message size is 13 bytes: type(1) + ChunkId(8) + tick(4).
+   * Dispatch one parsed message to the appropriate handler.
+   * Minimum valid chunk state message size is 15 bytes:
+   *   type(1) + size(2) + ChunkId(8) + tick(4) = 15 bytes
    * @param {DataView} view  View over exactly one message (byteOffset may be non-zero).
    */
   #dispatch(view) {
-    const header = NetworkProtocol.parseHeader(view)
-    if (!header) return
-
-    const { msgType, chunkId, messageTick, cx, cy, cz } = header
-    if (messageTick > this.#latestServerTick) this.#latestServerTick = messageTick
-
-    console.debug('[GameClient] rx', MSG_TYPE_NAMES[msgType] ?? msgType,
-      `chunk(${cx},${cy},${cz})`, view.byteLength + 'B')
-
-    switch (msgType) {
-      case ChunkMessageType.SNAPSHOT_COMPRESSED:
-        this.#applySnapshot(view, chunkId, messageTick)
-        break
-      case ChunkMessageType.SNAPSHOT_DELTA:
-      case ChunkMessageType.TICK_DELTA:
-        this.#applyVoxelDelta(view, false, chunkId, messageTick)
-        break
-      case ChunkMessageType.SNAPSHOT_DELTA_COMPRESSED:
-      case ChunkMessageType.TICK_DELTA_COMPRESSED:
-        this.#applyVoxelDelta(view, true, chunkId, messageTick)
-        break
-      case ChunkMessageType.SELF_ENTITY:
-        console.log("TMP SELF_ENTITY")
-        if (view.byteLength >= 17) {
-          this.#selfEntityId = view.getUint32(13, true)
+    // First check for SELF_ENTITY (doesn't have chunk header)
+    if (view.byteLength >= 3) {
+      const msgType = view.getUint8(0)
+      
+      if (msgType === ServerMessageType.SELF_ENTITY) {
+        const selfData = NetworkProtocol.parseSelfEntity(view)
+        if (selfData) {
+          console.log('[GameClient] SELF_ENTITY received:', selfData)
+          this.#selfEntityId = selfData.entityId
         }
-        break
+        return
+      }
+
+      // For chunk state messages, parse the full chunk header
+      if (msgType <= 5) {  // CHUNK_SNAPSHOT through CHUNK_TICK_DELTA_COMPRESSED
+        const header = NetworkProtocol.parseChunkHeader(view)
+        if (!header) return
+
+        const { msgType: type, chunkId, messageTick, cx, cy, cz } = header
+        if (messageTick > this.#latestServerTick) this.#latestServerTick = messageTick
+
+        console.debug('[GameClient] rx', MSG_TYPE_NAMES[type] ?? type,
+          `chunk(${cx},${cy},${cz})`, view.byteLength + 'B')
+
+        switch (type) {
+          case ServerMessageType.CHUNK_SNAPSHOT_COMPRESSED:
+            this.#applySnapshot(view, chunkId, messageTick)
+            break
+          case ServerMessageType.CHUNK_SNAPSHOT_DELTA:
+          case ServerMessageType.CHUNK_TICK_DELTA:
+            this.#applyVoxelDelta(view, false, chunkId, messageTick)
+            break
+          case ServerMessageType.CHUNK_SNAPSHOT_DELTA_COMPRESSED:
+          case ServerMessageType.CHUNK_TICK_DELTA_COMPRESSED:
+            this.#applyVoxelDelta(view, true, chunkId, messageTick)
+            break
+        }
+      }
     }
   }
 
   /**
-   * Apply a SNAPSHOT_COMPRESSED message.
+   * Apply a CHUNK_SNAPSHOT_COMPRESSED message.
    * @param {DataView} view
    * @param {ChunkIdPacked} chunkId
    * @param {number} messageTick
    */
   #applySnapshot(view, chunkId, messageTick) {
     const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
-    let off = 13  // skip type(1) + chunkId(8) + tick(4)
+    let off = 15  // skip type(1) + size(2) + chunkId(8) + tick(4)
 
     const flags = view.getUint8(off++)
     const cvs   = view.getInt32(off, true); off += 4
@@ -299,11 +314,11 @@ export class GameClient {
     let payload, pOff = 0
 
     if (compressed) {
-      const uncompSize = view.getInt32(13, true)
-      payload = lz4Decompress(raw.subarray(17), uncompSize)
+      const uncompSize = view.getInt32(15, true)
+      payload = lz4Decompress(raw.subarray(19), uncompSize)
     } else {
       payload = raw
-      pOff    = 13
+      pOff    = 15  // skip header: type(1) + size(2) + chunkId(8) + tick(4)
     }
 
     const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)

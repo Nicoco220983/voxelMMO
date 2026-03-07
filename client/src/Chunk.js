@@ -1,6 +1,6 @@
 // @ts-check
 import * as THREE from 'three'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, ChunkMessageType } from './types.js'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType } from './types.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
@@ -200,14 +200,14 @@ export class Chunk {
   // ── Legacy API for tests and backward compatibility ────────────────────────
 
   /**
-   * Parse and apply a SNAPSHOT_COMPRESSED message (voxels only).
+   * Parse and apply a CHUNK_SNAPSHOT_COMPRESSED message (voxels only).
    * Note: entity parsing is now handled by EntityRegistry.
    * @param {DataView} view         View over the full raw message buffer.
    * @param {number}   messageTick  Server tick embedded in the message header.
    */
   applySnapshot(view, messageTick) {
     const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
-    let off = 13  // skip type(1) + chunkId(8) + tick(4)
+    let off = 15  // skip type(1) + size(2) + chunkId(8) + tick(4)
 
     const flags = view.getUint8(off++)
     const cvs   = view.getInt32(off, true); off += 4
@@ -234,11 +234,11 @@ export class Chunk {
     let payload, pOff = 0
 
     if (compressed) {
-      const uncompSize = view.getInt32(13, true)
-      payload = lz4Decompress(raw.subarray(17), uncompSize)
+      const uncompSize = view.getInt32(15, true)
+      payload = lz4Decompress(raw.subarray(19), uncompSize)
     } else {
       payload = raw
-      pOff    = 13
+      pOff    = 15  // skip header: type(1) + size(2) + chunkId(8) + tick(4)
     }
 
     const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)

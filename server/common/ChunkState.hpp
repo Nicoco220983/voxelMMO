@@ -28,17 +28,19 @@ namespace voxelmmo {
  *
  * Wire formats stored in each buffer:
  *
- *   snapshot  (always SNAPSHOT_COMPRESSED):
- *     [0]       uint8   ChunkMessageType = SNAPSHOT_COMPRESSED
- *     [1:9]     int64   ChunkId (LE)
- *     [9:13]    uint32  tick (LE)  ← stored in snapshotTick
- *     [13]      uint8   flags  — bit 0: entity section is LZ4 compressed
+ *   snapshot  (always CHUNK_SNAPSHOT_COMPRESSED):
+ *     [0]       uint8   ServerMessageType = CHUNK_SNAPSHOT_COMPRESSED
+ *     [1:3]     uint16  message size (LE)
+ *     [3:11]    int64   ChunkId (LE)
+ *     [11:15]   uint32  tick (LE)  ← stored in snapshotTick
+ *     [15]      uint8   flags  — bit 0: entity section is LZ4 compressed
  *     …
  *
  *   deltas — concatenated messages, each:
- *     [0]       uint8   ChunkMessageType  (SNAPSHOT_DELTA, TICK_DELTA, or *_COMPRESSED)
- *     [1:9]     int64   ChunkId (LE)
- *     [9:13]    uint32  tick (LE)  ← indexed in deltaOffsets
+ *     [0]       uint8   ServerMessageType  (CHUNK_SNAPSHOT_DELTA, CHUNK_TICK_DELTA, or *_COMPRESSED)
+ *     [1:3]     uint16  message size (LE)
+ *     [3:11]    int64   ChunkId (LE)
+ *     [11:15]   uint32  tick (LE)  ← indexed in deltaOffsets
  *     …
  */
 struct ChunkState {
@@ -99,7 +101,8 @@ struct ChunkState {
     void receiveSnapshot(const uint8_t* data, size_t size) {
         snapshot.assign(data, data + size);
         snapshotTick = 0;
-        if (size >= 13) std::memcpy(&snapshotTick, data + 9, sizeof(uint32_t));
+        // tick is now at bytes 11-14 in the 15-byte header
+        if (size >= 15) std::memcpy(&snapshotTick, data + 11, sizeof(uint32_t));
         deltas.clear();
         deltaOffsets.clear();
         hasNewDelta = false;
@@ -108,7 +111,8 @@ struct ChunkState {
     /** @brief Append a received delta (any type) to the unified delta buffer. */
     void receiveDelta(const uint8_t* data, size_t size) {
         uint32_t tick = 0;
-        if (size >= 13) std::memcpy(&tick, data + 9, sizeof(uint32_t));
+        // tick is now at bytes 11-14 in the 15-byte header
+        if (size >= 15) std::memcpy(&tick, data + 11, sizeof(uint32_t));
         deltaOffsets.push_back({tick, deltas.size()});
         deltas.insert(deltas.end(), data, data + size);
         hasNewDelta = true;

@@ -12,13 +12,15 @@ using namespace voxelmmo;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-/** Build a 10-byte INPUT message: ClientMessageType::INPUT + uint8 buttons + float32 yaw + float32 pitch. */
-static std::array<uint8_t, 10> makeInput(uint8_t buttons = 0, float yaw = 0.0f, float pitch = 0.0f) {
-    std::array<uint8_t, 10> buf{};
+/** Build a 13-byte INPUT message: [type(1)][size(2)][buttons(1)][yaw(4)][pitch(4)]. */
+static std::array<uint8_t, 13> makeInput(uint8_t buttons = 0, float yaw = 0.0f, float pitch = 0.0f) {
+    std::array<uint8_t, 13> buf{};
     buf[0] = static_cast<uint8_t>(ClientMessageType::INPUT);
-    buf[1] = buttons;
-    std::memcpy(buf.data() + 2, &yaw,   sizeof(float));
-    std::memcpy(buf.data() + 6, &pitch, sizeof(float));
+    buf[1] = 13;  // size low byte
+    buf[2] = 0;   // size high byte
+    buf[3] = buttons;
+    std::memcpy(buf.data() + 4, &yaw,   sizeof(float));
+    std::memcpy(buf.data() + 8, &pitch, sizeof(float));
     return buf;
 }
 
@@ -36,11 +38,12 @@ static void collectSnapshots(const uint8_t* data, size_t size,
         off += 4;
         if (off + msgLen > size) break;
 
-        if (msgLen >= 9 &&
-            data[off] == static_cast<uint8_t>(ChunkMessageType::SNAPSHOT_COMPRESSED))
+        // New header: [type(1)][size(2)][chunk_id(8)][tick(4)] = 15 bytes minimum
+        if (msgLen >= 15 &&
+            data[off] == static_cast<uint8_t>(ServerMessageType::CHUNK_SNAPSHOT_COMPRESSED))
         {
             int64_t cid = 0;
-            std::memcpy(&cid, data + off + 1, sizeof(int64_t));
+            std::memcpy(&cid, data + off + 3, sizeof(int64_t));  // chunk_id at offset 3
             out.insert(cid);
         }
         off += msgLen;
@@ -195,9 +198,12 @@ TEST_CASE("GameEngine - JOIN message spawns entity with correct EntityType", "[c
         REQUIRE(snapshots.empty());
 
         // Send JOIN — entity is spawned, snapshot is dispatched immediately.
-        std::array<uint8_t, 2> joinMsg{};
+        // New format: [type(1)][size(2)][entityType(1)] = 5 bytes
+        std::array<uint8_t, 5> joinMsg{};
         joinMsg[0] = static_cast<uint8_t>(ClientMessageType::JOIN);
-        joinMsg[1] = static_cast<uint8_t>(wantType);
+        joinMsg[1] = 5;  // size low byte
+        joinMsg[2] = 0;  // size high byte
+        joinMsg[3] = static_cast<uint8_t>(wantType);
         engine.handlePlayerInput(pid, joinMsg.data(), joinMsg.size());
 
         // After JOIN a snapshot must have been delivered.

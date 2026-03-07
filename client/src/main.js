@@ -1,9 +1,9 @@
 // @ts-check
 import * as THREE     from 'three'
 import { GameClient } from './GameClient.js'
-import { NetworkProtocol } from './NetworkProtocol.js'
+import { NetworkProtocol, InputButton } from './NetworkProtocol.js'
 import {
-  SUBVOXEL_SIZE, TICK_RATE, EntityType, InputButton,
+  SUBVOXEL_SIZE, TICK_RATE, EntityType,
   GHOST_MOVE_SPEED_VOXELS, PLAYER_WALK_SPEED_VOXELS, PLAYER_JUMP_VY_VOXELS,
   GRAVITY_DECREMENT,
 } from './types.js'

@@ -15,16 +15,20 @@ Chunk::Chunk(ChunkId chunkId) : id(chunkId) {
     state.scratch.reserve(64 * 1024);
 }
 
-size_t Chunk::writeHeader(uint8_t* buf, ChunkMessageType msgType, uint32_t tickCount) const {
+size_t Chunk::writeHeader(uint8_t* buf, ServerMessageType msgType, uint32_t tickCount) const {
+    // Header format: [type(1)][size(2)][chunk_id(8)][tick(4)] = 15 bytes
     buf[0] = static_cast<uint8_t>(msgType);
-    std::memcpy(buf + 1, &id.packed, sizeof(int64_t));
-    std::memcpy(buf + 9, &tickCount, sizeof(uint32_t));
+    // size (bytes 1-2) is filled in later when final size is known
+    buf[1] = 0;
+    buf[2] = 0;
+    std::memcpy(buf + 3, &id.packed, sizeof(int64_t));
+    std::memcpy(buf + 11, &tickCount, sizeof(uint32_t));
     return HEADER_SIZE;
 }
 
 // ── Delta compression helper ──────────────────────────────────────────────
 
-void Chunk::maybeCompressDelta(std::vector<uint8_t>& buf, ChunkMessageType compressedType) {
+void Chunk::maybeCompressDelta(std::vector<uint8_t>& buf, ServerMessageType compressedType) {
     const size_t payloadSize = buf.size() - HEADER_SIZE;
     if (payloadSize < LZ4_COMPRESSION_THRESHOLD) return;
 
@@ -56,9 +60,9 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
     auto& buf = state.snapshot;
     buf.clear();
 
-    // ── Header (13 bytes) + flags byte ───────────────────────────────────
-    buf.resize(HEADER_SIZE + 1);  // [0..12] header, [13] flags
-    writeHeader(buf.data(), ChunkMessageType::SNAPSHOT_COMPRESSED, tickCount);
+    // ── Header (15 bytes) + flags byte ───────────────────────────────────
+    buf.resize(HEADER_SIZE + 1);  // [0..14] header, [15] flags
+    writeHeader(buf.data(), ServerMessageType::CHUNK_SNAPSHOT_COMPRESSED, tickCount);
     // buf[HEADER_SIZE] = flags — written at the end
 
     // ── Voxels: LZ4 directly from world.voxels (zero intermediate copy) ──
@@ -135,12 +139,21 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
         buf.resize(uncompSizeOff + sizeof(int32_t) + static_cast<size_t>(ces));
         flags = 0x01;
     } else {
+        // For uncompressed, also need to fill in size
+        const uint16_t msgSize = static_cast<uint16_t>(buf.size());
+        buf[1] = static_cast<uint8_t>(msgSize & 0xFF);
+        buf[2] = static_cast<uint8_t>((msgSize >> 8) & 0xFF);
         const int32_t storedSize = static_cast<int32_t>(scratch.size());
         std::memcpy(buf.data() + entitySizeOff, &storedSize, sizeof(int32_t));
         buf.insert(buf.end(), scratch.begin(), scratch.end());
     }
 
     buf[HEADER_SIZE] = flags;
+
+    // Fill in the size field (bytes 1-2) now that we know the final size
+    const uint16_t msgSize = static_cast<uint16_t>(buf.size());
+    buf[1] = static_cast<uint8_t>(msgSize & 0xFF);
+    buf[2] = static_cast<uint8_t>((msgSize >> 8) & 0xFF);
 
     // Snapshot supersedes all accumulated deltas.
     // TODO: per-gateway delta tracking when multiple gateways are supported.
@@ -159,8 +172,8 @@ bool Chunk::buildDeltaImpl(
     uint32_t tickCount,
     const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
     uint8_t DirtyComponent::* flagsField,
-    ChunkMessageType rawType,
-    ChunkMessageType compressedType,
+    ServerMessageType rawType,
+    ServerMessageType compressedType,
     bool clearSnapshot,
     bool clearTick)
 {
@@ -263,6 +276,11 @@ bool Chunk::buildDeltaImpl(
 
     maybeCompressDelta(staging, compressedType);
 
+    // Fill in the size field (bytes 1-2) now that staging is complete
+    const uint16_t msgSize = static_cast<uint16_t>(staging.size());
+    staging[1] = static_cast<uint8_t>(msgSize & 0xFF);
+    staging[2] = static_cast<uint8_t>((msgSize >> 8) & 0xFF);
+
     // Append to the unified delta buffer
     state.deltaOffsets.push_back({tickCount, state.deltas.size()});
     state.deltas.insert(state.deltas.end(), staging.begin(), staging.end());
@@ -278,8 +296,8 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
     return buildDeltaImpl(reg, tickCount,
         world.voxelsSnapshotDeltas,
         &DirtyComponent::snapshotDirtyFlags,
-        ChunkMessageType::SNAPSHOT_DELTA,
-        ChunkMessageType::SNAPSHOT_DELTA_COMPRESSED,
+        ServerMessageType::CHUNK_SNAPSHOT_DELTA,
+        ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED,
         true,   // clearSnapshot
         true);  // clearTick
 }
@@ -291,8 +309,8 @@ bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
     return buildDeltaImpl(reg, tickCount,
         world.voxelsTickDeltas,
         &DirtyComponent::tickDirtyFlags,
-        ChunkMessageType::TICK_DELTA,
-        ChunkMessageType::TICK_DELTA_COMPRESSED,
+        ServerMessageType::CHUNK_TICK_DELTA,
+        ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED,
         false,  // clearSnapshot
         true);  // clearTick
 }

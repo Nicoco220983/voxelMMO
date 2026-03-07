@@ -27,35 +27,7 @@
  * @typedef {number} PlayerId
  */
 
-// ── ChunkMessageType ─────────────────────────────────────────────────────────
-
-/**
- * First byte of every incoming binary chunk-state message.
- * Odd values are the LZ4-compressed counterpart of the preceding even value.
- * @readonly
- * @enum {number}
- */
-export const ChunkMessageType = Object.freeze({
-  SNAPSHOT:                  0,
-  SNAPSHOT_COMPRESSED:       1,
-  SNAPSHOT_DELTA:            2,
-  SNAPSHOT_DELTA_COMPRESSED: 3,
-  TICK_DELTA:                4,
-  TICK_DELTA_COMPRESSED:     5,
-  SELF_ENTITY:               6,  // type(1)+ChunkId(8)+tick(4)+GlobalEntityId(4) = 17 bytes
-})
-
-/**
- * Sub-type of each entity record inside a delta message.
- * @readonly
- * @enum {number}
- */
-export const DeltaType = Object.freeze({
-  CREATE_ENTITY:       0,  // Entity appears in this chunk
-  UPDATE_ENTITY:       1,  // Entity component updates
-  DELETE_ENTITY:       2,  // Entity removed from this chunk
-  CHUNK_CHANGE_ENTITY: 3,  // Entity moved to different chunk (old chunk sends this)
-})
+// ── Game EntityType (must stay in sync with server EntityType.hpp) ───────────
 
 /**
  * Known entity types (must stay in sync with server EntityType.hpp).
@@ -99,30 +71,6 @@ export function entityTypeToString(type) {
 export function stringToEntityType(str) {
   return ENTITY_TYPE_BY_NAME[str.toLowerCase()] ?? null
 }
-
-/**
- * First byte of every client → server binary WebSocket frame.
- * @readonly
- * @enum {number}
- */
-export const ClientMessageType = Object.freeze({
-  INPUT: 0,  // uint8 buttons | float32 yaw | float32 pitch — 9-byte payload (total 10 bytes)
-  JOIN:  1,  // uint8 EntityType — 1-byte payload (total 2 bytes)
-})
-
-/**
- * Bitmask flags for the INPUT message buttons field (must stay in sync with server InputButton).
- * @readonly
- * @enum {number}
- */
-export const InputButton = Object.freeze({
-  FORWARD:  1 << 0,
-  BACKWARD: 1 << 1,
-  LEFT:     1 << 2,
-  RIGHT:    1 << 3,
-  JUMP:     1 << 4,
-  DESCEND:  1 << 5,
-})
 
 // ── Chunk dimensions (must stay in sync with server Types.hpp) ───────────────
 

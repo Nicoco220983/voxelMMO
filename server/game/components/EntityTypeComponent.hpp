@@ -1,5 +1,5 @@
 #pragma once
-#include "common/MessageTypes.hpp"
+#include "common/EntityType.hpp"
 
 namespace voxelmmo {
 

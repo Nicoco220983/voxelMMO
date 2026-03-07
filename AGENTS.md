@@ -49,11 +49,11 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 **server/common/**
 - `Types.hpp` — ChunkId, VoxelId, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
 - `ChunkRegistry.hpp` — Central chunk registry owning the chunks map. Provides `getChunk()` (read-only) for physics/serialization, and `generate()/activate()/deactivate()` for chunk lifecycle management. All chunk access goes through the registry; systems should use the read-only `getChunk()` when possible.
-- `MessageTypes.hpp` — ChunkMessageType, DeltaType, EntityType (PLAYER=0, GHOST_PLAYER=1, SHEEP=2), ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
+- `MessageTypes.hpp` — ServerMessageType (CHUNK_SNAPSHOT=0, CHUNK_SNAPSHOT_DELTA=2, CHUNK_TICK_DELTA=4, SELF_ENTITY=6), DeltaType, ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
 - `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
 - `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick)
 - `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
-- `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendFramed)
+- `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendFramed). All messages use `[type(1)][size(2)]` header (3 bytes). Chunk state messages add `[chunk_id(8)][tick(4)]` = 15 byte header total.
 - `VoxelTypes.hpp` — named voxel type constants (AIR=0, STONE=1, DIRT=2, GRASS=3)
 
 **server/game/entities/**
@@ -126,15 +126,15 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `StateManager` — `map[ChunkId, ChunkState]`; routes chunk state messages to watching players
 
 **client/src/**
-- `types.js` — mirrors server enums + constants (ChunkMessageType, EntityType, SUBVOXEL_SIZE …)
+- `types.js` — game constants (EntityType, VoxelType, SUBVOXEL_SIZE, physics constants …)
 - `utils.js` — `lz4Decompress`, `BufReader` (sequential binary read)
 - `EntityRegistry.js` — **NEW** global entity registry; entities keyed by GlobalEntityId, track current chunkId; handles snapshot/delta entity parsing
-- `GameClient.js` — WebSocket; parses 13-byte header; owns `EntityRegistry` + chunk map; `selfEntity` finds by globalId (not stored chunkId)
+- `GameClient.js` — WebSocket; parses 15-byte chunk header; owns `EntityRegistry` + chunk map; `selfEntity` finds by globalId
 - `Chunk.js` — per-chunk voxel state only (entities moved to EntityRegistry); LZ4 decompression, Three.js mesh rebuild
 - `components/DynamicPositionComponent.js` — mirrors server; `predictAt(tick)` for client-side interpolation
 - `entities/BaseEntity.js`, `PlayerEntity.js` — now includes `chunkId` property to track current chunk
 - `entities/SheepEntity.js` — procedural mesh (body + head + legs); leg swing animation when WALKING; face movement direction
-- `NetworkProtocol.js` — serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader)
+- `NetworkProtocol.js` — protocol enums (ServerMessageType, DeltaType, ClientMessageType, InputButton) and serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader, parseChunkHeader, parseSelfEntity)
 - `main.js` — Three.js scene, render loop, HUD; entity meshes keyed by GlobalEntityId only (not chunkId-entityId composite)
 
 **docs/**

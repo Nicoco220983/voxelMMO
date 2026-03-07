@@ -18,10 +18,17 @@ static void generateChunk(WorldChunk& chunk, int cx, int cy, int cz) {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-// Build a minimal 13-byte fake delta/snapshot header with the given tick value.
-static std::vector<uint8_t> fakeMsg(uint32_t tick, size_t totalSize = 13) {
+// Build a minimal 15-byte fake delta/snapshot header with the given tick value.
+// Format: [type(1)][size(2)][chunkId(8)][tick(4)]
+static std::vector<uint8_t> fakeMsg(uint32_t tick, size_t totalSize = 15) {
     std::vector<uint8_t> msg(totalSize, 0);
-    std::memcpy(msg.data() + 9, &tick, sizeof(uint32_t));
+    // tick is now at offset 11 in the 15-byte header
+    std::memcpy(msg.data() + 11, &tick, sizeof(uint32_t));
+    // size field at bytes 1-2
+    if (totalSize >= 3) {
+        msg[1] = static_cast<uint8_t>(totalSize & 0xFF);
+        msg[2] = static_cast<uint8_t>((totalSize >> 8) & 0xFF);
+    }
     return msg;
 }
 
@@ -42,7 +49,7 @@ TEST_CASE("ChunkState::receiveDelta - single delta", "[chunkstate]") {
     REQUIRE(state.deltaOffsets.size() == 1);
     REQUIRE(state.deltaOffsets[0].tick == 5);
     REQUIRE(state.deltaOffsets[0].offset == 0);
-    REQUIRE(state.deltas.size() == 13);
+    REQUIRE(state.deltas.size() == 15);
 
     // Nothing newer than tick 5
     auto [b1, e1] = state.deltasNewerThan(5);
@@ -51,7 +58,7 @@ TEST_CASE("ChunkState::receiveDelta - single delta", "[chunkstate]") {
     // Everything newer than tick 4
     auto [b2, e2] = state.deltasNewerThan(4);
     REQUIRE(b2 == 0);
-    REQUIRE(e2 == 13);
+    REQUIRE(e2 == 15);
 }
 
 TEST_CASE("ChunkState::receiveDelta - multiple deltas, deltasNewerThan filters", "[chunkstate]") {
