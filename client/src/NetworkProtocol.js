@@ -108,19 +108,21 @@ export class NetworkProtocol {
   // ── Server → Client (deserialization) ──────────────────────────────────────
 
   /**
-   * Parse a batch of length-prefixed messages from a WebSocket frame.
-   * Batch wire format: repeated [ uint32 msgLen (LE) | msgLen bytes ].
+   * Parse a batch of concatenated messages from a WebSocket frame.
+   * Batch wire format: direct concatenation of messages. Each message has a
+   * [type(1)][size(2)] header where size includes the header itself.
    * @param {ArrayBuffer} buf
    * @returns {Generator<DataView, void, unknown>}
    */
   static * parseBatch(buf) {
     const view = new DataView(buf)
     let off = 0
-    while (off + 4 <= buf.byteLength) {
-      const len = view.getUint32(off, true); off += 4
-      if (off + len > buf.byteLength) break
-      yield new DataView(buf, off, len)
-      off += len
+    while (off + 3 <= buf.byteLength) {
+      // Read size from header (bytes 1-2, little-endian)
+      const msgSize = view.getUint16(off + 1, true)
+      if (off + msgSize > buf.byteLength) break
+      yield new DataView(buf, off, msgSize)
+      off += msgSize
     }
   }
 

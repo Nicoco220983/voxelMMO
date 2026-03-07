@@ -20,15 +20,16 @@ void GatewayEngine::receiveGameBatch(const uint8_t* data, size_t size) {
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
     uwsLoop->defer([this, buf]() {
-        // Parse individual messages and update StateManager
+        // Parse individual messages using their embedded [type(1)][size(2)] header
+        // and update StateManager for each message.
         size_t off = 0;
-        while (off + 4 <= buf->size()) {
-            uint32_t len;
-            std::memcpy(&len, buf->data() + off, 4);
-            off += 4;
-            if (off + len > buf->size()) break;
-            stateManager.receiveChunkMessage(buf->data() + off, len);
-            off += len;
+        while (off + 3 <= buf->size()) {
+            // Read size from header (bytes 1-2, little-endian)
+            uint16_t msgSize;
+            std::memcpy(&msgSize, buf->data() + off + 1, 2);
+            if (off + msgSize > buf->size()) break;
+            stateManager.receiveChunkMessage(buf->data() + off, msgSize);
+            off += msgSize;
         }
         // Forward the entire batch as a single WebSocket frame to all clients
         // TODO: filter per-client by watched chunks

@@ -125,6 +125,14 @@ Total: 25 bytes. Tick is in the message header, not here.
 
 `GlobalEntityId` (uint32) is assigned once at entity spawn and is stable across chunk moves. IDs start from 1 (0 reserved).
 
+## Server → Client batching
+
+Multiple messages are concatenated directly into a single WebSocket binary frame. Each message already contains its total size in the universal header (bytes 1-2), so no additional length prefix is needed.
+
+Batch format: `[message1][message2][message3]...` where each message starts with `[type(1)][size(2)]`.
+
+To parse: read type (1 byte), read size (2 bytes LE), read `size-3` payload bytes, repeat.
+
 ## Client → Server (binary WebSocket frames)
 
 All frames use the universal header `[type][size]`.

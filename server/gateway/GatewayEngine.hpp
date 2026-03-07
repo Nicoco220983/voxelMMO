@@ -37,7 +37,8 @@ public:
     /**
      * @brief Deliver one tick's batch of serialised messages from the game engine.
      *
-     * Batch wire format: repeated [ uint32 msgLen (LE) | msgLen bytes ]
+     * Batch wire format: direct concatenation of messages. Each message has a
+     * [type(1)][size(2)] header (3 bytes) where size includes the header itself.
      * Safe to call from any thread; defers to the uWS event loop internally.
      *
      * @param data  Batch bytes (caller owns; copied immediately).

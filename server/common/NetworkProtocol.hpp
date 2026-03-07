@@ -88,24 +88,21 @@ inline std::array<uint8_t, 21> buildSelfEntityMessage(
     return msg;
 }
 
-// ── Batch framing ─────────────────────────────────────────────────────────
+// ── Batch helpers ─────────────────────────────────────────────────────────
 
 /**
- * @brief Append a length-prefixed message to a batch buffer.
- * Wire format: uint32 msgLen (LE) | msgLen bytes.
+ * @brief Append a message to a batch buffer by direct concatenation.
+ * Messages are concatenated as-is; each message already has a [type][size] header.
  * No-op if @p size is 0.
  */
-inline void appendFramed(std::vector<uint8_t>& buf, const uint8_t* data, size_t size) {
+inline void appendToBatch(std::vector<uint8_t>& buf, const uint8_t* data, size_t size) {
     if (size == 0) return;
-    const uint32_t len      = static_cast<uint32_t>(size);
-    const auto*    lenBytes = reinterpret_cast<const uint8_t*>(&len);
-    buf.insert(buf.end(), lenBytes,  lenBytes + 4);
-    buf.insert(buf.end(), data,      data + size);
+    buf.insert(buf.end(), data, data + size);
 }
 
 /** @brief Convenience overload for a full vector. */
-inline void appendFramed(std::vector<uint8_t>& buf, const std::vector<uint8_t>& msg) {
-    appendFramed(buf, msg.data(), msg.size());
+inline void appendToBatch(std::vector<uint8_t>& buf, const std::vector<uint8_t>& msg) {
+    appendToBatch(buf, msg.data(), msg.size());
 }
 
 } // namespace NetworkProtocol

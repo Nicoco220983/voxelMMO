@@ -53,7 +53,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
 - `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick)
 - `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
-- `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendFramed). All messages use `[type(1)][size(2)]` header (3 bytes). Chunk state messages add `[chunk_id(8)][tick(4)]` = 15 byte header total.
+- `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendToBatch). All messages use `[type(1)][size(2)]` header (3 bytes). Chunk state messages add `[chunk_id(8)][tick(4)]` = 15 byte header total. Messages are batched by direct concatenation (no length prefix).
 - `VoxelTypes.hpp` — named voxel type constants (AIR=0, STONE=1, DIRT=2, GRASS=3)
 
 **server/game/entities/**
@@ -134,7 +134,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `components/DynamicPositionComponent.js` — mirrors server; `predictAt(tick)` for client-side interpolation
 - `entities/BaseEntity.js`, `PlayerEntity.js` — now includes `chunkId` property to track current chunk
 - `entities/SheepEntity.js` — procedural mesh (body + head + legs); leg swing animation when WALKING; face movement direction
-- `NetworkProtocol.js` — protocol enums (ServerMessageType, DeltaType, ClientMessageType, InputButton) and serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader, parseChunkHeader, parseSelfEntity)
+- `NetworkProtocol.js` — protocol enums (ServerMessageType, DeltaType, ClientMessageType, InputButton) and serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader, parseChunkHeader, parseSelfEntity). `parseBatch` uses embedded `[type][size]` headers to split concatenated messages.
 - `main.js` — Three.js scene, render loop, HUD; entity meshes keyed by GlobalEntityId only (not chunkId-entityId composite)
 
 **docs/**

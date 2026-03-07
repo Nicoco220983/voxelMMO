@@ -180,12 +180,12 @@ void GameEngine::serializeChunks() {
 
             if (lastTick == 0) {
                 // New watcher: send full snapshot
-                NetworkProtocol::appendFramed(batchBuf, state.snapshot);
+                NetworkProtocol::appendToBatch(batchBuf, state.snapshot);
                 gwInfo.lastStateTick[cid] = state.snapshotTick;
             } else if (state.hasNewDelta) {
                 // Existing watcher with new data: send latest delta
                 const size_t off = state.deltaOffsets.back().offset;
-                NetworkProtocol::appendFramed(batchBuf, state.deltas.data() + off, state.deltas.size() - off);
+                NetworkProtocol::appendToBatch(batchBuf, state.deltas.data() + off, state.deltas.size() - off);
                 gwInfo.lastStateTick[cid] = state.deltaOffsets.back().tick;
             }
             // else: no new data for this watcher, skip
