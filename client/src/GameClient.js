@@ -256,22 +256,28 @@ export class GameClient {
         const { msgType: type, chunkId, messageTick, cx, cy, cz } = header
         if (messageTick > this.#latestServerTick) this.#latestServerTick = messageTick
 
-        console.debug('[GameClient] rx', MSG_TYPE_NAMES[type] ?? type,
-          `chunk(${cx},${cy},${cz})`, view.byteLength + 'B')
+
+
+        let voxelCount = 0
+        let entityCount = 0
 
         switch (type) {
           case ServerMessageType.CHUNK_SNAPSHOT_COMPRESSED:
-            this.#applySnapshot(view, chunkId, messageTick)
+            ({ voxelCount, entityCount } = this.#applySnapshot(view, chunkId, messageTick))
             break
           case ServerMessageType.CHUNK_SNAPSHOT_DELTA:
           case ServerMessageType.CHUNK_TICK_DELTA:
-            this.#applyVoxelDelta(view, false, chunkId, messageTick)
+            ({ voxelCount, entityCount } = this.#applyVoxelDelta(view, false, chunkId, messageTick))
             break
           case ServerMessageType.CHUNK_SNAPSHOT_DELTA_COMPRESSED:
           case ServerMessageType.CHUNK_TICK_DELTA_COMPRESSED:
-            this.#applyVoxelDelta(view, true, chunkId, messageTick)
+            ({ voxelCount, entityCount } = this.#applyVoxelDelta(view, true, chunkId, messageTick))
             break
         }
+
+        console.debug('[GameClient] rx', MSG_TYPE_NAMES[type] ?? type,
+          `chunk(${cx},${cy},${cz})`, view.byteLength + 'B',
+          `voxels=${voxelCount}`, `entities=${entityCount}`)
       }
     }
   }
@@ -281,6 +287,7 @@ export class GameClient {
    * @param {DataView} view
    * @param {ChunkIdPacked} chunkId
    * @param {number} messageTick
+   * @returns {{voxelCount: number, entityCount: number}}
    */
   #applySnapshot(view, chunkId, messageTick) {
     const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
@@ -291,15 +298,17 @@ export class GameClient {
 
     // Get or create chunk and set voxels
     const chunk = this.#getOrCreateChunk(chunkId)
-    chunk.setVoxels(lz4Decompress(raw.subarray(off, off + cvs), chunk.voxels.length))
+    const decompressedVoxels = lz4Decompress(raw.subarray(off, off + cvs), chunk.voxels.length)
+    chunk.setVoxels(decompressedVoxels)
     off += cvs
 
     // Entity section
     const ess = view.getInt32(off, true); off += 4
-    this.#entityRegistry.applySnapshotEntities(chunkId, view, off, ess, messageTick)
+    const entityCount = this.#entityRegistry.applySnapshotEntities(chunkId, view, off, ess, messageTick)
     off += ess
 
     chunk.dirty = true
+    return { voxelCount: decompressedVoxels.length, entityCount }
   }
 
   /**
@@ -308,6 +317,7 @@ export class GameClient {
    * @param {boolean} compressed
    * @param {ChunkIdPacked} chunkId
    * @param {number} messageTick
+   * @returns {{voxelCount: number, entityCount: number}}
    */
   #applyVoxelDelta(view, compressed, chunkId, messageTick) {
     const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
@@ -322,11 +332,11 @@ export class GameClient {
     }
 
     const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
-    const count = pView.getInt32(pOff, true); pOff += 4
+    const voxelCount = pView.getInt32(pOff, true); pOff += 4
 
     // Apply voxel deltas
     const chunk = this.#getOrCreateChunk(chunkId)
-    for (let i = 0; i < count; i++) {
+    for (let i = 0; i < voxelCount; i++) {
       const vidPacked = pView.getUint16(pOff, true); pOff += 2
       const vtype     = pView.getUint8(pOff++)
       const vy = (vidPacked >> 10) & 0x1f
@@ -336,11 +346,13 @@ export class GameClient {
     }
 
     // Entity section (present in real server deltas; guard against test-only messages)
+    let entityCount = 0
     if (pOff + 4 <= pView.byteLength) {
       const reader = new BufReader(pView, pOff)
-      this.#entityRegistry.applyDeltaEntities(chunkId, reader, messageTick)
+      entityCount = this.#entityRegistry.applyDeltaEntities(chunkId, reader, messageTick)
     }
 
     chunk.dirty = true
+    return { voxelCount, entityCount }
   }
 }

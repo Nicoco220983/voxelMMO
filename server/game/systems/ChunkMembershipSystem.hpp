@@ -57,6 +57,9 @@ inline void markForDeletion(entt::registry& registry, entt::entity ent) {
  * removes entity from old chunk.entities, adds to old chunk.leftEntities,
  * and updates chunk.presentPlayers for players.
  *
+ * Note: New entities are added to chunks by EntityFactory::createEntities()
+ * at creation time. This function handles entities that move between chunks.
+ *
  * @param registry          The ECS registry.
  * @param chunkRegistry     Chunk registry for accessing chunks.
  */
@@ -105,6 +108,15 @@ inline void checkChunkMembership(
                     }
                     return;
                 }
+            }
+        }
+        
+        // Entity was not found in any nearby chunk - add it to the new chunk
+        // This handles entities that moved into a chunk they weren't previously in
+        if (Chunk* newChunk = chunkRegistry.getChunkMutable(newChunkId)) {
+            newChunk->entities.insert(ent);
+            if (isPlayer) {
+                newChunk->presentPlayers.insert(pid);
             }
         }
     });

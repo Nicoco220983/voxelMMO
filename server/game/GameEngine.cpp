@@ -219,7 +219,7 @@ const Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
 
 std::vector<entt::entity> GameEngine::createPendingEntities() {
     auto acquireId = [this]() { return acquireEntityId(); };
-    return entityFactory.createEntities(registry, acquireId);
+    return entityFactory.createEntities(registry, chunkRegistry, acquireId);
 }
 
 void GameEngine::tick() {
@@ -240,7 +240,7 @@ void GameEngine::tick() {
     stepPhysics();
 
     // Phase A: Check chunk membership for moved entities
-    // Updates chunk.leftEntities and chunk.presentPlayers
+    // Updates chunk.leftEntities and chunk.presentPlayers, adds new entities to chunks
     ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
 
     // Phase B: Update watched chunks and generate/activate needed chunks

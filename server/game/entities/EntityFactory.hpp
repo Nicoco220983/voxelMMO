@@ -2,6 +2,7 @@
 #include "common/MessageTypes.hpp"
 #include "common/EntityType.hpp"
 #include "common/Types.hpp"
+#include "game/ChunkRegistry.hpp"
 #include <entt/entt.hpp>
 #include <functional>
 #include <unordered_map>
@@ -124,12 +125,17 @@ public:
      * This is the ONLY method that actually touches the registry.
      * Should be called at a precise step of the game engine.
      *
+     * After creation, entities are automatically added to their chunk's
+     * entities set based on their spawn position.
+     *
      * @param registry The ECS registry to create entities in
+     * @param chunkRegistry Chunk registry for adding entities to chunks
      * @param acquireId Function that returns the next GlobalEntityId
      * @return Vector of created entity handles (in same order as queued)
      */
     std::vector<entt::entity> createEntities(
         entt::registry& registry,
+        ChunkRegistry& chunkRegistry,
         const std::function<GlobalEntityId()>& acquireId);
 
     /**

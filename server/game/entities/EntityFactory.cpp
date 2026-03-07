@@ -2,6 +2,7 @@
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
+#include "game/components/PlayerComponent.hpp"
 
 namespace voxelmmo {
 
@@ -27,6 +28,7 @@ void EntityFactory::spawnRequest(EntitySpawnRequest req) {
 
 std::vector<entt::entity> EntityFactory::createEntities(
     entt::registry& registry,
+    ChunkRegistry& chunkRegistry,
     const std::function<GlobalEntityId()>& acquireId)
 {
     std::vector<entt::entity> created;
@@ -42,6 +44,18 @@ std::vector<entt::entity> EntityFactory::createEntities(
         GlobalEntityId globalId = acquireId();
         entt::entity ent = it->second(registry, globalId, req);
         created.push_back(ent);
+
+        // Add entity to its chunk based on spawn position
+        const ChunkId chunkId = chunkIdOf(req.x, req.y, req.z);
+        if (Chunk* chunk = chunkRegistry.getChunkMutable(chunkId)) {
+            chunk->entities.insert(ent);
+            
+            // For players, also add to presentPlayers
+            if (registry.all_of<PlayerComponent>(ent)) {
+                const PlayerId pid = registry.get<PlayerComponent>(ent).playerId;
+                chunk->presentPlayers.insert(pid);
+            }
+        }
     }
 
     pending_.clear();

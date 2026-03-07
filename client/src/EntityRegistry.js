@@ -128,6 +128,7 @@ export class EntityRegistry {
    * @param {number} offset Byte offset to start of entity section (entity count int32)
    * @param {number} entitySectionSize Size of entity section in bytes
    * @param {number} messageTick Server tick from message header
+   * @returns {number} Number of entities parsed
    */
   applySnapshotEntities(chunkId, view, offset, entitySectionSize, messageTick) {
     // Remove existing members of this chunk
@@ -143,7 +144,7 @@ export class EntityRegistry {
     }
 
     if (entitySectionSize < 4) {
-      return
+      return 0
     }
 
     const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
@@ -178,6 +179,7 @@ export class EntityRegistry {
       this.#entities.set(id, entity)
       members.add(id)
     }
+    return count
   }
 
   /**
@@ -187,6 +189,7 @@ export class EntityRegistry {
    * @param {ChunkIdPacked} chunkId
    * @param {BufReader} reader Positioned at entity count
    * @param {number} messageTick Server tick from message header
+   * @returns {number} Number of entity deltas parsed
    */
   applyDeltaEntities(chunkId, reader, messageTick) {
     const count = reader.readInt32()
@@ -234,6 +237,7 @@ export class EntityRegistry {
         entity.applyDelta(reader, messageTick)
       }
     }
+    return count
   }
 
   /**
