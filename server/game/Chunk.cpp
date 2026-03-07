@@ -173,9 +173,7 @@ bool Chunk::buildDeltaImpl(
     const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
     uint8_t DirtyComponent::* flagsField,
     ServerMessageType rawType,
-    ServerMessageType compressedType,
-    bool clearSnapshot,
-    bool clearTick)
+    ServerMessageType compressedType)
 {
     // Early exit: nothing to send
     if (voxelDeltas.empty()) {
@@ -266,9 +264,8 @@ bool Chunk::buildDeltaImpl(
                 reg.get<SheepBehaviorComponent>(ent).serializeFields(w);
             ++entityCount;
 
-            // Clear dirty flags after successful serialization
-            if (clearSnapshot) dirty.clearSnapshot();
-            if (clearTick) dirty.clearTick();
+            // Note: Dirty flags are cleared centrally in GameEngine::clearAllDirtyFlags()
+            // after all serialization is complete for the tick.
         }
     }
     std::memcpy(staging.data() + entityCountOff, &entityCount, sizeof(int32_t));
@@ -297,9 +294,7 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
         world.voxelsSnapshotDeltas,
         &DirtyComponent::snapshotDirtyFlags,
         ServerMessageType::CHUNK_SNAPSHOT_DELTA,
-        ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED,
-        true,   // clearSnapshot
-        true);  // clearTick
+        ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED);
 }
 
 // ── Tick delta ────────────────────────────────────────────────────────────
@@ -310,9 +305,7 @@ bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
         world.voxelsTickDeltas,
         &DirtyComponent::tickDirtyFlags,
         ServerMessageType::CHUNK_TICK_DELTA,
-        ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED,
-        false,  // clearSnapshot
-        true);  // clearTick
+        ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED);
 }
 
 // ── State update ───────────────────────────────────────────────────────────

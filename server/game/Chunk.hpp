@@ -144,8 +144,9 @@ private:
      * @param flagsField     Pointer-to-member selecting snapshotDirtyFlags or tickDirtyFlags.
      * @param rawType        Message type written into the header (uncompressed variant).
      * @param compressedType Message type to use if LZ4 compression is applied.
-     * @param clearSnapshot  If true, clear snapshotDirtyFlags after serializing.
-     * @param clearTick      If true, clear tickDirtyFlags after serializing.
+     *
+     * Note: Dirty flags are NOT cleared by this function. They are cleared centrally
+     * by GameEngine::clearAllDirtyFlags() after all serialization is complete.
      */
     bool buildDeltaImpl(
         entt::registry& reg,
@@ -153,9 +154,7 @@ private:
         const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
         uint8_t DirtyComponent::* flagsField,
         ServerMessageType rawType,
-        ServerMessageType compressedType,
-        bool clearSnapshot,
-        bool clearTick);
+        ServerMessageType compressedType);
 };
 
 } // namespace voxelmmo

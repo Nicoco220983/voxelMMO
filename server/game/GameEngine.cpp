@@ -6,6 +6,7 @@
 #include "game/components/PendingDeleteComponent.hpp"
 #include "common/MessageTypes.hpp"
 #include "game/components/PlayerComponent.hpp"
+#include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
@@ -38,6 +39,10 @@ uint32_t GameEngine::generateRandomSeed() {
 
 void GameEngine::setOutputCallback(OutputCallback cb) {
     outputCallback = std::move(cb);
+}
+
+void GameEngine::setPlayerOutputCallback(PlayerOutputCallback cb) {
+    playerOutputCallback = std::move(cb);
 }
 
 // ── Player input ──────────────────────────────────────────────────────────
@@ -194,17 +199,6 @@ void GameEngine::serializeChunks() {
             outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
 
-    // Clear both snapshot-level and tick-level dirty state and hasNewDelta flags
-    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        chunkPtr->state.hasNewDelta = false;
-        chunkPtr->world.clearSnapshotDelta();
-        chunkPtr->world.clearTickDelta();
-        for (auto ent : chunkPtr->entities) {
-            auto& dirty = registry.get<DirtyComponent>(ent);
-            dirty.clearSnapshot();
-            dirty.clearTick();
-        }
-    }
 }
 
 // ── Physics ───────────────────────────────────────────────────────────────
@@ -254,11 +248,62 @@ void GameEngine::tick() {
     auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
         gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
 
+    // Send SELF_ENTITY messages to newly created players (before serializeChunks)
+    sendSelfEntityMessages();
+
     // Send state updates to clients
     serializeChunks();
+
+    // Clear all dirty flags after serialization
+    clearAllDirtyFlags();
     
     // Entities in pendingDeletions will be destroyed at the start of next tick
     // This ensures their DELETE deltas have been sent
+}
+
+// ── Self Entity Messages ──────────────────────────────────────────────────
+
+void GameEngine::sendSelfEntityMessages() {
+    if (!playerOutputCallback) return;
+
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
+
+    // Find all player entities that were created this tick
+    auto view = registry.view<DirtyComponent, PlayerComponent, GlobalEntityIdComponent>();
+    for (auto ent : view) {
+        auto& dirty = view.get<DirtyComponent>(ent);
+        if (!dirty.isCreated()) continue;
+
+        const auto& player = view.get<PlayerComponent>(ent);
+        const auto& globalId = view.get<GlobalEntityIdComponent>(ent);
+
+        // Build and send SELF_ENTITY message
+        auto msg = NetworkProtocol::buildSelfEntityMessage(globalId.id, tick);
+        playerOutputCallback(player.playerId, msg.data(), msg.size());
+
+        // Clear CREATED_BIT so SELF_ENTITY is not sent again on next tick
+        // Other dirty flags are preserved for chunk serialization
+        dirty.snapshotDirtyFlags &= ~DirtyComponent::CREATED_BIT;
+    }
+}
+
+// ── Dirty Flags Clearing ───────────────────────────────────────────────────
+
+void GameEngine::clearAllDirtyFlags() {
+    // Clear chunk-level state
+    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        chunkPtr->state.hasNewDelta = false;
+        chunkPtr->world.clearSnapshotDelta();
+        chunkPtr->world.clearTickDelta();
+    }
+
+    // Clear entity dirty flags for all entities in registry
+    auto view = registry.view<DirtyComponent>();
+    for (auto ent : view) {
+        auto& dirty = view.get<DirtyComponent>(ent);
+        dirty.clearSnapshot();
+        dirty.clearTick();
+    }
 }
 
 } // namespace voxelmmo

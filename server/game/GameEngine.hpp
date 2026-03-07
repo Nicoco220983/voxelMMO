@@ -152,6 +152,16 @@ public:
     void setOutputCallback(OutputCallback cb);
 
     /**
+     * @brief Callback invoked for player-specific messages (e.g., SELF_ENTITY).
+     *
+     * Unlike broadcast messages, these are sent to a single player only.
+     * Signature: (PlayerId, data*, size)
+     */
+    using PlayerOutputCallback = std::function<void(PlayerId, const uint8_t*, size_t)>;
+
+    void setPlayerOutputCallback(PlayerOutputCallback cb);
+
+    /**
      * @brief Force-send a full snapshot for all watched chunks of a gateway.
      * Use when a player first joins, after a reconnect, or on acknowledgement.
      * @param gwId  Target gateway.
@@ -192,6 +202,7 @@ private:
     int32_t  tickCount{0};
 
     OutputCallback outputCallback;
+    PlayerOutputCallback playerOutputCallback;
 
     /**
      * @brief Serialises all public API access between the game-loop thread and
@@ -231,6 +242,23 @@ private:
      * Then dispatches new deltas to all watching gateways.
      */
     void serializeChunks();
+
+    /**
+     * @brief Send SELF_ENTITY messages to newly created players.
+     *
+     * Finds entities with DirtyComponent::isCreated() and PlayerComponent,
+     * builds SELF_ENTITY message for each, and sends via playerOutputCallback.
+     * Called before serializeChunks() in tick().
+     */
+    void sendSelfEntityMessages();
+
+    /**
+     * @brief Clear all dirty flags after serialization.
+     *
+     * Clears snapshot and tick dirty flags for all entities, and voxel deltas
+     * for all chunks. Called at the end of tick() after all serialization.
+     */
+    void clearAllDirtyFlags();
 
     /**
      * @brief Step physics simulation for all entities.

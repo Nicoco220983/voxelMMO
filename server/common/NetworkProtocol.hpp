@@ -72,19 +72,22 @@ inline std::optional<JoinMessage> parseJoin(const uint8_t* data, size_t size) {
 // ── Server → Client (serialization) ──────────────────────────────────────
 
 /**
- * @brief Build a SELF_ENTITY message (21 bytes).
- * Wire: type(1) + size(2) + GlobalEntityId uint32LE(4) + ChunkId int64LE(8) + tick uint32LE(4).
+ * @brief Build a SELF_ENTITY message (13 bytes).
+ * Wire: type(1) + size(2) + GlobalEntityId uint32LE(4) + tick uint32LE(4) + reserved uint32LE(4).
+ * The reserved field is for future use (e.g., player flags); clients must ignore it.
  */
-inline std::array<uint8_t, 21> buildSelfEntityMessage(
-    GlobalEntityId entityId, const ChunkId& chunkId, uint32_t tick)
+inline std::array<uint8_t, 13> buildSelfEntityMessage(
+    GlobalEntityId entityId, uint32_t tick)
 {
-    std::array<uint8_t, 21> msg;
+    std::array<uint8_t, 13> msg;
     msg[0] = static_cast<uint8_t>(ServerMessageType::SELF_ENTITY);
-    msg[1] = 21;  // size low byte
+    msg[1] = 13;  // size low byte
     msg[2] = 0;   // size high byte
     std::memcpy(msg.data() + 3, &entityId, sizeof(uint32_t));
-    std::memcpy(msg.data() + 7, &chunkId.packed, 8);
-    std::memcpy(msg.data() + 15, &tick, sizeof(uint32_t));
+    std::memcpy(msg.data() + 7, &tick, sizeof(uint32_t));
+    // bytes 11-14: reserved for future use (flags, etc.)
+    msg[11] = 0;
+    msg[12] = 0;
     return msg;
 }
 

@@ -161,21 +161,18 @@ export class NetworkProtocol {
 
   /**
    * Parse a SELF_ENTITY message.
-   * Wire: type(1) + size(2) + GlobalEntityId uint32LE(4) + ChunkId int64LE(8) + tick uint32LE(4).
+   * Wire: type(1) + size(2) + GlobalEntityId uint32LE(4) + tick uint32LE(4) + reserved uint32LE(4).
    * @param {DataView} view
-   * @returns {{ entityId: number, chunkId: bigint, tick: number, cx: number, cy: number, cz: number } | null}
+   * @returns {{ entityId: number, tick: number } | null}
    *   null if the message is not a valid SELF_ENTITY.
    */
   static parseSelfEntity(view) {
-    if (view.byteLength < 21) return null
+    if (view.byteLength < 13) return null
     const msgType = view.getUint8(0)
     if (msgType !== ServerMessageType.SELF_ENTITY) return null
     const entityId = view.getUint32(3, true)
-    const chunkId  = view.getBigInt64(7, true)
-    const tick     = view.getUint32(15, true)
-    const cy = Number(BigInt.asIntN(6,  chunkId >> 58n))
-    const cx = Number(BigInt.asIntN(29, chunkId >> 29n))
-    const cz = Number(BigInt.asIntN(29, chunkId))
-    return { entityId, chunkId, tick, cx, cy, cz }
+    const tick     = view.getUint32(7, true)
+    // bytes 11-14: reserved for future use, ignored
+    return { entityId, tick }
   }
 }

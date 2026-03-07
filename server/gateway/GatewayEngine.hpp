@@ -47,6 +47,19 @@ public:
     void receiveGameBatch(const uint8_t* data, size_t size);
 
     /**
+     * @brief Deliver a player-specific message from the game engine.
+     *
+     * Unlike receiveGameBatch(), this sends the message to a single player only.
+     * Used for SELF_ENTITY messages and other player-specific notifications.
+     * Safe to call from any thread; defers to the uWS event loop internally.
+     *
+     * @param playerId  Target player.
+     * @param data      Message bytes (caller owns; copied immediately).
+     * @param size      Message byte count.
+     */
+    void receivePlayerMessage(PlayerId playerId, const uint8_t* data, size_t size);
+
+    /**
      * @brief Start listening for WebSocket connections. Blocks until stopped.
      * @param port  TCP port to bind to (e.g. 8080).
      */
@@ -99,6 +112,13 @@ private:
      * Must be called from the uWS event loop thread.
      */
     void broadcastBatch(const uint8_t* data, size_t size);
+
+    /**
+     * @brief Send a message to a specific player.
+     * Must be called from the uWS event loop thread.
+     * @return true if player was connected and message was sent.
+     */
+    bool sendToPlayer(PlayerId playerId, const uint8_t* data, size_t size);
 };
 
 } // namespace voxelmmo

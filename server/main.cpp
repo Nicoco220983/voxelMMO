@@ -75,6 +75,11 @@ int main(int argc, char* argv[]) {
             gateway.receiveGameBatch(data, size);
         });
 
+    game.setPlayerOutputCallback(
+        [&](voxelmmo::PlayerId pid, const uint8_t* data, size_t size) {
+            gateway.receivePlayerMessage(pid, data, size);
+        });
+
     // ── Wire GatewayEngine → GameEngine ────────────────────────────────────
     game.registerGateway(0);
 

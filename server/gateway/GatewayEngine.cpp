@@ -37,11 +37,28 @@ void GatewayEngine::receiveGameBatch(const uint8_t* data, size_t size) {
     });
 }
 
+void GatewayEngine::receivePlayerMessage(PlayerId playerId, const uint8_t* data, size_t size) {
+    // Copy the message so it can be safely captured across the thread boundary
+    auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
+
+    uwsLoop->defer([this, playerId, buf]() {
+        sendToPlayer(playerId, buf->data(), buf->size());
+    });
+}
+
 void GatewayEngine::broadcastBatch(const uint8_t* data, size_t size) {
     const std::string_view msg(reinterpret_cast<const char*>(data), size);
     for (auto& [pid, ws] : sockets) {
         ws->send(msg, uWS::OpCode::BINARY);
     }
+}
+
+bool GatewayEngine::sendToPlayer(PlayerId playerId, const uint8_t* data, size_t size) {
+    auto it = sockets.find(playerId);
+    if (it == sockets.end()) return false;
+    const std::string_view msg(reinterpret_cast<const char*>(data), size);
+    it->second->send(msg, uWS::OpCode::BINARY);
+    return true;
 }
 
 // ── WebSocket server ──────────────────────────────────────────────────────

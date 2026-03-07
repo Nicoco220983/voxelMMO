@@ -105,10 +105,10 @@ GlobalEntityId uint32  (stable across chunk moves and server lifetime)
 Sent once when player connects. Contains the player's global entity ID.
 
 ```
-[3-byte universal header: type=6, size=21]
+[3-byte universal header: type=6, size=13]
 GlobalEntityId uint32   (player's stable entity ID)
-int64          ChunkId  (packed, player's initial chunk)
 uint32         tick     (server tick at spawn)
+uint32         reserved (must be ignored by clients)
 ```
 
 ## DynamicPositionComponent fields (when POSITION_BIT set)
