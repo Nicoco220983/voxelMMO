@@ -87,24 +87,19 @@ inline void apply(entt::registry& reg, uint32_t currentTick) {
                         behavior.yaw,
                         /*dirty=*/true);
                 } else {
-                    // Set velocity toward target
+                    // Set velocity toward target (no dirty marking during walking)
                     const float dist = std::sqrt(static_cast<float>(distSq));
                     const int32_t vx = static_cast<int32_t>((dx / dist) * SheepEntity::SHEEP_WALK_SPEED);
                     const int32_t vz = static_cast<int32_t>((dz / dist) * SheepEntity::SHEEP_WALK_SPEED);
                     
-                    // Update yaw to face movement direction
-                    const float newYaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
+                    // Update yaw to face movement direction (naive: don't mark dirty, client can interpolate)
+                    behavior.yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
                     
                     DynamicPositionComponent::modify(reg, ent,
                         dyn.x, dyn.y, dyn.z,
                         vx, dyn.vy, vz,
                         dyn.grounded,
                         /*dirty=*/false);  // Position dirty bit handled by physics
-                    
-                    if (std::abs(newYaw - behavior.yaw) > 0.01f) {
-                        behavior.yaw = newYaw;
-                        reg.get<DirtyComponent>(ent).mark(SHEEP_BEHAVIOR_BIT);
-                    }
                 }
             }
         }
