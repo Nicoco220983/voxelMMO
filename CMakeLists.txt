@@ -43,10 +43,15 @@ target_compile_options(voxelmmo PRIVATE
 find_package(Catch2 3 CONFIG REQUIRED)
 
 add_executable(voxelmmo_tests
+    # Test utilities
+    tests/server/TestUtils.cpp
+    # Test files
     tests/server/test_world_gen.cpp
-    tests/server/test_serialization.cpp
-    tests/server/test_chunk_streaming.cpp
+    tests/server/test_network_protocol.cpp
+    tests/server/test_components.cpp
     tests/server/test_physics.cpp
+    tests/server/test_game_engine.cpp
+    # Server implementation files
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
@@ -58,7 +63,7 @@ add_executable(voxelmmo_tests
     server/game/entities/SheepEntity.cpp
 )
 
-target_include_directories(voxelmmo_tests PRIVATE server/)
+target_include_directories(voxelmmo_tests PRIVATE server/ tests/server/)
 
 target_link_libraries(voxelmmo_tests PRIVATE
     Catch2::Catch2WithMain

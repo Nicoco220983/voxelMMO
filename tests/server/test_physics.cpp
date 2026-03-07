@@ -1,333 +1,250 @@
 #include <catch2/catch_test_macros.hpp>
-#include "game/GameEngine.hpp"
+#include "TestUtils.hpp"
+#include "game/systems/PhysicsSystem.hpp"
 #include "common/Types.hpp"
-#include "common/MessageTypes.hpp"
-#include "game/components/DynamicPositionComponent.hpp"
-
-#include <array>
-#include <cstring>
-#include <vector>
+#include "common/VoxelTypes.hpp"
 
 using namespace voxelmmo;
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// ── PhysicsTestEnv Tests ─────────────────────────────────────────────────────
 
-/** Build a 13-byte INPUT message: [type(1)][size(2)][buttons(1)][yaw(4)][pitch(4)]. */
-static std::array<uint8_t, 13> makeInput(uint8_t buttons = 0,
-                                          float yaw = 0.0f,
-                                          float pitch = 0.0f)
-{
-    std::array<uint8_t, 13> buf{};
-    buf[0] = static_cast<uint8_t>(ClientMessageType::INPUT);
-    buf[1] = 13;  // size low byte
-    buf[2] = 0;   // size high byte
-    buf[3] = buttons;
-    std::memcpy(buf.data() + 4, &yaw,   sizeof(float));
-    std::memcpy(buf.data() + 8, &pitch, sizeof(float));
-    return buf;
+TEST_CASE("PhysicsTestEnv creates flat ground", "[physics]") {
+    PhysicsTestEnv env(10);  // Ground at y=10
+    
+    // Check ground exists
+    auto* chunk = env.chunks.getChunk(ChunkId::make(0, 0, 0));
+    REQUIRE(chunk != nullptr);
+    
+    // Ground should be stone
+    CHECK(chunk->world.getVoxel(0, 10, 0) == VoxelTypes::STONE);
+    // Above should be air
+    CHECK(chunk->world.getVoxel(0, 11, 0) == VoxelTypes::AIR);
 }
 
-/** Entity state parsed from a TICK_DELTA entity section. */
-struct ParsedEntity {
-    uint32_t id{};       // GlobalEntityId (uint32, was uint16)
-    uint8_t  type{};
-    int32_t  x{}, y{}, z{};
-    int32_t  vx{}, vy{}, vz{};
-    bool     grounded{};
-};
+// ── GHOST Physics Tests ───────────────────────────────────────────────────────
 
-/**
- * Parse entities from the payload of an uncompressed TICK_DELTA message.
- * Layout (after the 15-byte header: [type(1)][size(2)][chunk_id(8)][tick(4)]):
- *   int32 voxel_count
- *   repeat: VoxelId(2) + VoxelType(1)
- *   int32 entity_count
- *   repeat: DeltaType(1) + GlobalEntityId(4) + EntityType(1) + Flags(1) + [fields]
- */
-static std::vector<ParsedEntity> parseTickDeltaEntities(const uint8_t* msg, size_t len)
-{
-    std::vector<ParsedEntity> result;
-    if (len < 15) return result;
+TEST_CASE("GHOST entity moves freely through ground", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    // Spawn ghost below ground
+    auto ent = env.spawnEntity(128, 256 * 5, 128, PhysicsMode::GHOST);
+    env.setVelocity(ent, 0, -1000, 0);  // Moving down fast
+    
+    env.tick(10);
+    
+    auto* pos = env.getPosition(ent);
+    REQUIRE(pos->y < 256 * 10);  // Passed through ground
+    REQUIRE(pos->grounded == true);  // Ghost always reports grounded
+}
 
-    // Skip 15-byte header
-    const uint8_t* p   = msg + 15;
-    const uint8_t* end = msg + len;
+TEST_CASE("GHOST entity with zero velocity doesn't move", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(128, 1000, 128, PhysicsMode::GHOST);
+    env.setVelocity(ent, 0, 0, 0);
+    
+    env.tick(10);
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->x == 128);
+    CHECK(pos->y == 1000);
+    CHECK(pos->z == 128);
+}
 
-    if (p + 4 > end) return result;
-    int32_t voxelCount = 0;
-    std::memcpy(&voxelCount, p, 4); p += 4;
-    p += static_cast<ptrdiff_t>(voxelCount) * 3;  // VoxelId(2)+VoxelType(1)
+TEST_CASE("GHOST entity moves at constant velocity", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(0, 0, 0, PhysicsMode::GHOST);
+    env.setVelocity(ent, 10, 20, 30);
+    
+    env.tick(5);
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->x == 50);   // 10 * 5
+    CHECK(pos->y == 100);  // 20 * 5
+    CHECK(pos->z == 150);  // 30 * 5
+    CHECK(pos->vx == 10);  // Unchanged
+    CHECK(pos->vy == 20);
+    CHECK(pos->vz == 30);
+}
 
-    if (p + 4 > end) return result;
-    int32_t entityCount = 0;
-    std::memcpy(&entityCount, p, 4); p += 4;
+// ── FULL Physics Tests ────────────────────────────────────────────────────────
 
-    for (int i = 0; i < entityCount && p < end; ++i) {
-        if (p + 7 > end) break;
-        /* uint8_t  deltaType = */ ++p;  // skip DeltaType
-        uint32_t entityId = 0;
-        std::memcpy(&entityId, p, 4); p += 4;  // GlobalEntityId is uint32
-        uint8_t entityType = *p++;
-        uint8_t flags      = *p++;
+TEST_CASE("FULL entity falls due to gravity", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    // Spawn well above ground
+    int32_t startY = 256 * 15;  // y=15, ground is at y=10
+    auto ent = env.spawnEntity(128, startY, 128, PhysicsMode::FULL);
+    
+    env.tick(1);
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->vy < 0);     // Moving down (gravity applied)
+    CHECK(pos->y < startY); // Fell
+}
 
-        if ((flags & POSITION_BIT) == 0 || p + 25 > end) continue;
-        ParsedEntity e{};
-        e.id   = entityId;
-        e.type = entityType;
-        std::memcpy(&e.x,  p,      4);
-        std::memcpy(&e.y,  p + 4,  4);
-        std::memcpy(&e.z,  p + 8,  4);
-        std::memcpy(&e.vx, p + 12, 4);
-        std::memcpy(&e.vy, p + 16, 4);
-        std::memcpy(&e.vz, p + 20, 4);
-        e.grounded = p[24] != 0;
-        p += 25;
-        result.push_back(e);
+TEST_CASE("FULL entity lands on ground", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    // Spawn above ground (ground is at y=2560, player bbox hy=~230)
+    int32_t spawnY = 256 * 15;
+    auto ent = env.spawnEntity(128, spawnY, 128, PhysicsMode::FULL);
+    
+    // Fall until grounded
+    for (int i = 0; i < 200; ++i) {
+        env.tick(1);
+        if (env.getPosition(ent)->grounded) break;
     }
-    return result;
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->grounded == true);
+    CHECK(pos->vy == 0);  // Stopped falling
+    CHECK(pos->y >= 256 * 10 + PLAYER_BBOX_HY);  // Resting on ground
 }
 
-/**
- * Collect parsed entities from all uncompressed TICK_DELTA or SNAPSHOT_DELTA
- * messages in a length-prefixed batch.  Compressed variants are skipped (they
- * only appear for large payloads that won't occur in unit tests).
- */
-static std::vector<ParsedEntity> collectFromBatch(const uint8_t* data, size_t size)
-{
-    std::vector<ParsedEntity> result;
-    size_t off = 0;
-    while (off + 4 <= size) {
-        uint32_t msgLen = 0;
-        std::memcpy(&msgLen, data + off, 4); off += 4;
-        if (off + msgLen > size) break;
+TEST_CASE("FULL entity has terminal velocity", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(0, 100000, 0, PhysicsMode::FULL);
+    
+    // Fall for many ticks
+    env.tick(200);
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->vy >= -TERMINAL_VELOCITY);
+}
 
-        const uint8_t* msg = data + off;
-        if (msgLen >= 15) {
-            const auto t = msg[0];
-            if (t == static_cast<uint8_t>(ServerMessageType::CHUNK_TICK_DELTA) ||
-                t == static_cast<uint8_t>(ServerMessageType::CHUNK_SNAPSHOT_DELTA))
-            {
-                auto ents = parseTickDeltaEntities(msg, msgLen);
-                result.insert(result.end(), ents.begin(), ents.end());
-            }
-        }
-        off += msgLen;
+TEST_CASE("FULL entity stops at ground", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    // Spawn on ground
+    int32_t groundY = 256 * 10 + PLAYER_BBOX_HY;
+    auto ent = env.spawnEntity(128, groundY + 500, 128, PhysicsMode::FULL);
+    
+    // Clear any velocity, let gravity do its work
+    env.setVelocity(ent, 0, 0, 0);
+    
+    // Wait to land
+    for (int i = 0; i < 100; ++i) {
+        env.tick();
+        if (env.getPosition(ent)->grounded) break;
     }
-    return result;
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->grounded);
+    CHECK(pos->vy == 0);  // Velocity zeroed on landing
 }
 
-// ── GHOST physics ──────────────────────────────────────────────────────────
-
-TEST_CASE("stepPhysics - GHOST player at rest produces no tick-delta entity update",
-          "[physics][ghost]")
-{
-    GameEngine engine;
-    engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0, 8 * SUBVOXEL_SIZE, 0);  // GHOST_PLAYER by default
-
-    std::vector<ParsedEntity> states;
-    engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
-        auto s = collectFromBatch(data, size);
-        states.insert(states.end(), s.begin(), s.end());
-    });
-
-    // Zero input → velocity stays 0 → InputSystem does not mark dirty
-    const auto input = makeInput(0);
-    engine.handlePlayerInput(1, input.data(), input.size());
-
-    states.clear();
-    engine.tick();
-
-    // GHOST with vx=vy=vz=0 is skipped by stepPhysics; no dirty flag → no entity delta.
-    REQUIRE(states.empty());
+TEST_CASE("FULL entity maintains horizontal velocity in air", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(128, 5000, 128, PhysicsMode::FULL);
+    env.setVelocity(ent, 50, 0, 0);
+    
+    env.tick(10);
+    
+    auto* pos = env.getPosition(ent);
+    // Horizontal velocity preserved (no friction in air)
+    CHECK(pos->vx == 50);
 }
 
-TEST_CASE("stepPhysics - GHOST player moves forward one tick (yaw=0)",
-          "[physics][ghost]")
-{
-    GameEngine engine;
-    engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0, 8 * SUBVOXEL_SIZE, 0);
+// ── FLYING Physics Tests ──────────────────────────────────────────────────────
 
-    std::vector<ParsedEntity> states;
-    engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
-        auto s = collectFromBatch(data, size);
-        states.insert(states.end(), s.begin(), s.end());
-    });
-
-    // Warmup tick 0 (tickCount % SNAPSHOT_DELTA_INTERVAL == 0 → snapshotDelta).
-    // Zero input ensures no dirty flag so no entity in the delta.
-    engine.handlePlayerInput(1, makeInput(0).data(), 10);
-    engine.tick();
-
-    // FORWARD at yaw=0, pitch=0:
-    //   InputSystem: dz += -cos(0)*cos(0) = -1, len=1, nvz = -GHOST_MOVE_SPEED = -256
-    // Tick 1 → tickDelta path (1 % 10 != 0).
-    const uint8_t fwd = static_cast<uint8_t>(InputButton::FORWARD);
-    engine.handlePlayerInput(1, makeInput(fwd, 0.0f, 0.0f).data(), 10);
-
-    states.clear();
-    engine.tick();
-
-    // Velocity changed → InputSystem marks dirty → tick delta contains entity update.
-    REQUIRE(!states.empty());
-    const ParsedEntity& e = states[0];
-
-    // After one tick: z = 0 + vz*1 = -GHOST_MOVE_SPEED sub-voxels
-    CHECK(e.vz == -static_cast<int32_t>(GHOST_MOVE_SPEED));
-    CHECK(e.z  == -static_cast<int32_t>(GHOST_MOVE_SPEED));
-    CHECK(e.vx == 0);
-    CHECK(e.x  == 0);
-    CHECK(e.grounded == true);  // GHOST always grounded
+TEST_CASE("FLYING entity has no gravity", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(128, 5000, 128, PhysicsMode::FLYING);
+    env.setVelocity(ent, 0, 0, 0);
+    
+    env.tick(50);
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->y == 5000);  // Didn't fall
+    CHECK(pos->grounded == false);  // Never grounded
 }
 
-TEST_CASE("stepPhysics - GHOST player moves diagonally (yaw=0 FORWARD+RIGHT)",
-          "[physics][ghost]")
-{
-    GameEngine engine;
-    engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0, 8 * SUBVOXEL_SIZE, 0);
-
-    std::vector<ParsedEntity> states;
-    engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
-        auto s = collectFromBatch(data, size);
-        states.insert(states.end(), s.begin(), s.end());
-    });
-
-    // Warmup tick 0.
-    engine.handlePlayerInput(1, makeInput(0).data(), 10);
-    engine.tick();
-
-    // FORWARD + RIGHT at yaw=0, pitch=0:
-    //   dz += -cos(0)*cos(0) = -1  (FORWARD)
-    //   dx += cos(0) = +1           (RIGHT)
-    //   len = sqrt(2), nvx = round(1/sqrt(2)*256), nvz = round(-1/sqrt(2)*256)
-    const uint8_t btns = static_cast<uint8_t>(InputButton::FORWARD)
-                       | static_cast<uint8_t>(InputButton::RIGHT);
-    engine.handlePlayerInput(1, makeInput(btns, 0.0f, 0.0f).data(), 10);
-
-    states.clear();
-    engine.tick();
-
-    REQUIRE(!states.empty());
-    const ParsedEntity& e = states[0];
-
-    // Both axes must be non-zero and magnitude must equal GHOST_MOVE_SPEED
-    const double speed = std::sqrt(static_cast<double>(e.vx) * e.vx +
-                                   static_cast<double>(e.vz) * e.vz);
-    CHECK(e.vx > 0);
-    CHECK(e.vz < 0);
-    // Speed should be within 1 sub-voxel of GHOST_MOVE_SPEED (rounding in int cast)
-    CHECK(speed >= GHOST_MOVE_SPEED - 1);
-    CHECK(speed <= GHOST_MOVE_SPEED + 1);
-    CHECK(e.grounded == true);
+TEST_CASE("FLYING entity collides with ground", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(128, 256 * 12, 128, PhysicsMode::FLYING);
+    env.setVelocity(ent, 0, -500, 0);  // Moving down
+    
+    env.tick(20);
+    
+    auto* pos = env.getPosition(ent);
+    // Should have hit ground and stopped
+    CHECK(pos->y >= 256 * 10 + PLAYER_BBOX_HY);
+    CHECK(pos->grounded == false);  // Flying never grounded
 }
 
-// ── FULL physics ───────────────────────────────────────────────────────────
-
-TEST_CASE("stepPhysics - FULL player falls silently (no delta while airborne, no collision)",
-          "[physics][full]")
-{
-    GameEngine engine;
-    engine.registerGateway(1);
-    // Spawn high above any terrain; cy ≈ 6 (y=100 voxels → 100/16=6.25)
-    engine.addPlayer(1, 1, 0, 100 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
-
-    std::vector<ParsedEntity> states;
-    engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
-        auto s = collectFromBatch(data, size);
-        states.insert(states.end(), s.begin(), s.end());
-    });
-
-    const auto zeroInput = makeInput(0);
-    engine.handlePlayerInput(1, zeroInput.data(), zeroInput.size());
-
-    // First tick: vy goes 0 → -GRAVITY_DECREMENT = -6.
-    // grounded does not change (false → false), no horizontal collision → no dirty.
-    states.clear();
-    engine.tick();
-    // Client predicts correctly via the same gravity formula — no delta needed.
-    REQUIRE(states.empty());
+TEST_CASE("FLYING entity preserves velocity on no collision", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(128, 5000, 128, PhysicsMode::FLYING);
+    env.setVelocity(ent, 30, 40, 50);
+    
+    env.tick(5);
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->vx == 30);  // Unchanged
+    CHECK(pos->vy == 40);
+    CHECK(pos->vz == 50);
 }
 
-TEST_CASE("stepPhysics - FULL player eventually lands and becomes grounded",
-          "[physics][full]")
-{
-    GameEngine engine;
-    engine.registerGateway(1);
-    engine.addPlayer(1, 1, 0, 100 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
+// ── Collision Tests ───────────────────────────────────────────────────────────
 
-    std::vector<ParsedEntity> states;
-    engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
-        auto s = collectFromBatch(data, size);
-        states.insert(states.end(), s.begin(), s.end());
-    });
+TEST_CASE("Entity doesn't fall through thin floor", "[physics]") {
+    PhysicsTestEnv env(0);  // Ground at y=0
+    
+    auto ent = env.spawnEntity(128, 300, 128, PhysicsMode::FULL);
+    
+    env.tick(100);
+    
+    auto* pos = env.getPosition(ent);
+    CHECK(pos->y >= PLAYER_BBOX_HY);  // Didn't fall through
+    CHECK(pos->grounded);
+}
 
-    const auto zeroInput = makeInput(0);
-    engine.handlePlayerInput(1, zeroInput.data(), zeroInput.size());
-
-    // Run until grounded delta is received or we time out (200 ticks ≈ 10 s).
-    bool landed = false;
-    for (int t = 0; t < 200 && !landed; ++t) {
-        states.clear();
-        engine.tick();
-        for (const auto& e : states) {
-            if (e.grounded) { landed = true; break; }
+TEST_CASE("Entity collides with ceiling", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    auto ent = env.spawnEntity(128, 256 * 12, 128, PhysicsMode::FLYING);
+    // Create ceiling above
+    auto* chunk = env.chunks.getChunkMutable(ChunkId::make(0, 0, 0));
+    for (int x = 0; x < CHUNK_SIZE_X; ++x) {
+        for (int z = 0; z < CHUNK_SIZE_Z; ++z) {
+            chunk->world.voxels[20 * CHUNK_SIZE_X * CHUNK_SIZE_Z + x * CHUNK_SIZE_Z + z] = VoxelTypes::STONE;
         }
     }
-
-    REQUIRE(landed);
-
-    // On landing: vy is zeroed and grounded = true.
-    const auto it = std::find_if(states.begin(), states.end(),
-                                 [](const ParsedEntity& e) { return e.grounded; });
-    REQUIRE(it != states.end());
-    CHECK(it->vy == 0);
-    // Y position should be above 0 (landed on terrain, not fallen through the world)
-    CHECK(it->y > 0);
+    
+    env.setVelocity(ent, 0, 500, 0);  // Moving up fast
+    int32_t startY = env.getPosition(ent)->y;
+    
+    env.tick(10);
+    
+    auto* pos = env.getPosition(ent);
+    // Should have hit ceiling
+    CHECK(pos->y < startY + 500 * 10);  // Didn't go full distance
 }
 
-TEST_CASE("stepPhysics - FULL player jump impulse when grounded",
-          "[physics][full]")
-{
-    GameEngine engine;
-    engine.registerGateway(1);
-    // Spawn well above the terrain surface (terrain surface ≤ 30 voxels globally in cy=0).
-    // y=100 ensures the player is in free air and will land cleanly on terrain,
-    // regardless of random seed variations.
-    engine.addPlayer(1, 1, 0, 100 * SUBVOXEL_SIZE, 0, EntityType::PLAYER);
+// ── Integration with Chunk Membership ─────────────────────────────────────────
 
-    std::vector<ParsedEntity> states;
-    engine.setOutputCallback([&](GatewayId, const uint8_t* data, size_t size) {
-        auto s = collectFromBatch(data, size);
-        states.insert(states.end(), s.begin(), s.end());
-    });
-
-    // Let the player land first (falls ~80 voxels in ~100 ticks).
-    const auto zeroInput = makeInput(0);
-    engine.handlePlayerInput(1, zeroInput.data(), zeroInput.size());
-    for (int t = 0; t < 200; ++t) {
-        states.clear();
-        engine.tick();
-        bool gr = false;
-        for (const auto& e : states) if (e.grounded) { gr = true; break; }
-        if (gr) break;
-    }
-
-    // Now send JUMP input.
-    const uint8_t jumpBtn = static_cast<uint8_t>(InputButton::JUMP);
-    engine.handlePlayerInput(1, makeInput(jumpBtn).data(), 10);
-
-    states.clear();
-    engine.tick();
-
-    // Jump should produce an entity delta with positive vy (PLAYER_JUMP_VY)
-    // and grounded = false.
-    bool foundJump = false;
-    for (const auto& e : states) {
-        if (e.vy > 0) { foundJump = true; break; }
-    }
-    // Note: jump only fires when grounded. If the player landed in previous loop,
-    // foundJump must be true.
-    CHECK(foundJump);
+TEST_CASE("Entity moving between chunks updates membership", "[physics]") {
+    PhysicsTestEnv env(10);
+    
+    // Spawn at edge of chunk
+    int32_t edgeX = CHUNK_SIZE_X * SUBVOXEL_SIZE - 100;
+    auto ent = env.spawnEntity(edgeX, 256 * 12, 128, PhysicsMode::GHOST);
+    env.setVelocity(ent, 200, 0, 0);  // Moving toward next chunk
+    
+    ChunkId startChunk = chunkIdOf(edgeX, 256 * 12, 128);
+    
+    env.tick(10);
+    
+    auto* pos = env.getPosition(ent);
+    ChunkId endChunk = chunkIdOf(pos->x, pos->y, pos->z);
+    
+    // Should have moved to next chunk
+    CHECK(endChunk.x() == startChunk.x() + 1);
 }
