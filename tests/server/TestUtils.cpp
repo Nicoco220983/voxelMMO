@@ -7,6 +7,9 @@
 
 #include <cstring>
 #include <cmath>
+#include <fstream>
+#include <sstream>
+#include <cctype>
 
 namespace voxelmmo {
 
@@ -321,6 +324,82 @@ std::vector<std::vector<uint8_t>> findMessagesOfType(
             result.push_back(payload);
         }
     }
+    return result;
+}
+
+// ── Protocol Fixture Loaders ─────────────────────────────────────────────────
+
+std::filesystem::path getFixturesDirectory() {
+    // Try to find the fixtures directory relative to the test executable
+    // Common locations:
+    // 1. tests/protocol_fixtures/ (from build directory)
+    // 2. ../tests/protocol_fixtures/ (if running from tests/server/)
+    // 3. ../../tests/protocol_fixtures/ (if running from build/tests/)
+    
+    std::vector<std::filesystem::path> candidates = {
+        "tests/protocol_fixtures",
+        "../tests/protocol_fixtures",
+        "../../tests/protocol_fixtures",
+        "../../../tests/protocol_fixtures",
+    };
+    
+    for (const auto& candidate : candidates) {
+        if (std::filesystem::exists(candidate) && std::filesystem::is_directory(candidate)) {
+            return std::filesystem::absolute(candidate);
+        }
+    }
+    
+    // Fallback: use source directory if available via environment
+    if (const char* srcDir = std::getenv("VOXELMMO_SOURCE_DIR")) {
+        std::filesystem::path p = std::filesystem::path(srcDir) / "tests" / "protocol_fixtures";
+        if (std::filesystem::exists(p)) {
+            return p;
+        }
+    }
+    
+    // Last resort: assume current directory
+    return std::filesystem::absolute("tests/protocol_fixtures");
+}
+
+std::vector<uint8_t> loadHexFixture(const std::string& relativePath) {
+    std::filesystem::path filepath = getFixturesDirectory() / relativePath;
+    
+    std::ifstream file(filepath);
+    if (!file.is_open()) {
+        throw std::runtime_error("Cannot open fixture file: " + filepath.string());
+    }
+    
+    std::vector<uint8_t> result;
+    std::string line;
+    
+    while (std::getline(file, line)) {
+        // Skip empty lines and comments
+        if (line.empty() || line[0] == '#') {
+            continue;
+        }
+        
+        std::istringstream iss(line);
+        std::string hexByte;
+        
+        while (iss >> hexByte) {
+            // Skip comment start mid-line
+            if (hexByte[0] == '#') break;
+            
+            // Parse hex byte
+            if (hexByte.size() != 2) {
+                throw std::runtime_error("Invalid hex byte in " + filepath.string() + ": " + hexByte);
+            }
+            
+            char* endPtr;
+            unsigned long value = std::strtoul(hexByte.c_str(), &endPtr, 16);
+            if (*endPtr != '\0' || value > 0xFF) {
+                throw std::runtime_error("Invalid hex byte in " + filepath.string() + ": " + hexByte);
+            }
+            
+            result.push_back(static_cast<uint8_t>(value));
+        }
+    }
+    
     return result;
 }
 

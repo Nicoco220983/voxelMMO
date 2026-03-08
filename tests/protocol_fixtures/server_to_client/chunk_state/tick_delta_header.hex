@@ -1,0 +1,11 @@
+# CHUNK_TICK_DELTA message header
+# Wire format: [type(1)][size(2)][chunkId(8)][tick(4)][count(4)] = 19 bytes
+# Followed by count * [voxelId(2)][voxelType(1)] entries
+#
+# type=4 (ServerMessageType::CHUNK_TICK_DELTA)
+# size=19 (header + no entries since count=0)
+# chunkId=0 (packed sint6(y)|sint29(x)|sint29(z) = all zeros for chunk (0,0,0))
+# tick=42
+# count=0 (no voxel changes in this delta)
+#
+04 13 00 00 00 00 00 00 00 00 00 00 00 00 00 2a 00 00 00 00

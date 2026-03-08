@@ -1,0 +1,5 @@
+# SELF_ENTITY message: entityId=0xFFFFFFFF, tick=0xFFFFFFFF
+# entityId=max: 0xff 0xff 0xff 0xff (little-endian uint32)
+# tick=max: 0xff 0xff 0xff 0xff (little-endian uint32)
+# Wire format: [type(1)][size(2)][entityId(4)][tick(4)][reserved(2)] = 13 bytes
+06 0d 00 ff ff ff ff ff ff ff ff 00 00

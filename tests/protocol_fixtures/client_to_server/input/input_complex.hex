@@ -1,0 +1,6 @@
+# INPUT message: FORWARD+LEFT buttons, yaw=3.14159, pitch=-0.5
+# Buttons: FORWARD|LEFT = 0x01|0x04 = 0x05
+# yaw=3.14159 (~pi): 0xd0 0x0f 0x49 0x40 (little-endian float32)
+# pitch=-0.5: 0x00 0x00 0x00 0xbf (little-endian float32)
+# Wire format: [type(1)][size(2)][buttons(1)][yaw(4)][pitch(4)] = 13 bytes
+00 0d 00 05 d0 0f 49 40 00 00 00 bf 00

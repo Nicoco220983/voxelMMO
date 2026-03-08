@@ -21,6 +21,8 @@
 #include <unordered_map>
 #include <vector>
 #include <functional>
+#include <string>
+#include <filesystem>
 
 namespace voxelmmo {
 
@@ -296,6 +298,26 @@ std::vector<std::pair<uint8_t, std::vector<uint8_t>>> parseBatch(
 std::vector<std::vector<uint8_t>> findMessagesOfType(
     const std::vector<std::pair<uint8_t, std::vector<uint8_t>>>& batch,
     ServerMessageType type);
+
+// ── Protocol Fixture Loaders ─────────────────────────────────────────────────
+
+/**
+ * @brief Load a hex fixture file as raw bytes.
+ * 
+ * Hex files contain space-separated hex bytes, with # comments ignored.
+ * Files are loaded from tests/protocol_fixtures/ relative to project root.
+ * 
+ * @param relativePath Path relative to protocol_fixtures/ (e.g., "client_to_server/input/input_forward.hex")
+ * @return Vector of bytes parsed from the hex file
+ * @throws std::runtime_error if file not found or parse error
+ */
+std::vector<uint8_t> loadHexFixture(const std::string& relativePath);
+
+/**
+ * @brief Get the protocol fixtures directory path.
+ * @return Absolute path to tests/protocol_fixtures/
+ */
+std::filesystem::path getFixturesDirectory();
 
 /**
  * @brief Physics test environment for isolated physics testing.

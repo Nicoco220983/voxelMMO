@@ -48,6 +48,7 @@ add_executable(voxelmmo_tests
     # Test files
     tests/server/test_world_gen.cpp
     tests/server/test_network_protocol.cpp
+    tests/server/test_protocol_cross_platform.cpp
     tests/server/test_components.cpp
     tests/server/test_physics.cpp
     tests/server/test_game_engine.cpp

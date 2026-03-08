@@ -1,0 +1,13 @@
+# CHUNK_SNAPSHOT_COMPRESSED message header
+# Wire format: [type(1)][size(2)][chunkId(8)][tick(4)][flags(1)][compressed_voxel_size(4)]
+#             = 20 bytes header before voxel data and entity section
+#
+# type=1 (ServerMessageType::CHUNK_SNAPSHOT_COMPRESSED)
+# size=24 (header + 4 bytes for entity_section_size, no actual voxel/entity data)
+# chunkId=0 (packed sint6(y)|sint29(x)|sint29(z) = all zeros for chunk (0,0,0))
+# tick=1
+# flags=0 (entity section uncompressed)
+# compressed_voxel_size=0 (no voxel data)
+# entity_section_size=0 (no entity data)
+#
+01 18 00 00 00 00 00 00 00 00 00 00 00 00 00 01 00 00 00 00 00 00 00 00

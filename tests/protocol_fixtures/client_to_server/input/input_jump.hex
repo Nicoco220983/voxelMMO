@@ -1,0 +1,4 @@
+# INPUT message: JUMP button, yaw=0.0, pitch=0.0
+# Buttons: JUMP=1<<4 = 0x10
+# Wire format: [type(1)][size(2)][buttons(1)][yaw(4)][pitch(4)] = 13 bytes
+00 0d 00 10 00 00 00 00 00 00 00 00 00

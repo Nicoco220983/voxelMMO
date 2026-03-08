@@ -1,27 +1,68 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/catch_approx.hpp>
 #include "common/NetworkProtocol.hpp"
 #include "common/MessageTypes.hpp"
 #include "common/EntityType.hpp"
+#include "TestUtils.hpp"
+
+using Catch::Approx;
 
 using namespace voxelmmo;
 
 // ── parseInput Tests ─────────────────────────────────────────────────────────
 
 TEST_CASE("parseInput extracts buttons, yaw, pitch correctly", "[network]") {
-    uint8_t data[13] = {
-        static_cast<uint8_t>(ClientMessageType::INPUT),  // type
-        13, 0,                                           // size = 13
-        0x0F,                                            // buttons (forward+back+left+right)
-        0x00, 0x00, 0x80, 0x3F,                         // yaw = 1.0f (little-endian)
-        0x00, 0x00, 0x00, 0x40                          // pitch = 2.0f (little-endian)
-    };
+    auto data = loadHexFixture("client_to_server/input/input_all_buttons.hex");
     
-    auto msg = NetworkProtocol::parseInput(data, sizeof(data));
+    auto msg = NetworkProtocol::parseInput(data.data(), data.size());
     
     REQUIRE(msg.has_value());
-    CHECK(msg->buttons == 0x0F);
-    CHECK(msg->yaw == 1.0f);
-    CHECK(msg->pitch == 2.0f);
+    CHECK(msg->buttons == 0x3F);  // All buttons: 0x01|0x02|0x04|0x08|0x10|0x20
+    CHECK(msg->yaw == 0.0f);
+    CHECK(msg->pitch == 0.0f);
+}
+
+TEST_CASE("parseInput handles forward button from fixture", "[network]") {
+    auto data = loadHexFixture("client_to_server/input/input_forward.hex");
+    
+    auto msg = NetworkProtocol::parseInput(data.data(), data.size());
+    
+    REQUIRE(msg.has_value());
+    CHECK(msg->buttons == static_cast<uint8_t>(InputButton::FORWARD));
+    CHECK(msg->yaw == 0.0f);
+    CHECK(msg->pitch == 0.0f);
+}
+
+TEST_CASE("parseInput handles jump button from fixture", "[network]") {
+    auto data = loadHexFixture("client_to_server/input/input_jump.hex");
+    
+    auto msg = NetworkProtocol::parseInput(data.data(), data.size());
+    
+    REQUIRE(msg.has_value());
+    CHECK(msg->buttons == static_cast<uint8_t>(InputButton::JUMP));
+}
+
+TEST_CASE("parseInput handles complex yaw/pitch from fixture", "[network]") {
+    auto data = loadHexFixture("client_to_server/input/input_complex.hex");
+    
+    auto msg = NetworkProtocol::parseInput(data.data(), data.size());
+    
+    REQUIRE(msg.has_value());
+    CHECK(msg->buttons == (static_cast<uint8_t>(InputButton::FORWARD) | 
+                           static_cast<uint8_t>(InputButton::LEFT)));
+    CHECK(msg->yaw == Approx(3.14159f).margin(0.00001f));
+    CHECK(msg->pitch == -0.5f);
+}
+
+TEST_CASE("parseInput handles zeroed input from fixture", "[network]") {
+    auto data = loadHexFixture("client_to_server/input/input_zero.hex");
+    
+    auto msg = NetworkProtocol::parseInput(data.data(), data.size());
+    
+    REQUIRE(msg.has_value());
+    CHECK(msg->buttons == 0);
+    CHECK(msg->yaw == 0.0f);
+    CHECK(msg->pitch == 0.0f);
 }
 
 TEST_CASE("parseInput returns nullopt for short buffer", "[network]") {
@@ -35,40 +76,33 @@ TEST_CASE("parseInput returns nullopt for empty buffer", "[network]") {
     REQUIRE_FALSE(msg.has_value());
 }
 
-TEST_CASE("parseInput handles zeroed input", "[network]") {
-    uint8_t data[13] = {0, 13, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
-    auto msg = NetworkProtocol::parseInput(data, sizeof(data));
-    
-    REQUIRE(msg.has_value());
-    CHECK(msg->buttons == 0);
-    CHECK(msg->yaw == 0.0f);
-    CHECK(msg->pitch == 0.0f);
-}
-
 // ── parseJoin Tests ──────────────────────────────────────────────────────────
 
-TEST_CASE("parseJoin extracts GHOST_PLAYER entity type", "[network]") {
-    uint8_t data[5] = {
-        static_cast<uint8_t>(ClientMessageType::JOIN),
-        5, 0,
-        static_cast<uint8_t>(EntityType::GHOST_PLAYER)
-    };
-    auto msg = NetworkProtocol::parseJoin(data, sizeof(data));
+TEST_CASE("parseJoin extracts GHOST_PLAYER entity type from fixture", "[network]") {
+    auto data = loadHexFixture("client_to_server/join/join_ghost.hex");
+    
+    auto msg = NetworkProtocol::parseJoin(data.data(), data.size());
     
     REQUIRE(msg.has_value());
     CHECK(msg->entityType == EntityType::GHOST_PLAYER);
 }
 
-TEST_CASE("parseJoin extracts PLAYER entity type", "[network]") {
-    uint8_t data[5] = {
-        static_cast<uint8_t>(ClientMessageType::JOIN),
-        5, 0,
-        static_cast<uint8_t>(EntityType::PLAYER)
-    };
-    auto msg = NetworkProtocol::parseJoin(data, sizeof(data));
+TEST_CASE("parseJoin extracts PLAYER entity type from fixture", "[network]") {
+    auto data = loadHexFixture("client_to_server/join/join_player.hex");
+    
+    auto msg = NetworkProtocol::parseJoin(data.data(), data.size());
     
     REQUIRE(msg.has_value());
     CHECK(msg->entityType == EntityType::PLAYER);
+}
+
+TEST_CASE("parseJoin extracts SHEEP entity type from fixture", "[network]") {
+    auto data = loadHexFixture("client_to_server/join/join_sheep.hex");
+    
+    auto msg = NetworkProtocol::parseJoin(data.data(), data.size());
+    
+    REQUIRE(msg.has_value());
+    CHECK(msg->entityType == EntityType::SHEEP);
 }
 
 TEST_CASE("parseJoin returns nullopt for short buffer", "[network]") {
@@ -78,6 +112,39 @@ TEST_CASE("parseJoin returns nullopt for short buffer", "[network]") {
 }
 
 // ── buildSelfEntityMessage Tests ─────────────────────────────────────────────
+
+TEST_CASE("buildSelfEntityMessage matches zero fixture", "[network]") {
+    auto expected = loadHexFixture("server_to_client/self_entity/self_entity_zero.hex");
+    auto msg = NetworkProtocol::buildSelfEntityMessage(0, 0);
+    
+    REQUIRE(msg.size() == expected.size());
+    for (size_t i = 0; i < msg.size(); ++i) {
+        CHECK(msg[i] == expected[i]);
+    }
+}
+
+TEST_CASE("buildSelfEntityMessage matches sample fixture", "[network]") {
+    auto expected = loadHexFixture("server_to_client/self_entity/self_entity_sample.hex");
+    auto msg = NetworkProtocol::buildSelfEntityMessage(42, 100);
+    
+    REQUIRE(msg.size() == expected.size());
+    for (size_t i = 0; i < msg.size(); ++i) {
+        CHECK(msg[i] == expected[i]);
+    }
+}
+
+TEST_CASE("buildSelfEntityMessage handles max values matching fixture", "[network]") {
+    auto expected = loadHexFixture("server_to_client/self_entity/self_entity_max.hex");
+    auto msg = NetworkProtocol::buildSelfEntityMessage(
+        std::numeric_limits<uint32_t>::max(),
+        std::numeric_limits<uint32_t>::max()
+    );
+    
+    REQUIRE(msg.size() == expected.size());
+    for (size_t i = 0; i < msg.size(); ++i) {
+        CHECK(msg[i] == expected[i]);
+    }
+}
 
 TEST_CASE("buildSelfEntityMessage has correct format", "[network]") {
     auto msg = NetworkProtocol::buildSelfEntityMessage(42, 100);
@@ -96,20 +163,6 @@ TEST_CASE("buildSelfEntityMessage has correct format", "[network]") {
     uint32_t tick;
     std::memcpy(&tick, &msg[7], sizeof(uint32_t));
     CHECK(tick == 100);
-}
-
-TEST_CASE("buildSelfEntityMessage handles max values", "[network]") {
-    auto msg = NetworkProtocol::buildSelfEntityMessage(
-        std::numeric_limits<uint32_t>::max(),
-        std::numeric_limits<uint32_t>::max()
-    );
-    
-    uint32_t entityId, tick;
-    std::memcpy(&entityId, &msg[3], sizeof(uint32_t));
-    std::memcpy(&tick, &msg[7], sizeof(uint32_t));
-    
-    CHECK(entityId == std::numeric_limits<uint32_t>::max());
-    CHECK(tick == std::numeric_limits<uint32_t>::max());
 }
 
 TEST_CASE("buildSelfEntityMessage handles zero values", "[network]") {
@@ -165,4 +218,37 @@ TEST_CASE("appendToBatch vector overload works", "[network]") {
     
     REQUIRE(batch.size() == 3);
     CHECK(batch == msg);
+}
+
+// ── Fixture Loading Tests ────────────────────────────────────────────────────
+
+TEST_CASE("loadHexFixture loads input fixtures correctly", "[network][fixtures]") {
+    auto data = loadHexFixture("client_to_server/input/input_forward.hex");
+    
+    REQUIRE(data.size() == 13);
+    CHECK(data[0] == 0);   // type = INPUT
+    CHECK(data[1] == 13);  // size low
+    CHECK(data[2] == 0);   // size high
+    CHECK(data[3] == 1);   // buttons = FORWARD
+}
+
+TEST_CASE("loadHexFixture loads join fixtures correctly", "[network][fixtures]") {
+    auto data = loadHexFixture("client_to_server/join/join_player.hex");
+    
+    REQUIRE(data.size() == 5);
+    CHECK(data[0] == 1);   // type = JOIN
+    CHECK(data[1] == 5);   // size low
+    CHECK(data[3] == 0);   // entityType = PLAYER
+}
+
+TEST_CASE("loadHexFixture loads self_entity fixtures correctly", "[network][fixtures]") {
+    auto data = loadHexFixture("server_to_client/self_entity/self_entity_sample.hex");
+    
+    REQUIRE(data.size() == 13);
+    CHECK(data[0] == 6);   // type = SELF_ENTITY
+    CHECK(data[1] == 13);  // size low
+}
+
+TEST_CASE("loadHexFixture throws on missing file", "[network][fixtures]") {
+    CHECK_THROWS(loadHexFixture("nonexistent/nonexistent.hex"));
 }
