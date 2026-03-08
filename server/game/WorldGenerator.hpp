@@ -108,13 +108,16 @@ public:
                   int32_t chunkX, int32_t chunkY, int32_t chunkZ) const;
 
     /**
-     * @brief Return the surface world-Y voxel at world position (wx, wz).
+     * @brief Return the surface world-Y voxel at voxel column (voxelX, voxelZ).
      *
      * Matches the height used by generate(): result is in [4, 30].
-     * The surface voxel (GRASS) occupies world-Y = surfaceY(wx, wz);
+     * The surface voxel (GRASS) occupies world-Y = getSurfaceY(voxelX, voxelZ);
      * the voxel above it is AIR.
+     *
+     * @param voxelX  World X coordinate in voxels (not sub-voxels).
+     * @param voxelZ  World Z coordinate in voxels (not sub-voxels).
      */
-    int32_t surfaceY(float wx, float wz) const noexcept;
+    int32_t getSurfaceY(int voxelX, int voxelZ) const noexcept;
 
     /**
      * @brief Queue entity spawn requests for a newly activated chunk.

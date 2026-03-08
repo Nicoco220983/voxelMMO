@@ -73,7 +73,7 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
         if (pit == pendingPlayers.end()) return;
         const PendingPlayer p = pit->second;
         pendingPlayers.erase(pit);
-        addPlayer(p.gwId, playerId, p.sx, p.sy, p.sz, msg->entityType);
+        addPlayer(p.gwId, playerId, msg->entityType);
         break;
     }
 
@@ -97,17 +97,15 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
 
 // ── Player management ─────────────────────────────────────────────────────
 
-void GameEngine::queuePendingPlayer(GatewayId gwId, PlayerId playerId,
-                                     int32_t sx, int32_t sy, int32_t sz)
+void GameEngine::queuePendingPlayer(GatewayId gwId, PlayerId playerId)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
-    pendingPlayers[playerId] = {gwId, sx, sy, sz};
+    pendingPlayers[playerId] = {gwId};
     if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
 }
 
-void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId,
-                            int32_t /*sx*/, int32_t /*sy*/, int32_t /*sz*/, EntityType type)
+void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId, EntityType type)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
 

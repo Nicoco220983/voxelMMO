@@ -83,15 +83,8 @@ int main(int argc, char* argv[]) {
     // ── Wire GatewayEngine → GameEngine ────────────────────────────────────
     game.registerGateway(0);
 
-    // Compute spawn position: one voxel above the terrain surface at (32, 32).
-    // surfaceY ∈ [4, 30]; +2 places the player centre at surfaceY+2 so the
-    // AABB bottom (centre − PLAYER_BBOX_HY ≈ 0.9 vox) clears the surface.
-    static constexpr int32_t SPAWN_X = 32 * voxelmmo::SUBVOXEL_SIZE;
-    static constexpr int32_t SPAWN_Z = 32 * voxelmmo::SUBVOXEL_SIZE;
-    const int32_t spawnY = (game.getWorldGenerator().surfaceY(32, 32) + 2) * voxelmmo::SUBVOXEL_SIZE;
-
-    gateway.setPlayerConnectCallback([&, spawnY](voxelmmo::PlayerId pid) {
-        game.queuePendingPlayer(0, pid, SPAWN_X, spawnY, SPAWN_Z);
+    gateway.setPlayerConnectCallback([&](voxelmmo::PlayerId pid) {
+        game.queuePendingPlayer(0, pid);
         std::cout << "[main] Player " << pid << " connected (pending JOIN)\n";
         // Entity is spawned when the client sends JOIN; sendSnapshot() is called then.
     });

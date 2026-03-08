@@ -30,9 +30,8 @@ TestEnv::TestEnv(uint32_t seed)
 PlayerId TestEnv::addPlayer(EntityType type) {
     PlayerId pid = nextPlayerId_++;
     
-    // Queue as pending player at spawn position
-    auto spawnPos = engine_.getWorldGenerator().getPlayerSpawnPos();
-    engine_.queuePendingPlayer(gatewayId_, pid, spawnPos[0], spawnPos[1], spawnPos[2]);
+    // Queue as pending player (spawn position is determined by WorldGenerator)
+    engine_.queuePendingPlayer(gatewayId_, pid);
     
     // Send JOIN message to spawn the entity
     uint8_t joinMsg[5] = {

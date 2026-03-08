@@ -69,11 +69,8 @@ public:
      * The entity is not yet spawned.  The gateway should forward the client's
      * JOIN message to handlePlayerInput(), which will spawn the entity with
      * the requested EntityType and send the initial snapshot.
-     *
-     * @param sx/sy/sz Spawn position in sub-voxels (1 voxel = SUBVOXEL_SIZE units).
      */
-    void queuePendingPlayer(GatewayId gwId, PlayerId playerId,
-                            int32_t sx, int32_t sy, int32_t sz);
+    void queuePendingPlayer(GatewayId gwId, PlayerId playerId);
 
     /**
      * @brief Spawn a new player entity with the given type.
@@ -83,11 +80,9 @@ public:
      *
      * @param gwId     Gateway the player connected through.
      * @param playerId Persistent player identifier.
-     * @param sx/sy/sz Spawn position in sub-voxels (1 voxel = SUBVOXEL_SIZE units).
      * @param type     Entity type (selects physics mode).
      */
     void addPlayer(GatewayId gwId, PlayerId playerId,
-                   int32_t sx, int32_t sy, int32_t sz,
                    EntityType type = EntityType::GHOST_PLAYER);
 
     /** @brief Destroy a player entity and remove it from all chunk sets. */
@@ -196,7 +191,7 @@ private:
     std::unordered_map<GatewayId, GatewayInfo>             gateways;
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
 
-    struct PendingPlayer { GatewayId gwId; int32_t sx, sy, sz; };
+    struct PendingPlayer { GatewayId gwId; };
     std::unordered_map<PlayerId, PendingPlayer>            pendingPlayers;
 
     int32_t  tickCount{0};

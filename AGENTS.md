@@ -78,7 +78,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 **server/game/WorldGenerator.hpp/cpp**
 - Stateless procedural terrain generator using multi-frequency simplex noise
 - `generate(voxels, cx, cy, cz)` — fills voxel buffer for chunk
-- `surfaceY(wx, wz)` — surface height at world position (matches generation logic)
+- `getSurfaceY(voxelX, voxelZ)` — surface height at voxel column (matches generation logic)
 - `generateEntities(chunkId, registry, tick)` — spawns passive mobs (sheep) on surface grass
 
 **server/game/Chunk.hpp/cpp**

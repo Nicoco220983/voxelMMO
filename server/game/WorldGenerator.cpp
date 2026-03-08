@@ -161,35 +161,21 @@ void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
 }
 
 void WorldGenerator::computePlayerSpawnPos() {
-    if (type_ == GeneratorType::TEST) {
-        // Test world: flat terrain with grass at worldY = 4
-        // Spawn 1 meter above the grass surface
-        playerSpawnPos_[0] = 0;
-        playerSpawnPos_[1] = (4 + 1) * SUBVOXEL_SIZE;  // 5 * 256 = 1280
-        playerSpawnPos_[2] = 0;
-        return;
-    }
-    
-    // NORMAL mode: find top solid voxel at column (0,0)
-    // World column (0,0) corresponds to local chunk position (0,0) in chunk (0,?,0)
-    
-    // First, find the surface Y using surfaceY function
-    const int32_t surfaceYValue = surfaceY(0.0f, 0.0f);
-    
-    // The surface voxel is grass, spawn 1 meter above it
-    // 1 meter = SUBVOXEL_SIZE sub-voxel units
-    const int32_t spawnY = (surfaceYValue + 1) * SUBVOXEL_SIZE;
+    // Find surface Y at column (0,0) and spawn 1 meter above it.
+    // getSurfaceY handles TEST mode (returns 4) vs NORMAL mode (computes height).
+    const int32_t surfaceY = getSurfaceY(0, 0);
+    const int32_t spawnY = (surfaceY + 1) * SUBVOXEL_SIZE;
     
     playerSpawnPos_[0] = 0;
     playerSpawnPos_[1] = spawnY;
     playerSpawnPos_[2] = 0;
 }
 
-int32_t WorldGenerator::surfaceY(float wx, float wz) const noexcept {
+int32_t WorldGenerator::getSurfaceY(int voxelX, int voxelZ) const noexcept {
     if (type_ == GeneratorType::TEST) {
         return 4;  // Test world: grass at worldY = 4
     }
-    return static_cast<int32_t>(computeHeight(wx, wz, seed_));
+    return static_cast<int32_t>(computeHeight(static_cast<float>(voxelX), static_cast<float>(voxelZ), seed_));
 }
 
 void WorldGenerator::addPlayer(EntityFactory& entityFactory, EntityType type, PlayerId playerId) const {
@@ -252,12 +238,12 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
         const int32_t localZ = static_cast<int32_t>((posHash / CHUNK_SIZE_X) % CHUNK_SIZE_Z);
         
         // Find surface height at this position
-        const float wx = static_cast<float>(cx * CHUNK_SIZE_X + localX);
-        const float wz = static_cast<float>(cz * CHUNK_SIZE_Z + localZ);
-        const int32_t surface = surfaceY(wx, wz);
+        const int voxelX = cx * CHUNK_SIZE_X + localX;
+        const int voxelZ = cz * CHUNK_SIZE_Z + localZ;
+        const int32_t surfaceY = getSurfaceY(voxelX, voxelZ);
         
         // Only spawn if surface is in this chunk's Y range
-        const int32_t worldY = surface + 1;  // Spawn one block above grass
+        const int32_t worldY = surfaceY + 1;  // Spawn one block above grass
         if (worldY < cy * CHUNK_SIZE_Y || worldY >= (cy + 1) * CHUNK_SIZE_Y) continue;
         
         // Convert to sub-voxel coordinates
