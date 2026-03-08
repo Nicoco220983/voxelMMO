@@ -46,6 +46,7 @@ export class BaseEntity {
    * @param {number}    messageTick  Server tick from the chunk message header.
    */
   applyComponents(reader, flags, messageTick) {
+    console.debug('[BaseEntity] applyComponents:', { id: this.id, type: this.type, flags })
     if (flags & POSITION_BIT) this.motion.deserialize(reader, messageTick)
   }
 

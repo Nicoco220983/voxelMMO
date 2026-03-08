@@ -254,8 +254,11 @@ bool Chunk::buildDeltaImpl(
             // CREATE and UPDATE: include EntityType and component data
             w.write(static_cast<uint8_t>(etype));
             
-            // Component mask (strip lifecycle bits, keep only component bits 0-5)
-            const uint8_t componentMask = mask & 0x3F;
+            // Component mask: keep component bits 0-5, add CREATED_BIT for new entities
+            uint8_t componentMask = mask & 0x3F;
+            if (deltaType == DeltaType::CREATE_ENTITY) {
+                componentMask |= DirtyComponent::CREATED_BIT;  // 1 << 6
+            }
             w.write(componentMask);
             
             if (componentMask & POSITION_BIT)

@@ -242,8 +242,10 @@ export class GameClient {
       if (msgType === ServerMessageType.SELF_ENTITY) {
         const selfData = NetworkProtocol.parseSelfEntity(view)
         if (selfData) {
-          console.log('[GameClient] SELF_ENTITY received:', selfData)
+          console.debug('[GameClient] SELF_ENTITY deserialized:', selfData)
           this.#selfEntityId = selfData.entityId
+        } else {
+          console.error('[GameClient] Failed to parse SELF_ENTITY message, byteLength:', view.byteLength)
         }
         return
       }

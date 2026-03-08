@@ -49,6 +49,10 @@ export class DynamicPositionComponent {
     this.vy       = reader.readInt32()
     this.vz       = reader.readInt32()
     this.grounded = reader.readUint8() !== 0
+    console.debug('[DynamicPositionComponent] deserialized:', {
+      tick: this.tick, x: this.x, y: this.y, z: this.z,
+      vx: this.vx, vy: this.vy, vz: this.vz, grounded: this.grounded
+    })
   }
 
   /**

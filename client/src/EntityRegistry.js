@@ -1,7 +1,7 @@
 // @ts-check
 import { BaseEntity } from './entities/BaseEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
-import { EntityType } from './types.js'
+import { EntityType, CREATED_BIT } from './types.js'
 import { DeltaType } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
@@ -228,15 +228,29 @@ export class EntityRegistry {
       } else if (deltaType === DeltaType.CREATE_ENTITY || deltaType === DeltaType.UPDATE_ENTITY) {
         // CREATE_ENTITY or UPDATE_ENTITY - both have entityType + component data
         const entityType = reader.readUint8()
+        const componentMask = reader.readUint8()
+        
+        console.debug('[EntityRegistry] Processing delta:', { 
+          deltaType, entityId, chunkId, componentMask: '0x' + componentMask.toString(16) 
+        })
         
         let entity = this.#entities.get(entityId)
+        
+        // Protocol error: UPDATE_ENTITY for unknown entity without CREATED flag
+        if (deltaType === DeltaType.UPDATE_ENTITY && !entity && !(componentMask & CREATED_BIT)) {
+          console.error('[EntityRegistry] UPDATE_ENTITY for unknown entity without CREATED flag:', entityId)
+        }
+        
         if (!entity) {
+          console.debug('[EntityRegistry] Creating entity:', { entityId, entityType, isCreate: deltaType === DeltaType.CREATE_ENTITY })
           entity = this.#createEntity(entityId, entityType)
           this.#entities.set(entityId, entity)
+        } else {
+          console.debug('[EntityRegistry] Updating entity:', { entityId, entityType })
         }
         entity.chunkId = chunkId
         members.add(entityId)
-        entity.applyDelta(reader, messageTick)
+        entity.applyComponents(reader, componentMask, messageTick)
       } else {
         console.error('[EntityRegistry] Unknown delta type:', deltaType, 'for entity', entityId)
       }
