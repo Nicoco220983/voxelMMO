@@ -273,6 +273,8 @@ export class GameClient {
           case ServerMessageType.CHUNK_TICK_DELTA_COMPRESSED:
             ({ voxelCount, entityCount } = this.#applyVoxelDelta(view, true, chunkId, messageTick))
             break
+          default:
+            console.error('[GameClient] Unknown chunk message type:', type)
         }
 
         console.debug('[GameClient] rx', MSG_TYPE_NAMES[type] ?? type,

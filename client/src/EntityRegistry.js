@@ -43,9 +43,11 @@ export class EntityRegistry {
    * @returns {BaseEntity}
    */
   #createEntity(globalId, entityType) {
-    console.info("createEntity", entityType, globalId)
     if (entityType === EntityType.SHEEP && this.scene) {
       return new SheepEntity(globalId, this.scene)
+    }
+    if (!Object.values(EntityType).includes(entityType)) {
+      console.error('[EntityRegistry] Unknown entity type:', entityType, 'for entity', globalId)
     }
     return new BaseEntity(globalId, entityType)
   }
@@ -235,6 +237,8 @@ export class EntityRegistry {
         entity.chunkId = chunkId
         members.add(entityId)
         entity.applyDelta(reader, messageTick)
+      } else {
+        console.error('[EntityRegistry] Unknown delta type:', deltaType, 'for entity', entityId)
       }
     }
     return count

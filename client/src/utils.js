@@ -19,22 +19,50 @@ export class BufReader {
   }
 
   /** @returns {number} */
-  readUint8()   { return this.#view.getUint8(this.offset++) }
+  readUint8()   {
+    if (this.offset + 1 > this.#view.byteLength) {
+      throw new Error(`BufReader overrun: need 1 byte at offset ${this.offset}, have ${this.#view.byteLength}`)
+    }
+    return this.#view.getUint8(this.offset++)
+  }
 
   /** @returns {number} */
-  readUint16()  { const v = this.#view.getUint16(this.offset, true); this.offset += 2; return v }
+  readUint16()  {
+    if (this.offset + 2 > this.#view.byteLength) {
+      throw new Error(`BufReader overrun: need 2 bytes at offset ${this.offset}, have ${this.#view.byteLength}`)
+    }
+    const v = this.#view.getUint16(this.offset, true); this.offset += 2; return v
+  }
 
   /** @returns {number} */
-  readInt32()   { const v = this.#view.getInt32(this.offset, true);  this.offset += 4; return v }
+  readInt32()   {
+    if (this.offset + 4 > this.#view.byteLength) {
+      throw new Error(`BufReader overrun: need 4 bytes at offset ${this.offset}, have ${this.#view.byteLength}`)
+    }
+    const v = this.#view.getInt32(this.offset, true);  this.offset += 4; return v
+  }
 
   /** @returns {number} */
-  readUint32()  { const v = this.#view.getUint32(this.offset, true);  this.offset += 4; return v }
+  readUint32()  {
+    if (this.offset + 4 > this.#view.byteLength) {
+      throw new Error(`BufReader overrun: need 4 bytes at offset ${this.offset}, have ${this.#view.byteLength}`)
+    }
+    const v = this.#view.getUint32(this.offset, true);  this.offset += 4; return v
+  }
 
   /** @returns {number} */
-  readFloat32() { const v = this.#view.getFloat32(this.offset, true); this.offset += 4; return v }
+  readFloat32() {
+    if (this.offset + 4 > this.#view.byteLength) {
+      throw new Error(`BufReader overrun: need 4 bytes at offset ${this.offset}, have ${this.#view.byteLength}`)
+    }
+    const v = this.#view.getFloat32(this.offset, true); this.offset += 4; return v
+  }
 
   /** @returns {bigint} */
-  readInt64()   { 
+  readInt64()   {
+    if (this.offset + 8 > this.#view.byteLength) {
+      throw new Error(`BufReader overrun: need 8 bytes at offset ${this.offset}, have ${this.#view.byteLength}`)
+    }
     const lo = this.#view.getUint32(this.offset, true)
     const hi = this.#view.getInt32(this.offset + 4, true)
     this.offset += 8
