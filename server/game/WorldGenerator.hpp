@@ -7,6 +7,7 @@
 #include <vector>
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 namespace voxelmmo {
 
@@ -48,10 +49,10 @@ public:
      * @brief Construct a lean world generator with the given seed and type.
      * @param seed           Random seed for deterministic generation.
      * @param type           Generator type (NORMAL or TEST).
-     * @param testEntityType Entity type to spawn in TEST mode (default: SHEEP).
+     * @param testEntityType Entity type to spawn in TEST mode (nullopt = no entity).
      */
     WorldGenerator(uint32_t seed = 0, GeneratorType type = GeneratorType::NORMAL,
-                   EntityType testEntityType = EntityType::SHEEP);
+                   std::optional<EntityType> testEntityType = std::nullopt);
     
     /** @return The seed used for generation. */
     uint32_t getSeed() const noexcept { return seed_; }
@@ -59,8 +60,8 @@ public:
     /** @return The generator type. */
     GeneratorType getType() const noexcept { return type_; }
     
-    /** @return The test entity type (for TEST mode). */
-    EntityType getTestEntityType() const noexcept { return testEntityType_; }
+    /** @return The test entity type (for TEST mode, nullopt = no entity). */
+    std::optional<EntityType> getTestEntityType() const noexcept { return testEntityType_; }
     
     /**
      * @brief Get the computed player spawn position.
@@ -150,7 +151,7 @@ public:
 private:
     uint32_t seed_;
     GeneratorType type_;
-    EntityType testEntityType_;
+    std::optional<EntityType> testEntityType_;
     mutable bool testEntitySpawned_ = false;      ///< Track if test entity was spawned
     int32_t playerSpawnPos_[3] = {0, 0, 0};       ///< Player spawn (computed separately)
 };

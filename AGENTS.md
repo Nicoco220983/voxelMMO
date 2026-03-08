@@ -28,6 +28,7 @@ A high performance online webgame massive multiplayer, on wide generated world.
 - **GlobalEntityId** (uint32): assigned at spawn, stable across chunk moves and server lifetime. Used on wire.
 - **Serialisation ownership**: each component's `serializeFields(BufWriter&)` writes its own bytes only.
   The caller (Chunk) writes the component-flags byte and decides which components to include.
+- **TEST world entity control**: `--test-entity-type <type>` is optional. If omitted, TEST mode spawns flat terrain with no entities (player-only). Use `--test-entity-type sheep` to spawn a test entity.
 
 # Key types
 

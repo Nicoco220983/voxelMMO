@@ -130,7 +130,7 @@ static float computeHeight(float wx, float wz, uint32_t seed) noexcept {
 
 namespace voxelmmo {
 
-WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, EntityType testEntityType)
+WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, std::optional<EntityType> testEntityType)
     : seed_(seed), type_(type), testEntityType_(testEntityType) {
     // Lean constructor - no chunk generation here
 }
@@ -190,8 +190,8 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
     
     // ── TEST mode: queue test entity spawn relative to stored player spawn position ─
     if (type_ == GeneratorType::TEST) {
-        // Only queue once in the chunk that contains the test entity position
-        if (testEntitySpawned_) return;
+        // Skip if no test entity type specified
+        if (!testEntityType_ || testEntitySpawned_) return;
         
         // Calculate test entity spawn position: 5 meters in front (+X) of player
         const int32_t testX = playerSpawnPos_[0] + 5 * SUBVOXEL_SIZE;
@@ -209,12 +209,7 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
         testEntitySpawned_ = true;
         
         // Queue test entity spawn in factory (deferred creation)
-        switch (testEntityType_) {
-            case EntityType::SHEEP:
-            default:
-                entityFactory.spawnAI(EntityType::SHEEP, testX, testY, testZ, tick);
-                break;
-        }
+        entityFactory.spawnAI(*testEntityType_, testX, testY, testZ, tick);
         return;
     }
     

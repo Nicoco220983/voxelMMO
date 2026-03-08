@@ -15,7 +15,7 @@
 namespace voxelmmo {
 
 GameEngine::GameEngine(uint32_t seed, bool seedProvided,
-                       GeneratorType type, EntityType testEntityType)
+                       GeneratorType type, std::optional<EntityType> testEntityType)
     : worldGenerator(seedProvided ? seed : generateRandomSeed(), type, testEntityType)
 {
     // Register entity spawn implementations

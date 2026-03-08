@@ -47,11 +47,11 @@ public:
      * @param seed           World generation seed (0 = random if seedProvided is false).
      * @param seedProvided   Whether the seed was explicitly provided.
      * @param type           World generator type (NORMAL or TEST).
-     * @param testEntityType Entity type for TEST mode.
+     * @param testEntityType Entity type for TEST mode (nullopt = no entity).
      */
     GameEngine(uint32_t seed = 0, bool seedProvided = false,
                GeneratorType type = GeneratorType::NORMAL,
-               EntityType testEntityType = EntityType::SHEEP);
+               std::optional<EntityType> testEntityType = std::nullopt);
 
     // ── Gateway management ────────────────────────────────────────────────
 

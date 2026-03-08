@@ -7,17 +7,19 @@
 #include <chrono>
 #include <cstring>
 #include <cstdlib>
+#include <optional>
 
 static constexpr int GATEWAY_PORT = 8080;
 
 static void printUsage(const char* program) {
     std::cout << "Usage: " << program << " [options]\n"
               << "Options:\n"
-              << "  --seed <n>           World generation seed (default: random)\n"
-              << "  --type <normal|test> World generation type (default: normal)\n"
-              << "  --test-entity-type <type> Entity type for TEST mode (default: sheep)\n"
-              << "                       Available types: PLAYER, GHOST_PLAYER, SHEEP\n"
-              << "  --help               Show this help message\n";
+              << "  --seed <n>                World generation seed (default: random)\n"
+              << "  --type <normal|test>      World generation type (default: normal)\n"
+              << "  --test-entity-type <type> Entity type for TEST mode (optional)\n"
+              << "                            Available types: PLAYER, GHOST_PLAYER, SHEEP\n"
+              << "                            If not specified, no entities spawn (player-only)\n"
+              << "  --help                    Show this help message\n";
 }
 
 int main(int argc, char* argv[]) {
@@ -25,7 +27,7 @@ int main(int argc, char* argv[]) {
     uint32_t seed = 0;
     bool seedProvided = false;
     voxelmmo::GeneratorType genType = voxelmmo::GeneratorType::NORMAL;
-    voxelmmo::EntityType testEntityType = voxelmmo::EntityType::SHEEP;
+    std::optional<voxelmmo::EntityType> testEntityType;
     
     for (int i = 1; i < argc; ++i) {
         const char* arg = argv[i];
@@ -52,11 +54,13 @@ int main(int argc, char* argv[]) {
         }
         else if (std::strcmp(arg, "--test-entity-type") == 0 && i + 1 < argc) {
             const char* entityStr = argv[++i];
-            if (!voxelmmo::stringToEntityType(entityStr, testEntityType)) {
+            voxelmmo::EntityType type;
+            if (!voxelmmo::stringToEntityType(entityStr, type)) {
                 std::cerr << "Unknown test entity type: " << entityStr << "\n";
                 printUsage(argv[0]);
                 return 1;
             }
+            testEntityType = type;
         }
         else {
             std::cerr << "Unknown argument: " << arg << "\n";
@@ -117,7 +121,12 @@ int main(int argc, char* argv[]) {
     // ── Gateway (blocks main thread with uWS event loop) ───────────────────
     std::cout << "[main] Starting voxelmmo server...\n";
     std::cout << "[main] World type: " << (genType == voxelmmo::GeneratorType::TEST ? "test" : "normal")
-              << ", seed: " << game.getWorldGenerator().getSeed() << "\n";
+              << ", seed: " << game.getWorldGenerator().getSeed();
+    if (genType == voxelmmo::GeneratorType::TEST) {
+        auto tet = game.getWorldGenerator().getTestEntityType();
+        std::cout << ", test entity: " << (tet ? voxelmmo::entityTypeToString(*tet) : "none");
+    }
+    std::cout << "\n";
     gateway.listen(GATEWAY_PORT); // blocks
 
     running = false;
