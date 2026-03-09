@@ -167,7 +167,7 @@ public:
     // ── Configuration ─────────────────────────────────────────────────────
 
     /** Number of chunk radii around a player position to activate (load). */
-    static constexpr int32_t ACTIVATION_RADIUS = 2;
+    static constexpr int32_t ACTIVATION_RADIUS = 1;
     /** Number of chunk radii around a player position to include in state messages. */
     static constexpr int32_t WATCH_RADIUS = 3;
 

@@ -211,7 +211,8 @@ export class EntityRegistry {
       if (deltaType === DeltaType.DELETE_ENTITY) {
         // Entity removed from this chunk (despawned or moved elsewhere)
         const entity = this.#entities.get(entityId)
-        if (entity && entity.chunkId === chunkId) {
+        if (entity) {
+          console.debug('[EntityRegistry] Deleting entity:', { entityId })
           // Call destroy if entity has a mesh
           if (entity.destroy && this.scene) {
             entity.destroy(this.scene)
@@ -224,6 +225,7 @@ export class EntityRegistry {
         const newChunkIdPacked = reader.readInt64()
         const entity = this.#entities.get(entityId)
         if (entity && entity.chunkId === chunkId) {
+          console.debug('[EntityRegistry] Changing chunk entity:', { entityId })
           // Update entity's chunk reference
           entity.chunkId = newChunkIdPacked
           // Remove from old chunk's members
@@ -236,10 +238,6 @@ export class EntityRegistry {
         // CREATE_ENTITY or UPDATE_ENTITY - both have entityType + component data
         const entityType = reader.readUint8()
         const componentMask = reader.readUint8()
-        
-        console.debug('[EntityRegistry] Processing delta:', { 
-          deltaType, entityId, chunkId, componentMask: '0x' + componentMask.toString(16) 
-        })
         
         let entity = this.#entities.get(entityId)
         

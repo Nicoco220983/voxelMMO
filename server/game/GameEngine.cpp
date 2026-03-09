@@ -63,7 +63,6 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
     }
 
     case ClientMessageType::JOIN: {
-        std::cout << "[game] Player " << playerId << " joined\n";
         auto msg = NetworkProtocol::parseJoin(data, size);
         if (!msg) return;
         // Ignore if player already has an entity (already spawned).
