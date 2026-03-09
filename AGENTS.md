@@ -123,7 +123,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `SheepAISystem.hpp` — `apply(registry, tick)`: simple state machine (IDLE 2-5s → WALK 2s loop); sets velocity toward random target; runs before physics
 
 **server/gateway/**
-- `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameBatch()` forwards to clients
+- `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameMessage()` forwards to clients
 - `GatewayEngine` — uWS server; manages WebSocket connections, per-chunk state cache (`chunkStates`), and per-player metadata (`players`)
 
 **client/src/**

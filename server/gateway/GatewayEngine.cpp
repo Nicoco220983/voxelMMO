@@ -16,7 +16,7 @@ void GatewayEngine::setPlayerInputCallback(PlayerInputCallback cb)             {
 
 // ── Incoming from game engine ─────────────────────────────────────────────
 
-void GatewayEngine::receiveGameBatch(const uint8_t* data, size_t size) {
+void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
     // Copy the batch so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
@@ -38,7 +38,7 @@ void GatewayEngine::receiveGameBatch(const uint8_t* data, size_t size) {
     });
 }
 
-void GatewayEngine::receivePlayerMessage(PlayerId playerId, const uint8_t* data, size_t size) {
+void GatewayEngine::receiveGameMessageForPlayer(PlayerId playerId, const uint8_t* data, size_t size) {
     // Copy the message so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
@@ -66,7 +66,7 @@ bool GatewayEngine::sendToPlayer(PlayerId playerId, const uint8_t* data, size_t 
 
 void GatewayEngine::listen(int port) {
     // Capture the loop pointer now, while we are on the uWS thread.
-    // receiveGameBatch() will use this from the game thread.
+    // receiveGameMessage() will use this from the game thread.
     uwsLoop = uWS::Loop::get();
 
     wsApp.ws<PlayerConnection>("/*", {

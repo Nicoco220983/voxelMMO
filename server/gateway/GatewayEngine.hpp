@@ -26,7 +26,7 @@ struct PlayerConnection {
  *   - Forward raw player-input messages from clients to the GameEngine.
  *   - Maintain per-chunk state cache so late-joining players can receive cached state.
  *
- * Threading note: receiveGameBatch() is called from the game-engine thread.
+ * Threading note: receiveGameMessage() is called from the game-engine thread.
  * uWebSockets' App::run() blocks the calling thread. Use uWS::Loop::defer() to
  * safely push work from another thread onto the uWS event loop.
  */
@@ -45,12 +45,12 @@ public:
      * @param data  Batch bytes (caller owns; copied immediately).
      * @param size  Total batch byte count.
      */
-    void receiveGameBatch(const uint8_t* data, size_t size);
+    void receiveGameMessage(const uint8_t* data, size_t size);
 
     /**
      * @brief Deliver a player-specific message from the game engine.
      *
-     * Unlike receiveGameBatch(), this sends the message to a single player only.
+     * Unlike receiveGameMessage(), this sends the message to a single player only.
      * Used for SELF_ENTITY messages and other player-specific notifications.
      * Safe to call from any thread; defers to the uWS event loop internally.
      *
@@ -58,7 +58,7 @@ public:
      * @param data      Message bytes (caller owns; copied immediately).
      * @param size      Message byte count.
      */
-    void receivePlayerMessage(PlayerId playerId, const uint8_t* data, size_t size);
+    void receiveGameMessageForPlayer(PlayerId playerId, const uint8_t* data, size_t size);
 
     /**
      * @brief Start listening for WebSocket connections. Blocks until stopped.
@@ -132,7 +132,7 @@ private:
 
     /**
      * @brief uWS event-loop pointer captured on the uWS thread during listen().
-     * receiveGameBatch() may be called from any thread and uses this to defer
+     * receiveGameMessage() may be called from any thread and uses this to defer
      * work safely onto the uWS event loop.
      */
     uWS::Loop* uwsLoop{nullptr};
