@@ -48,11 +48,11 @@ PlayerId TestEnv::addPlayer(EntityType type) {
     return pid;
 }
 
-void TestEnv::removePlayer(PlayerId pid) {
-    engine_.removePlayer(pid);
-    playerEntities_.erase(pid);
-    playerOutputs_.erase(pid);
-}
+// void TestEnv::removePlayer(PlayerId pid) {
+//     engine_.removePlayer(pid);
+//     playerEntities_.erase(pid);
+//     playerOutputs_.erase(pid);
+// }
 
 void TestEnv::teleport(PlayerId pid, int32_t x, int32_t y, int32_t z) {
     engine_.teleportPlayer(pid, x, y, z);

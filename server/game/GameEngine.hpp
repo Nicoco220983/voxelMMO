@@ -73,7 +73,7 @@ public:
     void registerPlayer(GatewayId gwId, PlayerId playerId);
 
     /** @brief Destroy a player entity and remove it from all chunk sets. */
-    void removePlayer(PlayerId playerId);
+    //void removePlayer(PlayerId playerId);
 
     /**
      * @brief Directly set a player's world position (sub-voxel coordinates).
@@ -177,8 +177,6 @@ private:
     ChunkRegistry chunkRegistry;
     std::unordered_map<GatewayId, GatewayInfo>             gateways;
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
-
-
 
     int32_t  tickCount{0};
 

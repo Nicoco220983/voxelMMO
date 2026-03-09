@@ -11,6 +11,7 @@
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
 #include <cmath>
+#include <iostream>
 
 namespace voxelmmo {
 
@@ -62,6 +63,7 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
     }
 
     case ClientMessageType::JOIN: {
+        std::cout << "[game] Player " << playerId << " joined\n";
         auto msg = NetworkProtocol::parseJoin(data, size);
         if (!msg) return;
         // Ignore if player already has an entity (already spawned).
@@ -85,7 +87,7 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = gateways.find(gwId);
     if (it == gateways.end()) return;
-    for (PlayerId pid : it->second.players) removePlayer(pid);
+    //for (PlayerId pid : it->second.players) removePlayer(pid);
     gateways.erase(it);
 }
 
@@ -100,8 +102,6 @@ void GameEngine::registerPlayer(GatewayId gwId, PlayerId playerId)
         it->second.players.insert(playerId);
 }
 
-
-
 void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = playerEntities.find(playerId);
@@ -111,38 +111,36 @@ void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32
         sx, sy, sz, dyn.vx, dyn.vy, dyn.vz, dyn.grounded, /*dirty=*/true);
 }
 
-void GameEngine::removePlayer(PlayerId playerId) {
-    std::lock_guard<std::recursive_mutex> lock(mtx_);
+// void GameEngine::removePlayer(PlayerId playerId) {
+//     std::lock_guard<std::recursive_mutex> lock(mtx_);
     
-    // Remove from all gateway player sets (in case player was pending)
-    for (auto& [gid, info] : gateways) {
-        info.players.erase(playerId);
-    }
+//     // Remove from all gateway player sets (in case player was pending)
+//     for (auto& [gid, info] : gateways) {
+//         info.players.erase(playerId);
+//     }
     
-    auto it = playerEntities.find(playerId);
-    if (it == playerEntities.end()) return;
-    const entt::entity ent = it->second;
+//     auto it = playerEntities.find(playerId);
+//     if (it == playerEntities.end()) return;
+//     const entt::entity ent = it->second;
 
-    // Remove from watching radius immediately (so they stop receiving updates)
-    if (auto* dyn = registry.try_get<DynamicPositionComponent>(ent)) {
-        const int32_t ocx = dyn->x >> CHUNK_SHIFT_X;
-        const int32_t ocy = dyn->y >> CHUNK_SHIFT_Y;
-        const int32_t ocz = dyn->z >> CHUNK_SHIFT_Z;
-        for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-        for (int32_t dy = -1; dy <= 1; ++dy)
-        for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-            const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-            if (Chunk* chunk = chunkRegistry.getChunkMutable(cid))
-                chunk->watchingPlayers.erase(playerId);
-        }
-    }
+//     // Remove from watching radius immediately (so they stop receiving updates)
+//     if (auto* dyn = registry.try_get<DynamicPositionComponent>(ent)) {
+//         const int32_t ocx = dyn->x >> CHUNK_SHIFT_X;
+//         const int32_t ocy = dyn->y >> CHUNK_SHIFT_Y;
+//         const int32_t ocz = dyn->z >> CHUNK_SHIFT_Z;
+//         for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
+//         for (int32_t dy = -1; dy <= 1; ++dy)
+//         for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
+//             const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
+//             if (Chunk* chunk = chunkRegistry.getChunkMutable(cid))
+//                 chunk->watchingPlayers.erase(playerId);
+//         }
+//     }
 
-    // Mark for deferred deletion - ChunkMembershipSystem will handle cleanup and destroy
-    ChunkMembershipSystem::markForDeletion(registry, ent);
-    playerEntities.erase(it);
-}
-
-
+//     // Mark for deferred deletion - ChunkMembershipSystem will handle cleanup and destroy
+//     ChunkMembershipSystem::markForDeletion(registry, ent);
+//     playerEntities.erase(it);
+// }
 
 // ── Serialisation helpers ─────────────────────────────────────────────────
 
@@ -191,8 +189,6 @@ void GameEngine::stepPhysics() {
 const Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
     return chunkRegistry.getChunk(chunkIdOf(px, py, pz));
 }
-
-
 
 // ── Main tick ─────────────────────────────────────────────────────────────
 

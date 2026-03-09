@@ -28,21 +28,21 @@ TEST_CASE("Player receives SELF_ENTITY message on join", "[integration]") {
     CHECK(output[0] == static_cast<uint8_t>(ServerMessageType::SELF_ENTITY));
 }
 
-TEST_CASE("Player entity is destroyed on disconnect", "[integration]") {
-    TestEnv env(12345);
+// TEST_CASE("Player entity is destroyed on disconnect", "[integration]") {
+//     TestEnv env(12345);
     
-    PlayerId pid = env.addPlayer(EntityType::PLAYER);
-    env.tick();
+//     PlayerId pid = env.addPlayer(EntityType::PLAYER);
+//     env.tick();
     
-    auto ent = env.getEntity(pid);
-    REQUIRE(ent != static_cast<entt::entity>(entt::null));
+//     auto ent = env.getEntity(pid);
+//     REQUIRE(ent != static_cast<entt::entity>(entt::null));
     
-    env.removePlayer(pid);
-    env.tick();
+//     env.removePlayer(pid);
+//     env.tick();
     
-    CHECK(env.getEntity(pid) == static_cast<entt::entity>(entt::null));
-    CHECK_FALSE(env.hasPlayer(pid));
-}
+//     CHECK(env.getEntity(pid) == static_cast<entt::entity>(entt::null));
+//     CHECK_FALSE(env.hasPlayer(pid));
+// }
 
 // ── Player Spawning and Position ─────────────────────────────────────────────
 

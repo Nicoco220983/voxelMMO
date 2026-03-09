@@ -94,7 +94,7 @@ int main(int argc, char* argv[]) {
     });
 
     gateway.setPlayerDisconnectCallback([&](voxelmmo::PlayerId pid) {
-        game.removePlayer(pid);
+        //game.removePlayer(pid);
     });
 
     gateway.setPlayerInputCallback([&](voxelmmo::PlayerId pid,

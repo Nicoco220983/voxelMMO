@@ -71,7 +71,7 @@ public:
      * @brief Remove a player from the game.
      * @param pid Player to remove
      */
-    void removePlayer(PlayerId pid);
+    //void removePlayer(PlayerId pid);
     
     /**
      * @brief Teleport a player to a specific position.
