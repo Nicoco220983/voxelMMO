@@ -1,6 +1,7 @@
 #include "game/ChunkRegistry.hpp"
 #include "game/WorldGenerator.hpp"
 #include "game/entities/EntityFactory.hpp"
+#include <iostream>
 
 namespace voxelmmo {
 
@@ -87,6 +88,29 @@ bool ChunkRegistry::deactivate(ChunkId id, entt::registry& registry) {
     }
 
     return true;
+}
+
+bool ChunkRegistry::addEntity(ChunkId chunkId, entt::entity entity) {
+    if (Chunk* chunk = getChunkMutable(chunkId)) {
+        chunk->entities.insert(entity);
+        return true;
+    }
+    std::cerr << "[ChunkRegistry] Warning: addEntity failed - chunk (" 
+              << chunkId.x() << "," << chunkId.y() << "," << chunkId.z() 
+              << ") does not exist\n";
+    return false;
+}
+
+bool ChunkRegistry::addPlayerEntity(ChunkId chunkId, entt::entity entity, PlayerId playerId) {
+    if (Chunk* chunk = getChunkMutable(chunkId)) {
+        chunk->entities.insert(entity);
+        chunk->presentPlayers.insert(playerId);
+        return true;
+    }
+    std::cerr << "[ChunkRegistry] Warning: addPlayerEntity failed - chunk (" 
+              << chunkId.x() << "," << chunkId.y() << "," << chunkId.z() 
+              << ") does not exist\n";
+    return false;
 }
 
 } // namespace voxelmmo

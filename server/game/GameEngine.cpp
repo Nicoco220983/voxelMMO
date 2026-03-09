@@ -191,9 +191,9 @@ const Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
 
 // ── Main tick ─────────────────────────────────────────────────────────────
 
-std::vector<entt::entity> GameEngine::createPendingEntities() {
+void GameEngine::createPendingEntities() {
     auto acquireId = [this]() { return acquireEntityId(); };
-    return entityFactory.createEntities(registry, chunkRegistry, acquireId);
+    entityFactory.createEntities(registry, chunkRegistry, acquireId);
 }
 
 void GameEngine::tick() {
@@ -284,6 +284,10 @@ void GameEngine::processPendingPlayerCreations() {
         }
         
         playerEntities[req.playerId] = ent;
+        
+        // Add player entity to its chunk
+        const ChunkId chunkId = chunkIdOf(spawnPos[0], spawnPos[1], spawnPos[2]);
+        chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
     }
     pendingPlayerCreations_.clear();
 }

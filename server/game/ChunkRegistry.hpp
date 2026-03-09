@@ -146,6 +146,29 @@ public:
         chunks_.clear();
     }
 
+    /**
+     * @brief Add a non-player entity to its chunk.
+     *
+     * The entity is added to the chunk's entities set based on its position.
+     *
+     * @param chunkId The chunk ID where the entity should be added.
+     * @param entity The entity handle to add.
+     * @return true if the entity was added, false if chunk not found.
+     */
+    bool addEntity(ChunkId chunkId, entt::entity entity);
+
+    /**
+     * @brief Add a player entity to its chunk.
+     *
+     * The entity is added to both the chunk's entities set and presentPlayers set.
+     *
+     * @param chunkId The chunk ID where the player should be added.
+     * @param entity The entity handle to add.
+     * @param playerId The player ID to add to presentPlayers.
+     * @return true if the entity was added, false if chunk not found.
+     */
+    bool addPlayerEntity(ChunkId chunkId, entt::entity entity, PlayerId playerId);
+
 private:
     std::unordered_map<ChunkId, std::unique_ptr<Chunk>> chunks_;
 };

@@ -131,9 +131,8 @@ public:
      * @param registry The ECS registry to create entities in
      * @param chunkRegistry Chunk registry for adding entities to chunks
      * @param acquireId Function that returns the next GlobalEntityId
-     * @return Vector of created entity handles (in same order as queued)
      */
-    std::vector<entt::entity> createEntities(
+    void createEntities(
         entt::registry& registry,
         ChunkRegistry& chunkRegistry,
         const std::function<GlobalEntityId()>& acquireId);

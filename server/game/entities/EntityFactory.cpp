@@ -2,7 +2,6 @@
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
-#include "game/components/PlayerComponent.hpp"
 
 namespace voxelmmo {
 
@@ -26,15 +25,13 @@ void EntityFactory::spawnRequest(EntitySpawnRequest req) {
     pending_.push_back(std::move(req));
 }
 
-std::vector<entt::entity> EntityFactory::createEntities(
+void EntityFactory::createEntities(
     entt::registry& registry,
     ChunkRegistry& chunkRegistry,
     const std::function<GlobalEntityId()>& acquireId)
 {
-    std::vector<entt::entity> created;
-    created.reserve(pending_.size());
-
     for (const auto& req : pending_) {
+
         auto it = spawnImpls_.find(req.type);
         if (it == spawnImpls_.end()) {
             // Unknown type - skip (could also assert or throw)
@@ -43,23 +40,13 @@ std::vector<entt::entity> EntityFactory::createEntities(
 
         GlobalEntityId globalId = acquireId();
         entt::entity ent = it->second(registry, globalId, req);
-        created.push_back(ent);
 
-        // Add entity to its chunk based on spawn position
+        // Add non-player entity to its chunk
         const ChunkId chunkId = chunkIdOf(req.x, req.y, req.z);
-        if (Chunk* chunk = chunkRegistry.getChunkMutable(chunkId)) {
-            chunk->entities.insert(ent);
-            
-            // For players, also add to presentPlayers
-            if (registry.all_of<PlayerComponent>(ent)) {
-                const PlayerId pid = registry.get<PlayerComponent>(ent).playerId;
-                chunk->presentPlayers.insert(pid);
-            }
-        }
+        chunkRegistry.addEntity(chunkId, ent);
     }
 
     pending_.clear();
-    return created;
 }
 
 std::unique_ptr<EntityFactory> createDefaultEntityFactory() {

@@ -94,10 +94,8 @@ public:
      *
      * Call this at a precise step in the game loop to ensure all entities
      * are created at the same logical time.
-     *
-     * @return Vector of created entity handles.
      */
-    std::vector<entt::entity> createPendingEntities();
+    void createPendingEntities();
 
     // ── Main loop ─────────────────────────────────────────────────────────
 
