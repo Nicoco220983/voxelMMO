@@ -2,9 +2,12 @@
 import { BaseEntity } from './entities/BaseEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
 import { PlayerEntity } from './entities/PlayerEntity.js'
-import { EntityType, CREATED_BIT } from './types.js'
+import { EntityType, CREATED_BIT, POSITION_BIT } from './types.js'
 import { DeltaType } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
+import { ChunkId, chunkIdOfSubVoxel } from './Chunk.js'
+
+/** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
 
 /**
  * @class EntityRegistry
@@ -34,25 +37,30 @@ export class EntityRegistry {
   }
 
   /**
-   * Factory method to create appropriate entity type.
-   * @param {number} globalId
+   * Create an entity and register it in both global registry and chunk membership.
+   * @param {ChunkRegistry} chunkRegistry
+   * @param {number} entityId
    * @param {number} entityType
-   * @returns {BaseEntity}
+   * @param {ChunkIdPacked} chunkId
+   * @returns {BaseEntity} The created entity
+   * @private
    */
-  #createEntity(globalId, entityType) {
-    if (!this.scene) {
-      return new BaseEntity(globalId, entityType)
-    }
+  #createEntity(chunkRegistry, entityId, entityType, chunkId) {
+    let entity = null
     if (entityType === EntityType.SHEEP) {
-      return new SheepEntity(globalId, this.scene)
+      entity = new SheepEntity(entityId, this.scene)
+    } else if (entityType === EntityType.PLAYER || entityType === EntityType.GHOST_PLAYER) {
+      entity = new PlayerEntity(entityId, entityType, this.scene)
+    } else {
+      console.error('[EntityRegistry] Unknown entity type:', entityType, 'for entity', entityId)
+      return null
     }
-    if (entityType === EntityType.PLAYER || entityType === EntityType.GHOST_PLAYER) {
-      return new PlayerEntity(globalId, entityType, this.scene)
-    }
-    if (!Object.values(EntityType).includes(entityType)) {
-      console.error('[EntityRegistry] Unknown entity type:', entityType, 'for entity', globalId)
-    }
-    return new BaseEntity(globalId, entityType)
+    if(!entity) return null
+    this.#entities.set(entityId, entity)
+    entity.chunkId = chunkId
+    const chunk = chunkRegistry.getOrCreate(chunkId)
+    chunk.entities.add(entityId)
+    return entity
   }
 
   /**
@@ -89,34 +97,75 @@ export class EntityRegistry {
   }
 
   /**
-   * Remove a specific entity by its global ID.
-   * Calls destroy() on the entity if it has a mesh.
-   * @param {number} globalId
-   * @returns {boolean} True if entity was removed
+   * Detect if entity's current position puts it in a different chunk than expected.
+   * If so, update entity.chunkId and move entity between chunk entity sets.
+   * @param {ChunkRegistry} chunkRegistry
+   * @param {ChunkIdPacked} expectedChunkId - The chunk ID from the message
+   * @param {BaseEntity} entity
+   * @private
    */
-  remove(globalId) {
-    const entity = this.#entities.get(globalId)
-    if (!entity) return false
-    if (entity.destroy && this.scene) {
-      entity.destroy(this.scene)
+  #detectAndHandleChunkChange(chunkRegistry, expectedChunkId, entity) {
+    const pos = entity.motion
+    const actualChunkId = chunkIdOfSubVoxel(pos.x, pos.y, pos.z)
+    
+    if (actualChunkId.packed !== expectedChunkId) {
+      console.debug('[EntityRegistry] Entity crossed chunk boundary:', { 
+        entityId: entity.id, 
+        fromChunk: new ChunkId(expectedChunkId).toString(), 
+        toChunk: actualChunkId.toString(),
+        pos: { x: pos.x, y: pos.y, z: pos.z }
+      })
+      
+      // Update entity's chunk reference
+      entity.chunkId = actualChunkId.packed
+      
+      // Remove from old chunk's entities
+      const oldChunk = chunkRegistry.get(expectedChunkId)
+      if (oldChunk) oldChunk.entities.delete(entity.id)
+      
+      // Add to new chunk's entities
+      const newChunk = chunkRegistry.getOrCreate(actualChunkId.packed)
+      newChunk.entities.add(entity.id)
     }
-    this.#entities.delete(globalId)
-    return true
+  }
+
+  /**
+   * Delete an entity and remove it from chunk membership.
+   * Gets the chunk ID from entity.chunkId.
+   * @param {ChunkRegistry} chunkRegistry
+   * @param {number} entityId
+   */
+  deleteEntity(chunkRegistry, entityId) {
+    const entity = this.#entities.get(entityId)
+    if (entity) {
+      console.debug('[EntityRegistry] Deleting entity:', { entityId })
+      if (entity.destroy && this.scene) {
+        entity.destroy(this.scene)
+      }
+      this.#entities.delete(entityId)
+      // Remove from chunk's entities using entity's stored chunkId
+      if (entity.chunkId !== undefined) {
+        const chunk = chunkRegistry.get(entity.chunkId)
+        if (chunk) chunk.entities.delete(entityId)
+      }
+    }
   }
 
   /**
    * Parse and apply entity records from a snapshot message.
    * Replaces all entities in the chunk with the new set.
-   * The caller is responsible for managing chunk.entities Set.
-   * @param {Set<number>} chunkEntities - The chunk's entities Set to populate
+   * @param {ChunkRegistry} chunkRegistry - The chunk registry
+   * @param {ChunkIdPacked} chunkId - The chunk ID
    * @param {DataView} view
    * @param {number} offset Byte offset to start of entity section (entity count int32)
    * @param {number} entitySectionSize Size of entity section in bytes
    * @param {number} messageTick Server tick from message header
-   * @param {ChunkIdPacked} chunkId - The chunk ID for setting entity.chunkId
    * @returns {number} Number of entities parsed
    */
-  applySnapshotEntities(chunkEntities, view, offset, entitySectionSize, messageTick, chunkId) {
+  applySnapshotEntities(chunkRegistry, chunkId, view, offset, entitySectionSize, messageTick) {
+    const chunk = chunkRegistry.getOrCreate(chunkId)
+    const chunkEntities = chunk.entities
+    
     // Remove existing entities that were in this chunk
     for (const globalId of chunkEntities) {
       const entity = this.#entities.get(globalId)
@@ -154,12 +203,8 @@ export class EntityRegistry {
       const type = reader.readUint8()
       const componentFlags = reader.readUint8()
 
-      const entity = this.#createEntity(id, type)
-      entity.chunkId = chunkId
+      const entity = this.#createEntity(chunkRegistry, id, type, chunkId)
       entity.applyComponents(reader, componentFlags, messageTick)
-
-      this.#entities.set(id, entity)
-      chunkEntities.add(id)
     }
     return count
   }
@@ -168,15 +213,13 @@ export class EntityRegistry {
    * Parse and apply entity deltas from a delta message.
    * Handles CREATE_ENTITY (new), UPDATE_ENTITY (update), DELETE_ENTITY (remove),
    * and CHUNK_CHANGE_ENTITY (entity moved to different chunk).
-   * The caller is responsible for managing chunk.entities Set and target chunk's entities Set.
-   * @param {Set<number>} chunkEntities - The source chunk's entities Set
+   * @param {ChunkRegistry} chunkRegistry - The chunk registry
+   * @param {ChunkIdPacked} chunkId - The source chunk ID
    * @param {BufReader} reader Positioned at entity count
    * @param {number} messageTick Server tick from message header
-   * @param {ChunkIdPacked} chunkId - The source chunk ID
-   * @param {(chunkId: ChunkIdPacked) => Set<number>|undefined} getChunkEntities - Function to get target chunk's entities Set
    * @returns {number} Number of entity deltas parsed
    */
-  applyDeltaEntities(chunkEntities, reader, messageTick, chunkId, getChunkEntities) {
+  applyDeltaEntities(chunkRegistry, chunkId, reader, messageTick) {
     const count = reader.readInt32()
 
     for (let i = 0; i < count; i++) {
@@ -184,55 +227,43 @@ export class EntityRegistry {
       const entityId = reader.readUint32()
 
       if (deltaType === DeltaType.DELETE_ENTITY) {
-        // Entity removed from this chunk (despawned or moved elsewhere)
-        const entity = this.#entities.get(entityId)
-        if (entity) {
-          console.debug('[EntityRegistry] Deleting entity:', { entityId })
-          // Call destroy if entity has a mesh
-          if (entity.destroy && this.scene) {
-            entity.destroy(this.scene)
-          }
-          this.#entities.delete(entityId)
-        }
-        chunkEntities.delete(entityId)
+        this.deleteEntity(chunkRegistry, entityId)
       } else if (deltaType === DeltaType.CHUNK_CHANGE_ENTITY) {
-        // Entity moved to different chunk - read new chunk ID
+        // Only remove if the target chunk is not registered
+        // The actual entity.chunkId update is handled automatically by #detectAndHandleChunkChange
         const newChunkIdPacked = reader.readInt64()
-        const entity = this.#entities.get(entityId)
-        if (entity && entity.chunkId === chunkId) {
-          console.debug('[EntityRegistry] Changing chunk entity:', { entityId })
-          // Update entity's chunk reference
-          entity.chunkId = newChunkIdPacked
-          // Remove from old chunk's members
-          chunkEntities.delete(entityId)
-          // Add to new chunk's members (via callback)
-          const newChunkEntities = getChunkEntities(newChunkIdPacked)
-          if (newChunkEntities) {
-            newChunkEntities.add(entityId)
-          }
+        if (!chunkRegistry.has(newChunkIdPacked)) {
+          console.debug('[EntityRegistry] Entity moved to unregistered chunk, removing:', { entityId, newChunkId: newChunkId.toString() })
+          this.deleteEntity(chunkRegistry, entityId)
         }
       } else if (deltaType === DeltaType.CREATE_ENTITY || deltaType === DeltaType.UPDATE_ENTITY) {
         // CREATE_ENTITY or UPDATE_ENTITY - both have entityType + component data
         const entityType = reader.readUint8()
         const componentMask = reader.readUint8()
         
+        console.log("TMP entities", this.#entities)
         let entity = this.#entities.get(entityId)
         
         // Protocol error: UPDATE_ENTITY for unknown entity without CREATED flag
         if (deltaType === DeltaType.UPDATE_ENTITY && !entity && !(componentMask & CREATED_BIT)) {
           console.error('[EntityRegistry] UPDATE_ENTITY for unknown entity without CREATED flag:', entityId)
+          continue
         }
         
-        if (!entity) {
+        const wasCreate = !entity
+        if (wasCreate) {
           console.debug('[EntityRegistry] Creating entity:', { entityId, entityType, isCreate: deltaType === DeltaType.CREATE_ENTITY })
-          entity = this.#createEntity(entityId, entityType)
-          this.#entities.set(entityId, entity)
+          entity = this.#createEntity(chunkRegistry, entityId, entityType, chunkId)
         } else {
           console.debug('[EntityRegistry] Updating entity:', { entityId, entityType })
         }
-        entity.chunkId = chunkId
-        chunkEntities.add(entityId)
         entity.applyComponents(reader, componentMask, messageTick)
+        
+        // For UPDATE_ENTITY (not CREATE), detect if position change caused chunk boundary crossing
+        // This handles cases where server may not send explicit CHUNK_CHANGE_ENTITY
+        if (!wasCreate && (componentMask & POSITION_BIT)) {
+          this.#detectAndHandleChunkChange(chunkRegistry, chunkId, entity)
+        }
       } else {
         console.error('[EntityRegistry] Unknown delta type:', deltaType, 'for entity', entityId)
       }

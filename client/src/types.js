@@ -98,6 +98,12 @@ export const VoxelType = Object.freeze({
 /** @type {number} */ export const SUBVOXEL_BITS = 8
 /** @type {number} */ export const SUBVOXEL_SIZE = 1 << SUBVOXEL_BITS   // 256
 
+// ── Chunk shift constants (must match server Types.hpp) ──────────────────────
+// Bit-shift from sub-voxel position to chunk coordinate = log2(chunk_dim × SUBVOXEL_SIZE)
+/** @type {number} */ export const CHUNK_SHIFT_Y = 13  // log2(32 × 256)
+/** @type {number} */ export const CHUNK_SHIFT_X = 13  // log2(32 × 256)
+/** @type {number} */ export const CHUNK_SHIFT_Z = 13  // log2(32 × 256)
+
 // ── Physics constants (must match server Types.hpp) ──────────────────────────
 
 /** @type {number} */ export const TICK_RATE         = 20      // ticks per second

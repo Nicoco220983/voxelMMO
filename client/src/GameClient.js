@@ -2,7 +2,7 @@
 import * as THREE from 'three'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
 import { NetworkProtocol, ServerMessageType } from './NetworkProtocol.js'
-import { Chunk } from './Chunk.js'
+import { Chunk, ChunkId } from './Chunk.js'
 import { ChunkRegistry } from './ChunkRegistry.js'
 import { EntityRegistry } from './EntityRegistry.js'
 import { lz4Decompress, BufReader } from './utils.js'
@@ -199,15 +199,14 @@ export class GameClient {
   pruneDistantChunks(playerX, playerZ, maxRadius = 10) {
     const pcx = Math.floor(playerX / CHUNK_SIZE_X)
     const pcz = Math.floor(playerZ / CHUNK_SIZE_Z)
-    for (const [chunkId, chunk] of this.#chunkRegistry.entries()) {
-      const cx = Number(BigInt.asIntN(29, chunkId >> 29n))
-      const cz = Number(BigInt.asIntN(29, chunkId))
-      if (Math.abs(cx - pcx) > maxRadius || Math.abs(cz - pcz) > maxRadius) {
+    for (const [chunkIdPacked, chunk] of this.#chunkRegistry.entries()) {
+      const chunkId = new ChunkId(chunkIdPacked)
+      if (Math.abs(chunkId.x - pcx) > maxRadius || Math.abs(chunkId.z - pcz) > maxRadius) {
         // Remove entities belonging to this chunk
         for (const entityId of chunk.entities) {
-          this.#entityRegistry.remove(entityId)
+          this.#entityRegistry.deleteEntity(this.#chunkRegistry, entityId)
         }
-        this.#chunkRegistry.remove(chunkId, this.#scene)
+        this.#chunkRegistry.remove(chunkIdPacked, this.#scene)
       }
     }
   }
@@ -261,9 +260,8 @@ export class GameClient {
         if (!header) return
 
         const { msgType: type, chunkId, messageTick, cx, cy, cz } = header
+
         this.syncTick(messageTick)
-
-
 
         let voxelCount = 0
         let entityCount = 0
@@ -313,7 +311,7 @@ export class GameClient {
 
     // Entity section
     const ess = view.getInt32(off, true); off += 4
-    const entityCount = this.#entityRegistry.applySnapshotEntities(chunk.entities, view, off, ess, messageTick, chunkId)
+    const entityCount = this.#entityRegistry.applySnapshotEntities(this.#chunkRegistry, chunkId, view, off, ess, messageTick)
     off += ess
 
     chunk.dirty = true
@@ -358,12 +356,7 @@ export class GameClient {
     let entityCount = 0
     if (pOff + 4 <= pView.byteLength) {
       const reader = new BufReader(pView, pOff)
-      // Callback to get target chunk's entities for CHUNK_CHANGE_ENTITY
-      const getTargetChunkEntities = (/** @type {ChunkIdPacked} */ targetChunkId) => {
-        const targetChunk = this.#chunkRegistry.get(targetChunkId)
-        return targetChunk?.entities
-      }
-      entityCount = this.#entityRegistry.applyDeltaEntities(chunk.entities, reader, messageTick, chunkId, getTargetChunkEntities)
+      entityCount = this.#entityRegistry.applyDeltaEntities(this.#chunkRegistry, chunkId, reader, messageTick)
     }
 
     chunk.dirty = true

@@ -1,4 +1,5 @@
 // @ts-check
+import { ChunkId } from './Chunk.js'
 
 /**
  * Server message types - first byte of every server → client message.
@@ -151,12 +152,10 @@ export class NetworkProtocol {
     if (view.byteLength < 15) return null
     const msgType     = view.getUint8(0)
     const size        = view.getUint16(1, true)
-    const chunkId     = view.getBigInt64(3, true)
+    const chunkIdPacked = view.getBigInt64(3, true)
     const messageTick = view.getUint32(11, true)
-    const cy = Number(BigInt.asIntN(6,  chunkId >> 58n))
-    const cx = Number(BigInt.asIntN(29, chunkId >> 29n))
-    const cz = Number(BigInt.asIntN(29, chunkId))
-    return { msgType, size, chunkId, messageTick, cx, cy, cz }
+    const chunkId = new ChunkId(chunkIdPacked)
+    return { msgType, size, chunkId: chunkIdPacked, messageTick, cx: chunkId.x, cy: chunkId.y, cz: chunkId.z }
   }
 
   /**

@@ -1,9 +1,124 @@
 // @ts-check
 import * as THREE from 'three'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType } from './types.js'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, SUBVOXEL_BITS, CHUNK_SHIFT_X, CHUNK_SHIFT_Y, CHUNK_SHIFT_Z } from './types.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
+
+/**
+ * @class ChunkId
+ * @description Chunk identifier packed as sint6(y) | sint29(x) | sint29(z) into 64 bits.
+ * Bit layout (MSB first): [63:58] y (6-bit signed) | [57:29] x (29-bit signed) | [28:0] z (29-bit signed)
+ * World extents: y ∈ [-32, 31], x/z ∈ [-268435456, 268435455]
+ */
+export class ChunkId {
+  /** @type {bigint} Packed 64-bit representation */
+  packed
+
+  /**
+   * @param {bigint|number} packed - The packed 64-bit chunk ID
+   */
+  constructor(packed) {
+    this.packed = BigInt.asIntN(64, BigInt(packed))
+  }
+
+  /**
+   * Create a ChunkId from its three signed components.
+   * @param {number} chunkY - Y component, signed 6-bit (range [-32, 31])
+   * @param {number} chunkX - X component, signed 29-bit
+   * @param {number} chunkZ - Z component, signed 29-bit
+   * @returns {ChunkId}
+   */
+  static make(chunkY, chunkX, chunkZ) {
+    const packed = (BigInt.asIntN(6, BigInt(chunkY)) << 58n)
+                 | (BigInt.asIntN(29, BigInt(chunkX)) << 29n)
+                 | BigInt.asIntN(29, BigInt(chunkZ))
+    return new ChunkId(packed)
+  }
+
+  /** @returns {number} Y component, signed 6-bit (range [-32, 31]) */
+  get y() {
+    const v = Number((this.packed >> 58n) & 0x3Fn)
+    return (v & 0x20) ? (v | 0xFFFFFFC0) : v
+  }
+
+  /** @returns {number} X component, signed 29-bit */
+  get x() {
+    const v = Number((this.packed >> 29n) & 0x1FFFFFFFn)
+    return (v & 0x10000000) ? (v | 0xE0000000) : v
+  }
+
+  /** @returns {number} Z component, signed 29-bit */
+  get z() {
+    const v = Number(this.packed & 0x1FFFFFFFn)
+    return (v & 0x10000000) ? (v | 0xE0000000) : v
+  }
+
+  /**
+   * Compare equality with another ChunkId.
+   * @param {ChunkId} other
+   * @returns {boolean}
+   */
+  equals(other) {
+    return this.packed === other.packed
+  }
+
+  /**
+   * Compare ordering with another ChunkId (for sorting).
+   * @param {ChunkId} other
+   * @returns {number} negative if this < other, 0 if equal, positive if this > other
+   */
+  compareTo(other) {
+    return this.packed < other.packed ? -1 : this.packed > other.packed ? 1 : 0
+  }
+
+  /**
+   * Returns the packed value for use as Map key.
+   * @returns {bigint}
+   */
+  valueOf() {
+    return this.packed
+  }
+
+  /**
+   * String representation for debugging.
+   * @returns {string}
+   */
+  toString() {
+    return `ChunkId(${this.packed}: ${this.x}, ${this.y}, ${this.z})`
+  }
+}
+
+/**
+ * Compute ChunkId for the chunk that contains integer world-voxel coordinate (ix, iy, iz).
+ * Uses arithmetic right-shift for correct negative coordinate handling.
+ * @param {number} worldX
+ * @param {number} worldY
+ * @param {number} worldZ
+ * @returns {ChunkId}
+ */
+export function chunkIdOf(worldX, worldY, worldZ) {
+  return ChunkId.make(
+    worldY >> CHUNK_SHIFT_Y,
+    worldX >> CHUNK_SHIFT_X,
+    worldZ >> CHUNK_SHIFT_Z
+  )
+}
+
+/**
+ * Compute ChunkId for the chunk that contains sub-voxel coordinates.
+ * @param {number} subX - Sub-voxel X coordinate
+ * @param {number} subY - Sub-voxel Y coordinate
+ * @param {number} subZ - Sub-voxel Z coordinate
+ * @returns {ChunkId}
+ */
+export function chunkIdOfSubVoxel(subX, subY, subZ) {
+  return ChunkId.make(
+    subY >> CHUNK_SHIFT_Y,
+    subX >> CHUNK_SHIFT_X,
+    subZ >> CHUNK_SHIFT_Z
+  )
+}
 
 /** Voxel-type → 0xRRGGBB colour. AIR (0) is unused (never rendered). */
 const VOXEL_COLORS = /** @type {Record<number,number>} */ ({
@@ -126,9 +241,10 @@ export class Chunk {
       this.#mesh = null
     }
 
-    const cy = Number(BigInt.asIntN(6,  this.chunkId >> 58n))
-    const cx = Number(BigInt.asIntN(29, this.chunkId >> 29n))
-    const cz = Number(BigInt.asIntN(29, this.chunkId))
+    const chunkId = new ChunkId(this.chunkId)
+    const cx = chunkId.x
+    const cy = chunkId.y
+    const cz = chunkId.z
 
     /** @type {number[]} */ const positions = []
     /** @type {number[]} */ const colors    = []
