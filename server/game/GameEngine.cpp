@@ -93,7 +93,7 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
 
 // ── Player management ─────────────────────────────────────────────────────
 
-void GameEngine::queuePendingPlayer(GatewayId gwId, PlayerId playerId)
+void GameEngine::registerPlayer(GatewayId gwId, PlayerId playerId)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     pendingPlayers[playerId] = {gwId};

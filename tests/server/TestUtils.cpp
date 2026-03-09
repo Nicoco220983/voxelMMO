@@ -34,7 +34,7 @@ PlayerId TestEnv::addPlayer(EntityType type) {
     PlayerId pid = nextPlayerId_++;
     
     // Queue as pending player (spawn position is determined by WorldGenerator)
-    engine_.queuePendingPlayer(gatewayId_, pid);
+    engine_.registerPlayer(gatewayId_, pid);
     
     // Send JOIN message to spawn the entity
     uint8_t joinMsg[5] = {

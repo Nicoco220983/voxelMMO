@@ -64,13 +64,13 @@ public:
     // ── Player management ─────────────────────────────────────────────────
 
     /**
-     * @brief Queue a pending player entry (called on WebSocket connect).
+     * @brief Register a new player (called on WebSocket connect).
      *
-     * The entity is not yet spawned.  The gateway should forward the client's
+     * The entity is not yet spawned. The gateway should forward the client's
      * JOIN message to handlePlayerInput(), which will spawn the entity with
      * the requested EntityType and send the initial snapshot.
      */
-    void queuePendingPlayer(GatewayId gwId, PlayerId playerId);
+    void registerPlayer(GatewayId gwId, PlayerId playerId);
 
     /**
      * @brief Spawn a new player entity with the given type.

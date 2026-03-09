@@ -67,7 +67,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `entt::registry registry` — single source of truth for all entity state
 - `ChunkRegistry chunkRegistry` — central chunk registry (replaces raw chunks map)
 - `map[GatewayId, GatewayInfo] gateways`, `map[PlayerId, entt::entity] playerEntities`
-- `queuePendingPlayer()` — called on WebSocket connect; parks player in `pendingPlayers` until JOIN arrives
+- `registerPlayer()` — called on WebSocket connect; parks player in `pendingPlayers` until JOIN arrives
 - `addPlayer()` — delegates to `playerFactories` map; accepts optional `EntityType` (default `GHOST_PLAYER`); used directly by tests
 - `removePlayer()` — cleans chunk membership via ChunkMembershipComponent, then destroys entity
 - `teleportPlayer()` — directly sets player position (for test setup / admin use)

@@ -88,7 +88,7 @@ int main(int argc, char* argv[]) {
     game.registerGateway(0);
 
     gateway.setPlayerConnectCallback([&](voxelmmo::PlayerId pid) {
-        game.queuePendingPlayer(0, pid);
+        game.registerPlayer(0, pid);
         std::cout << "[main] Player " << pid << " connected (pending JOIN)\n";
         // Entity is spawned when the client sends JOIN; sendSnapshot() is called then.
     });
