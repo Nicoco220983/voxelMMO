@@ -53,8 +53,9 @@ function voxelHash(wx, wy, wz) {
 
 /**
  * @class Chunk
- * @description Client-side state for one chunk: voxel data and Three.js mesh.
- * Entity management is handled by EntityRegistry; Chunk only manages voxels.
+ * @description Client-side state for one chunk: voxel data, entity membership, and Three.js mesh.
+ * Each chunk tracks which GlobalEntityIds are currently within it via the `entities` Set.
+ * The actual entity objects are managed by EntityRegistry.
  */
 export class Chunk {
   /** @type {ChunkIdPacked} */
@@ -69,6 +70,9 @@ export class Chunk {
   /** @type {boolean} True when voxels changed and mesh needs rebuild. */
   dirty = false
 
+  /** @type {Set<number>} Set of GlobalEntityIds currently in this chunk */
+  entities = new Set()
+
   /** @returns {Uint8Array} */
   get voxels() { return this.#voxels }
 
@@ -76,6 +80,7 @@ export class Chunk {
   constructor(chunkId) {
     this.chunkId = chunkId
     this.#voxels = new Uint8Array(CHUNK_VOXEL_COUNT)
+    this.entities = new Set()
   }
 
   /**
