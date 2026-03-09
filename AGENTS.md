@@ -13,8 +13,9 @@ A high performance online webgame massive multiplayer, on wide generated world.
 - Authoritative server with entt C++ ECS. No game logic in the gateway.
 - GameEngine (game loop) and GatewayEngine (uWS) are decoupled; can run on separate servers.
 - World is fully chunked. Chunks activate on first player approach, generate terrain on activation.
-- Each Chunk owns a ChunkState (snapshot + deltas + scratch); serialisation is per-chunk and parallelisable.
+- Each Chunk owns a ChunkState (unified buffer + entries + scratch); serialisation is per-chunk and parallelisable.
 - 3 message levels per chunk: snapshot → snapshot delta → tick delta. See `docs/wire-format.md`.
+- **Unified buffer layout**: `[snapshot][snapshot_delta][tick_delta_1][tick_delta_2]...` — snapshot deltas clear previous deltas; tick deltas append.
 
 # Core principles
 
@@ -51,7 +52,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `Types.hpp` — ChunkId, VoxelId, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
 - `ChunkRegistry.hpp` — Central chunk registry owning the chunks map. Provides `getChunk()` (read-only) for physics/serialization, and `generate()/activate()/deactivate()` for chunk lifecycle management. All chunk access goes through the registry; systems should use the read-only `getChunk()` when possible.
 - `MessageTypes.hpp` — ServerMessageType (CHUNK_SNAPSHOT=0, CHUNK_SNAPSHOT_DELTA=2, CHUNK_TICK_DELTA=4, SELF_ENTITY=6), DeltaType, ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
-- `ChunkState.hpp` — snapshot + deltas + scratch buffers; used by Chunk and GatewayEngine
+- `ChunkState.hpp` — unified buffer with entries (tracks tick/offset/length per message) + scratch; used by Chunk and GatewayEngine; `receiveMessage()` handles all message types with proper cleaning logic
 - `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick) — located in `server/game/`
 - `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
 - `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendToBatch). All messages use `[type(1)][size(2)]` header (3 bytes). Chunk state messages add `[chunk_id(8)][tick(4)]` = 15 byte header total. Messages are batched by direct concatenation (no length prefix).
@@ -71,7 +72,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `addPlayer(playerId, type)` — spawns player entity; used internally (JOIN handler) and by tests
 - `removePlayer()` — cleans chunk membership via ChunkMembershipComponent, then destroys entity
 - `teleportPlayer()` — directly sets player position (for test setup / admin use)
-- `tick()` → `InputSystem::apply()` → `SheepAISystem::apply()` → `stepPhysics()` → `detectChunkCrossings()` → `updateEntitiesChunks()` → `rebuildGatewayWatchedChunks()` → `serializeSnapshotDelta()` or `serializeTickDelta()`
+- `tick()` → `InputSystem::apply()` → `SheepAISystem::apply()` → `stepPhysics()` → `detectChunkCrossings()` → `updateEntitiesChunks()` → `rebuildGatewayWatchedChunks()` → `serializeChunks()` → chunk's `getDataForGateway()` decides what to send
 - `detectChunkCrossings()` — Phase A: detects entities crossing chunk boundaries, marks with `PendingChunkChangeComponent`
 - `updateEntitiesChunks()` — Phase B: processes pending creates/changes/deletions (entities destroyed after serialization)
 - `rebuildGatewayWatchedChunks()` — Phase C: rebuilds gateway watchedChunks, activates new chunks, sends snapshots
@@ -85,8 +86,10 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 **server/game/Chunk.hpp/cpp**
 - `set<entt::entity> entities` — chunk membership; wire ID from GlobalEntityIdComponent
 - `bool activated` — true if chunk has been activated (entities spawned)
-- `buildSnapshot(reg, tick)` — LZ4(voxels) zero-copy + entity section into scratch, compress if above threshold
-- `buildSnapshotDelta / buildTickDelta` — staging buffer → optional LZ4 → appended to state.deltas
+- `buildSnapshot(reg, tick)` — writes to unified buffer at offset 0, clears previous entries
+- `buildSnapshotDelta` — clears previous deltas (keeps snapshot), appends new snapshot delta
+- `buildTickDelta` — appends to unified buffer
+- `getDataForGateway(lastTick, data, length)` — returns appropriate data for gateway's last received tick
 
 **server/game/ChunkRegistry.hpp**
 - Central registry owning `unordered_map<ChunkId, unique_ptr<Chunk>>`
@@ -123,8 +126,9 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `SheepAISystem.hpp` — `apply(registry, tick)`: simple state machine (IDLE 2-5s → WALK 2s loop); sets velocity toward random target; runs before physics
 
 **server/gateway/**
-- `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameMessage()` forwards to clients
-- `GatewayEngine` — uWS server; manages WebSocket connections, per-chunk state cache (`chunkStates`), and per-player metadata (`players`)
+- `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameMessage()` routes to `ChunkState::receiveMessage()`
+- `receiveMessage()` handles snapshots (clear all), snapshot deltas (clear previous deltas), and tick deltas (append)
+- Manages per-chunk state cache (`chunkStates`) and per-player metadata (`players`)
 
 **client/src/**
 - `types.js` — game constants (EntityType, VoxelType, SUBVOXEL_SIZE, physics constants …)

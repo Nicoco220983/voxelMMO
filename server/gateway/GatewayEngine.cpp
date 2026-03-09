@@ -118,7 +118,6 @@ void GatewayEngine::receiveChunkMessage(const uint8_t* data, size_t size) {
     // Minimum header: [type(1)][size(2)][chunk_id(8)][tick(4)] = 15 bytes
     if (size < NetworkProtocol::CHUNK_MESSAGE_HEADER_SIZE) return;
 
-    const auto msgType = static_cast<ServerMessageType>(data[0]);
     // size is at bytes 1-2, chunk_id at bytes 3-10
     ChunkId cid;
     std::memcpy(&cid.packed, data + 3, sizeof(int64_t));
