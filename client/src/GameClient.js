@@ -6,6 +6,7 @@ import { Chunk } from './Chunk.js'
 import { EntityRegistry } from './EntityRegistry.js'
 import { lz4Decompress, BufReader } from './utils.js'
 import { BaseEntity } from './entities/BaseEntity.js'
+import { TICK_RATE } from './types.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
@@ -44,12 +45,10 @@ export class GameClient {
 
   /** @type {number} Server tick from the most-recently received message. */
   #latestServerTick = 0
+  #latestServerTickTimeMs = Date.now()
 
   /** @type {number|null} GlobalEntityId of the local player entity. */
   #selfEntityId = null
-
-  /** @returns {number} */
-  get latestServerTick() { return this.#latestServerTick }
 
   /**
    * Returns the local player's own entity as tracked by the server, or null until
@@ -75,7 +74,18 @@ export class GameClient {
    * Current server tick for entity prediction.
    * @returns {number}
    */
-  get currentTick() { return this.#latestServerTick }
+  get tick() {
+    return this.#latestServerTick + Math.floor((Date.now()-this.#latestServerTickTimeMs)/1000*TICK_RATE)
+  }
+
+  /**
+   * @param {number}      serverTick
+   */
+  syncTick(serverTick) {
+    if(serverTick <= this.#latestServerTick) return
+    this.#latestServerTick = serverTick
+    this.#latestServerTickTimeMs = Date.now()
+  }
 
   /**
    * Open the WebSocket connection.
@@ -256,7 +266,7 @@ export class GameClient {
         if (!header) return
 
         const { msgType: type, chunkId, messageTick, cx, cy, cz } = header
-        if (messageTick > this.#latestServerTick) this.#latestServerTick = messageTick
+        this.syncTick(messageTick)
 
 
 

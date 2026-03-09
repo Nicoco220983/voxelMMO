@@ -62,13 +62,19 @@ export class DynamicPositionComponent {
    * @returns {{x: number, y: number, z: number}}
    */
   predictAt(currentTick) {
+    const { x, y, z, vx, vy, vz, grounded } = this
+    if(vx==0 && vy==0 && vz==0 && grounded) return { x, y, z }
     const n = currentTick - this.tick
-    if (n <= 0) return { x: this.x, y: this.y, z: this.z }
-    const gravY = this.grounded ? 0 : GRAVITY_DECREMENT * n * (n + 1) / 2
+    //console.log("TMP predictAt", n)
+    if (n < 0) {
+      console.warn(`DynamicPositionComponent tick (${this.tick}) newer than global tick (${currentTick})`)
+      return { x, y, z }
+    }
+    const gravY = grounded ? 0 : GRAVITY_DECREMENT * n * (n + 1) / 2
     return {
-      x: this.x + this.vx * n,
-      y: this.y + this.vy * n - gravY,
-      z: this.z + this.vz * n,
+      x: x + vx * n,
+      y: y + vy * n - gravY,
+      z: z + vz * n,
     }
   }
 }

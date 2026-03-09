@@ -60,12 +60,6 @@ let yaw = 0, pitch = -0.3   // slightly downward initial look
 let predVy = 0              // local predicted Y velocity (sub-voxels/tick), PLAYER only
 let predGrounded = false    // local predicted grounded state
 
-// ── Tick tracking ─────────────────────────────────────────────────────────
-// currentTick is a float that mirrors the server's tick counter.
-// It is synced to the first incoming server message then advances with wall time.
-let currentTick = 0
-let tickSynced  = false
-
 // ── Remote entity meshes ──────────────────────────────────────────────────
 // Keyed by  "<chunkId>-<entityId>"  for uniqueness across chunks.
 // Box dimensions mirror server BoundingBoxComponent (PLAYER_BBOX: 0.8 × 1.8 × 0.8 voxels).
@@ -141,8 +135,6 @@ function sendInputIfChanged(buttons, yawVal, pitchVal) {
 const hud = /** @type {HTMLElement} */ (document.getElementById('hud'))
 
 // ── Render loop ───────────────────────────────────────────────────────────
-const TICK_DT = 1 / TICK_RATE
-
 let lastTime = performance.now()
 
 function animate() {
@@ -152,23 +144,15 @@ function animate() {
   const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
   lastTime  = now
 
-  // Sync currentTick to server on first message, then advance with wall time
-  if (!tickSynced && client.latestServerTick > 0) {
-    currentTick = client.latestServerTick
-    tickSynced  = true
-  } else {
-    currentTick += dt * TICK_RATE
-  }
-
   const buttons = computeButtons()
   sendInputIfChanged(buttons, yaw, pitch)
 
   // ── Position update: server-authoritative when self entity is known ──────
   const selfEnt = client.selfEntity
   if (selfEnt) {
-    // Use the server's last-known state forward-predicted to currentTick.
+    // Use the server's last-known state forward-predicted to client.tick.
     // This gives proper voxel collision, gravity, and grounded detection.
-    const pos = selfEnt.predictAt(currentTick)
+    const pos = selfEnt.predictAt(client.tick)
     posX = pos.x
     posY = pos.y
     posZ = pos.z
@@ -247,7 +231,7 @@ function animate() {
         scene.add(mesh)
         entityMeshes.set(id, mesh)
       }
-      const pos = entity.predictAt(currentTick)
+      const pos = entity.predictAt(client.tick)
       mesh.position.set(pos.x / SUBVOXEL_SIZE, pos.y / SUBVOXEL_SIZE, pos.z / SUBVOXEL_SIZE)
     }
   }
