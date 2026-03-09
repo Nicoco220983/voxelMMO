@@ -64,12 +64,9 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
     case ClientMessageType::JOIN: {
         auto msg = NetworkProtocol::parseJoin(data, size);
         if (!msg) return;
-        // Must be a pending player (not yet spawned).
-        auto pit = pendingPlayers.find(playerId);
-        if (pit == pendingPlayers.end()) return;
-        const PendingPlayer p = pit->second;
-        pendingPlayers.erase(pit);
-        addPlayer(p.gwId, playerId, msg->entityType);
+        // Ignore if player already has an entity (already spawned).
+        if (playerEntities.find(playerId) != playerEntities.end()) return;
+        addPlayer(playerId, msg->entityType);
         break;
     }
 
@@ -96,12 +93,13 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
 void GameEngine::registerPlayer(GatewayId gwId, PlayerId playerId)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
-    pendingPlayers[playerId] = {gwId};
+    // Player is tracked as "pending" (no entity yet) until JOIN message arrives.
+    // Presence in gateways[gwId].players but not in playerEntities = pending.
     if (auto it = gateways.find(gwId); it != gateways.end())
         it->second.players.insert(playerId);
 }
 
-void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId, EntityType type)
+void GameEngine::addPlayer(PlayerId playerId, EntityType type)
 {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
 
@@ -115,9 +113,6 @@ void GameEngine::addPlayer(GatewayId gwId, PlayerId playerId, EntityType type)
     // The last created entity should be our player
     const entt::entity ent = created.back();
     playerEntities[playerId] = ent;
-
-    if (auto it = gateways.find(gwId); it != gateways.end())
-        it->second.players.insert(playerId);
 
     // Note: Chunk generation and SELF_ENTITY message are handled later in the flow
     // by rebuildGatewayWatchedChunks() and updateEntitiesChunks() respectively.
@@ -134,6 +129,12 @@ void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32
 
 void GameEngine::removePlayer(PlayerId playerId) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
+    
+    // Remove from all gateway player sets (in case player was pending)
+    for (auto& [gid, info] : gateways) {
+        info.players.erase(playerId);
+    }
+    
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return;
     const entt::entity ent = it->second;

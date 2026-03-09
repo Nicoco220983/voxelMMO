@@ -78,12 +78,10 @@ public:
      * Delegates to entityFactory->spawnPlayer() for deferred creation.
      * Entities are actually created during createPendingEntities().
      *
-     * @param gwId     Gateway the player connected through.
      * @param playerId Persistent player identifier.
      * @param type     Entity type (selects physics mode).
      */
-    void addPlayer(GatewayId gwId, PlayerId playerId,
-                   EntityType type = EntityType::GHOST_PLAYER);
+    void addPlayer(PlayerId playerId, EntityType type = EntityType::GHOST_PLAYER);
 
     /** @brief Destroy a player entity and remove it from all chunk sets. */
     void removePlayer(PlayerId playerId);
@@ -191,8 +189,7 @@ private:
     std::unordered_map<GatewayId, GatewayInfo>             gateways;
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
 
-    struct PendingPlayer { GatewayId gwId; };
-    std::unordered_map<PlayerId, PendingPlayer>            pendingPlayers;
+
 
     int32_t  tickCount{0};
 
