@@ -48,14 +48,18 @@ client.connect().then(() => {
   console.error('[main] Failed to connect to server', err)
 })
 
-// ── Local player state ────────────────────────────────────────────────────
-// Approximate spawn position for client-side prediction; server corrects via deltas.
-// Server computes exact Y = surfaceY(32, 32) + 2; surface ∈ [4, 30] so Y ∈ [6, 32].
-let posX = 32 * SUBVOXEL_SIZE   // 8192
-let posY = 22 * SUBVOXEL_SIZE   // 5632  (approx surfaceY + 2)
-let posZ = 32 * SUBVOXEL_SIZE   // 8192
+// ── Camera state (yaw/pitch are client-side only, not from entity) ────────
 let yaw = 0, pitch = -0.3   // slightly downward initial look
-let predGrounded = false    // local predicted grounded state
+
+// ── Get local player from entity registry via client.selfEntity ───────────
+/**
+ * Get the local player entity from the entity registry.
+ * Returns null until SELF_ENTITY message has been received.
+ * @returns {import('./entities/BaseEntity.js').BaseEntity|null}
+ */
+function getLocalPlayer() {
+  return client.selfEntity
+}
 
 // ── Keyboard state ────────────────────────────────────────────────────────
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
@@ -136,18 +140,23 @@ function animate() {
   const buttons = computeButtons()
   sendInputIfChanged(buttons, yaw, pitch)
 
-  // ── Position update: server-authoritative with client-side prediction ─────
-  const selfEnt = client.selfEntity
-  if (selfEnt) {
+  // ── Position update: get from local player entity via registry ────────────
+  const localPlayer = getLocalPlayer()
+  let posX = 32 * SUBVOXEL_SIZE   // 8192 - default spawn X
+  let posY = 22 * SUBVOXEL_SIZE   // 5632 - default spawn Y (approx surface + 2)
+  let posZ = 32 * SUBVOXEL_SIZE   // 8192 - default spawn Z
+  let predGrounded = false
+
+  if (localPlayer) {
     // Use the server's last-known state forward-predicted to client.tick.
     // This gives proper voxel collision, gravity, and grounded detection.
-    const pos = selfEnt.getPos(client.tick)
+    const pos = localPlayer.getPos(client.tick)
     posX = pos.x
     posY = pos.y
     posZ = pos.z
-    predGrounded = selfEnt.motion.grounded
+    predGrounded = localPlayer.motion.grounded
   }
-  // Note: Before SELF_ENTITY arrives, camera stays at last known position.
+  // Note: Before SELF_ENTITY arrives, camera stays at default spawn position.
   // The initial position is set by server-sent entity in chunk snapshot.
 
   // Divide by SUBVOXEL_SIZE to get voxel coordinates for Three.js.
