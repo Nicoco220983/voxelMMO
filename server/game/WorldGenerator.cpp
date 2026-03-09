@@ -135,9 +135,15 @@ WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, std::optional<
     // Lean constructor - no chunk generation here
 }
 
+void WorldGenerator::init(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius) {
+    // Generate initial chunks around (0,0,0) and compute player spawn position
+    generateChunks(chunkRegistry, 0, 0, 0, radius, entityFactory, 0);
+    computePlayerSpawnPos();
+}
+
 void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
                                     int32_t centerX, int32_t centerY, int32_t centerZ,
-                                    int32_t initialActivationRadius,
+                                    int32_t radius,
                                     EntityFactory& entityFactory,
                                     uint32_t tick) {
     // Convert center position to chunk coordinates
@@ -145,10 +151,10 @@ void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
     const int32_t centerCy = centerY >> CHUNK_SHIFT_Y;
     const int32_t centerCz = centerZ >> CHUNK_SHIFT_Z;
     
-    // Generate and activate chunks within initialActivationRadius of center
-    for (int32_t dx = -initialActivationRadius; dx <= initialActivationRadius; ++dx) {
-        for (int32_t dy = -initialActivationRadius; dy <= initialActivationRadius; ++dy) {
-            for (int32_t dz = -initialActivationRadius; dz <= initialActivationRadius; ++dz) {
+    // Generate and activate chunks within radius of center
+    for (int32_t dx = -radius; dx <= radius; ++dx) {
+        for (int32_t dy = -radius; dy <= radius; ++dy) {
+            for (int32_t dz = -radius; dz <= radius; ++dz) {
                 const int32_t cx = centerCx + dx;
                 const int32_t cy = centerCy + dy;
                 const int32_t cz = centerCz + dz;

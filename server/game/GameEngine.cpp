@@ -22,12 +22,8 @@ GameEngine::GameEngine(uint32_t seed, bool seedProvided,
     entityFactory.registerSpawnImpl(EntityType::GHOST_PLAYER, GhostPlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::PLAYER, PlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::SHEEP, SheepEntity::spawnImpl);
-
-    // Generate initial chunks around (0,0,0) and compute player spawn position
-    // This is done here rather than in WorldGenerator constructor because
-    // chunkRegistry and registry must be initialized first.
-    worldGenerator.generateChunks(chunkRegistry, 0, 0, 0, ACTIVATION_RADIUS, entityFactory, 0);
-    worldGenerator.computePlayerSpawnPos();
+    // generate initial chunks and player spawn point
+    worldGenerator.init(chunkRegistry, entityFactory, ACTIVATION_RADIUS);
 }
 
 uint32_t GameEngine::generateRandomSeed() {
@@ -246,11 +242,12 @@ void GameEngine::tick() {
     auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
         gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
 
-    // Send SELF_ENTITY messages to newly created players (before serializeChunks)
-    sendSelfEntityMessages();
-
-    // Send state updates to clients
+    // Send state updates to clients (includes chunk snapshots with player entities)
     serializeChunks();
+
+    // Send SELF_ENTITY messages to newly created players (after serializeChunks)
+    // This ensures the chunk snapshot arrives first, so client knows the entity
+    sendSelfEntityMessages();
 
     // Clear all dirty flags after serialization
     clearAllDirtyFlags();

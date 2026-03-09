@@ -100,6 +100,12 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
         if (etype.type == EntityType::SHEEP) {
             flags |= SHEEP_BEHAVIOR_BIT;
         }
+        // Include CREATED_BIT for newly created entities
+        if (auto* dirty = reg.try_get<DirtyComponent>(ent)) {
+            if (dirty->isCreated()) {
+                flags |= DirtyComponent::CREATED_BIT;
+            }
+        }
         w.write(flags);
         
         dyn.serializeFields(w);

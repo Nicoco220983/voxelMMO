@@ -54,6 +54,8 @@ public:
     WorldGenerator(uint32_t seed = 0, GeneratorType type = GeneratorType::NORMAL,
                    std::optional<EntityType> testEntityType = std::nullopt);
     
+    void init(ChunkRegistry&, EntityFactory&, int32_t radius);
+    
     /** @return The seed used for generation. */
     uint32_t getSeed() const noexcept { return seed_; }
     
@@ -77,13 +79,13 @@ public:
      *
      * @param chunkRegistry        Registry to populate with generated chunks.
      * @param centerX/centerY/centerZ Center position in sub-voxels (typically 0,0,0).
-     * @param initialActivationRadius Radius around center to generate chunks.
+     * @param radius Radius around center to generate chunks.
      * @param entityFactory        Factory to queue entity spawn requests.
      * @param tick                 Current server tick.
      */
     void generateChunks(ChunkRegistry& chunkRegistry,
                         int32_t centerX, int32_t centerY, int32_t centerZ,
-                        int32_t initialActivationRadius,
+                        int32_t radius,
                         EntityFactory& entityFactory,
                         uint32_t tick);
     
