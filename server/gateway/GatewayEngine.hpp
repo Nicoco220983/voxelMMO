@@ -92,8 +92,11 @@ public:
     /**
      * @brief Route an incoming chunk message to the correct ChunkState bucket.
      *
-     * Snapshots call receiveSnapshot() (clears deltas); all delta variants call
-     * receiveDelta() (appends to the unified delta buffer).
+     * Calls receiveMessage() which handles all message types appropriately:
+     * - Snapshots: clear all existing data
+     * - Snapshot deltas: clear previous deltas (keep snapshot), append delta  
+     * - Tick deltas: just append to buffer
+     *
      * The message type is read from byte[0]; the ChunkId from bytes [3:10].
      *
      * @param data  Raw message bytes.

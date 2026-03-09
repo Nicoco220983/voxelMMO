@@ -142,28 +142,54 @@ struct ChunkState {
 
     // ── Receive helpers (gateway side) ────────────────────────────────────────
 
-    /** @brief Store a received full snapshot; discard all cached deltas. */
-    void receiveSnapshot(const uint8_t* data, size_t size) {
-        clear();
-        buffer.assign(data, data + size);
+    /**
+     * @brief Receive a message (snapshot or delta) and update the unified buffer.
+     *
+     * Handles all server message types appropriately:
+     * - CHUNK_SNAPSHOT (0, 1): Clears all existing data, stores as new snapshot
+     * - CHUNK_SNAPSHOT_DELTA (2, 3): Clears previous deltas (keeps snapshot), appends delta
+     * - CHUNK_TICK_DELTA (4, 5): Just appends to existing buffer
+     *
+     * @param data Pointer to message data (including 15-byte header).
+     * @param size Total message size in bytes.
+     */
+    void receiveMessage(const uint8_t* data, size_t size) {
+        if (size < 1) return;
         
+        const uint8_t msgType = data[0];
+        
+        // Extract tick from header (bytes 11-14)
         uint32_t tick = 0;
-        // tick is at bytes 11-14 in the 15-byte header
         if (size >= 15) std::memcpy(&tick, data + 11, sizeof(uint32_t));
         
-        entries.push_back({tick, 0, size});
-        hasNewData = true;
-    }
-
-    /** @brief Append a received delta (any type) to the unified buffer. */
-    void receiveDelta(const uint8_t* data, size_t size) {
-        uint32_t tick = 0;
-        // tick is at bytes 11-14 in the 15-byte header
-        if (size >= 15) std::memcpy(&tick, data + 11, sizeof(uint32_t));
+        // Check message type to determine handling
+        const bool isSnapshot = (msgType == 0 || msgType == 1);  // CHUNK_SNAPSHOT[_COMPRESSED]
+        const bool isSnapshotDelta = (msgType == 2 || msgType == 3);  // CHUNK_SNAPSHOT_DELTA[_COMPRESSED]
         
-        size_t offset = buffer.size();
-        entries.push_back({tick, offset, size});
-        buffer.insert(buffer.end(), data, data + size);
+        if (isSnapshot) {
+            // Full snapshot: clear everything and start fresh
+            clear();
+            buffer.assign(data, data + size);
+            entries.push_back({tick, 0, size});
+        } else if (isSnapshotDelta) {
+            // Snapshot delta: supersedes all previous deltas, keep only snapshot
+            if (!entries.empty()) {
+                // Keep only the first entry (snapshot)
+                const auto& snapshotEntry = entries[0];
+                buffer.resize(snapshotEntry.length);
+                entries.resize(1);
+            }
+            // Append the snapshot delta
+            size_t offset = buffer.size();
+            entries.push_back({tick, offset, size});
+            buffer.insert(buffer.end(), data, data + size);
+        } else {
+            // Tick delta: just append
+            size_t offset = buffer.size();
+            entries.push_back({tick, offset, size});
+            buffer.insert(buffer.end(), data, data + size);
+        }
+        
         hasNewData = true;
     }
 };

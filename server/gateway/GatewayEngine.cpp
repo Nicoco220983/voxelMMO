@@ -124,20 +124,12 @@ void GatewayEngine::receiveChunkMessage(const uint8_t* data, size_t size) {
     std::memcpy(&cid.packed, data + 3, sizeof(int64_t));
 
     ChunkState& state = getChunkState(cid);
-
-    switch (msgType) {
-        case ServerMessageType::CHUNK_SNAPSHOT_COMPRESSED:
-            state.receiveSnapshot(data, size);
-            break;
-        case ServerMessageType::CHUNK_SNAPSHOT_DELTA:
-        case ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED:
-        case ServerMessageType::CHUNK_TICK_DELTA:
-        case ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED:
-            state.receiveDelta(data, size);
-            break;
-        default:
-            break;
-    }
+    
+    // receiveMessage handles all message types appropriately:
+    // - Snapshots: clear all existing data
+    // - Snapshot deltas: clear previous deltas (keep snapshot), append delta
+    // - Tick deltas: just append
+    state.receiveMessage(data, size);
 }
 
 ChunkState& GatewayEngine::getChunkState(ChunkId id) {
