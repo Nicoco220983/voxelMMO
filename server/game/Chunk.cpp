@@ -356,12 +356,11 @@ bool Chunk::updateState(entt::registry& reg, uint32_t tickCount)
 
 // ── Gateway data query ─────────────────────────────────────────────────────
 
-uint32_t Chunk::getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const
+void Chunk::getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const
 {
     auto result = state.getDataToSend(lastReceivedTick);
     outData = result.first;
     outLength = result.second;
-    return state.getLatestTick();
 }
 
 } // namespace voxelmmo

@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <functional>
+#include <iostream>
 
 namespace voxelmmo {
 
@@ -45,6 +46,11 @@ struct ChunkId {
     constexpr bool operator!=(const ChunkId& o) const noexcept { return packed != o.packed; }
     constexpr bool operator< (const ChunkId& o) const noexcept { return packed <  o.packed; }
 };
+
+/** @brief Stream output for ChunkId (outputs packed value and unpacked coordinates). */
+inline std::ostream& operator<<(std::ostream& os, const ChunkId& id) {
+    return os << "ChunkId(" << id.packed << ": " << id.x() << ", " << id.y() << ", " << id.z() << ")";
+}
 
 /** @brief Packed voxel index: uint5(y) | uint5(x) | uint5(z) into 15 bits.
  *         Used for delta encoding (wire format) and direct array indexing.

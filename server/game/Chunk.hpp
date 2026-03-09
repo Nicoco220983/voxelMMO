@@ -127,9 +127,8 @@ public:
      * @param lastReceivedTick The tick the gateway last acknowledged.
      * @param outData Pointer to data to send (nullptr if nothing to send).
      * @param outLength Length of data to send (0 if nothing to send).
-     * @return Latest tick in the buffer (for updating gateway's lastReceivedTick).
      */
-    uint32_t getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const;
+    void getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const;
 
     /** @brief Byte length of the chunk message header (including entity_type + size prefix). */
     static constexpr size_t HEADER_SIZE = CHUNK_MESSAGE_HEADER_SIZE; // entity_type(1) + size(2) + ChunkId(8) + tick(4)

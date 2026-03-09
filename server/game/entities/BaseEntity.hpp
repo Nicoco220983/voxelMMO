@@ -1,6 +1,7 @@
 #pragma once
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 
@@ -44,6 +45,9 @@ struct BaseEntity {
         // Mark entity as newly created for network sync
         reg.get<DirtyComponent>(ent).markCreated();
 
+        // Chunk membership - assigned at spawn, updated by ChunkMembershipSystem
+        const ChunkId chunkId = chunkIdOf(x, y, z);
+        reg.emplace<ChunkMembershipComponent>(ent, chunkId);
 
         return ent;
     }

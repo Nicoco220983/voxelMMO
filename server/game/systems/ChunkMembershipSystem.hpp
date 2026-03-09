@@ -4,6 +4,7 @@
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
 #include "common/Types.hpp"
 #include "game/GatewayInfo.hpp"
 
@@ -57,8 +58,7 @@ inline void markForDeletion(entt::registry& registry, entt::entity ent) {
  * removes entity from old chunk.entities, adds to old chunk.leftEntities,
  * and updates chunk.presentPlayers for players.
  *
- * Note: New entities are added to chunks by EntityFactory::createEntities()
- * at creation time. This function handles entities that move between chunks.
+ * Uses ChunkMembershipComponent for O(1) lookup of current chunk (no searching).
  *
  * @param registry          The ECS registry.
  * @param chunkRegistry     Chunk registry for accessing chunks.
@@ -68,15 +68,16 @@ inline void checkChunkMembership(
     ChunkRegistry& chunkRegistry)
 {
     // Find entities that have moved and update their chunk membership
-    auto view = registry.view<DynamicPositionComponent>();
-    view.each([&](entt::entity ent, DynamicPositionComponent& dyn) {
+    // ChunkMembershipComponent is mandatory - all entities must have it
+    auto view = registry.view<DynamicPositionComponent, ChunkMembershipComponent>();
+    view.each([&](entt::entity ent, DynamicPositionComponent& dyn, ChunkMembershipComponent& membership) {
         if (!dyn.moved) return;
         dyn.moved = false;
 
         const ChunkId newChunkId = chunkIdOf(dyn.x, dyn.y, dyn.z);
-        const int32_t cx = newChunkId.x();
-        const int32_t cy = newChunkId.y();
-        const int32_t cz = newChunkId.z();
+        
+        // No chunk change - skip
+        if (membership.currentChunkId == newChunkId) return;
 
         const bool isPlayer = registry.all_of<PlayerComponent>(ent);
         PlayerId pid = 0;
@@ -84,41 +85,25 @@ inline void checkChunkMembership(
             pid = registry.get<PlayerComponent>(ent).playerId;
         }
 
-        // Find which chunk currently owns this entity
-        // Search in chunks around the new position
-        for (int32_t dx = -1; dx <= 1; ++dx)
-        for (int32_t dy = -1; dy <= 1; ++dy)
-        for (int32_t dz = -1; dz <= 1; ++dz) {
-            const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-            if (Chunk* chunk = chunkRegistry.getChunkMutable(cid)) {
-                if (chunk->entities.count(ent)) {
-                    // Entity is currently in this chunk
-                    if (cid == newChunkId) {
-                        // Still in same chunk, no change needed
-                        return;
-                    }
-                    
-                    // Remove from old chunk
-                    chunk->entities.erase(ent);
-                    chunk->leftEntities.insert(ent);
-                    
-                    // Remove from presentPlayers if player
-                    if (isPlayer) {
-                        chunk->presentPlayers.erase(pid);
-                    }
-                    return;
-                }
+        // Remove from old chunk
+        if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
+            oldChunk->entities.erase(ent);
+            oldChunk->leftEntities.insert(ent);
+            if (isPlayer) {
+                oldChunk->presentPlayers.erase(pid);
             }
         }
-        
-        // Entity was not found in any nearby chunk - add it to the new chunk
-        // This handles entities that moved into a chunk they weren't previously in
+
+        // Add to new chunk
         if (Chunk* newChunk = chunkRegistry.getChunkMutable(newChunkId)) {
             newChunk->entities.insert(ent);
             if (isPlayer) {
                 newChunk->presentPlayers.insert(pid);
             }
         }
+
+        // Update component
+        membership.currentChunkId = newChunkId;
     });
 }
 

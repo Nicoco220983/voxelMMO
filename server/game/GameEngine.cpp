@@ -162,13 +162,13 @@ void GameEngine::serializeChunks() {
             // Ask the chunk what data to send for this gateway
             const uint8_t* data = nullptr;
             size_t length = 0;
-            uint32_t latestTick = chunk->getDataToSend(lastTick, data, length);
+            chunk->getDataToSend(lastTick, data, length);
             
             if (length > 0 && data != nullptr) {
                 NetworkProtocol::appendToBatch(batchBuf, data, length);
-                gwInfo.lastStateTick[cid] = latestTick;
             }
-            // else: no new data for this watcher, skip
+
+            gwInfo.lastStateTick[cid] = tick;
         }
         if (!batchBuf.empty() && outputCallback)
             outputCallback(gwId, batchBuf.data(), batchBuf.size());
