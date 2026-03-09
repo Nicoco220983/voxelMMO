@@ -1,6 +1,7 @@
 // @ts-check
 import { BaseEntity } from './entities/BaseEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
+import { PlayerEntity } from './entities/PlayerEntity.js'
 import { EntityType, CREATED_BIT } from './types.js'
 import { DeltaType } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
@@ -43,8 +44,14 @@ export class EntityRegistry {
    * @returns {BaseEntity}
    */
   #createEntity(globalId, entityType) {
-    if (entityType === EntityType.SHEEP && this.scene) {
+    if (!this.scene) {
+      return new BaseEntity(globalId, entityType)
+    }
+    if (entityType === EntityType.SHEEP) {
       return new SheepEntity(globalId, this.scene)
+    }
+    if (entityType === EntityType.PLAYER || entityType === EntityType.GHOST_PLAYER) {
+      return new PlayerEntity(globalId, entityType, this.scene)
     }
     if (!Object.values(EntityType).includes(entityType)) {
       console.error('[EntityRegistry] Unknown entity type:', entityType, 'for entity', globalId)
