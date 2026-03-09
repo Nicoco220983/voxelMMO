@@ -156,18 +156,17 @@ void GameEngine::serializeChunks() {
         for (const ChunkId& cid : gwInfo.watchedChunks) {
             Chunk* chunk = chunkRegistry.getChunkMutable(cid);
             if (!chunk) continue;
-            const auto& state = chunk->state;
+            
             const uint32_t lastTick = gwInfo.lastStateTick[cid];
-
-            if (lastTick == 0) {
-                // New watcher: send full snapshot
-                NetworkProtocol::appendToBatch(batchBuf, state.snapshot);
-                gwInfo.lastStateTick[cid] = state.snapshotTick;
-            } else if (state.hasNewDelta) {
-                // Existing watcher with new data: send latest delta
-                const size_t off = state.deltaOffsets.back().offset;
-                NetworkProtocol::appendToBatch(batchBuf, state.deltas.data() + off, state.deltas.size() - off);
-                gwInfo.lastStateTick[cid] = state.deltaOffsets.back().tick;
+            
+            // Ask the chunk what data to send for this gateway
+            const uint8_t* data = nullptr;
+            size_t length = 0;
+            uint32_t latestTick = chunk->getDataToSend(lastTick, data, length);
+            
+            if (length > 0 && data != nullptr) {
+                NetworkProtocol::appendToBatch(batchBuf, data, length);
+                gwInfo.lastStateTick[cid] = latestTick;
             }
             // else: no new data for this watcher, skip
         }
@@ -295,7 +294,7 @@ void GameEngine::processPendingPlayerCreations() {
 void GameEngine::clearAllDirtyFlags() {
     // Clear chunk-level state
     for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        chunkPtr->state.hasNewDelta = false;
+        chunkPtr->state.hasNewData = false;
         chunkPtr->world.clearSnapshotDelta();
         chunkPtr->world.clearTickDelta();
     }

@@ -57,8 +57,10 @@ void Chunk::maybeCompressDelta(std::vector<uint8_t>& buf, ServerMessageType comp
 
 const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t tickCount)
 {
-    auto& buf = state.snapshot;
-    buf.clear();
+    // Clear any existing state - snapshot supersedes all deltas
+    state.clear();
+    
+    auto& buf = state.buffer;
 
     // ── Header (15 bytes) + flags byte ───────────────────────────────────
     buf.resize(HEADER_SIZE + 1);  // [0..14] header, [15] flags
@@ -161,12 +163,10 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
     buf[1] = static_cast<uint8_t>(msgSize & 0xFF);
     buf[2] = static_cast<uint8_t>((msgSize >> 8) & 0xFF);
 
-    // Snapshot supersedes all accumulated deltas.
-    // TODO: per-gateway delta tracking when multiple gateways are supported.
-    state.snapshotTick = tickCount;
-    state.deltas.clear();
-    state.deltaOffsets.clear();
-    state.hasNewDelta  = false;
+    // Record this entry
+    state.entries.push_back({tickCount, 0, buf.size()});
+    state.hasNewData = true;
+    deltaCallCount = 0;
 
     return buf;
 }
@@ -287,10 +287,11 @@ bool Chunk::buildDeltaImpl(
     staging[1] = static_cast<uint8_t>(msgSize & 0xFF);
     staging[2] = static_cast<uint8_t>((msgSize >> 8) & 0xFF);
 
-    // Append to the unified delta buffer
-    state.deltaOffsets.push_back({tickCount, state.deltas.size()});
-    state.deltas.insert(state.deltas.end(), staging.begin(), staging.end());
-    state.hasNewDelta = true;
+    // Append to the unified buffer
+    size_t offset = state.buffer.size();
+    state.entries.push_back({tickCount, offset, staging.size()});
+    state.buffer.insert(state.buffer.end(), staging.begin(), staging.end());
+    state.hasNewData = true;
 
     return true;
 }
@@ -299,6 +300,20 @@ bool Chunk::buildDeltaImpl(
 
 bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
 {
+    // Snapshot delta supersedes all previous deltas (both tick deltas and prior snapshot deltas).
+    // It contains ALL changes since the snapshot, so we can discard previous history.
+    // Keep only the snapshot (first entry) and clear everything after it.
+    if (!state.entries.empty()) {
+        // Find the snapshot entry (always first, tick == snapshotTick)
+        const auto& snapshotEntry = state.entries[0];
+        
+        // Truncate buffer to just the snapshot
+        state.buffer.resize(snapshotEntry.length);
+        
+        // Remove all entries after the snapshot
+        state.entries.resize(1);
+    }
+    
     return buildDeltaImpl(reg, tickCount,
         world.voxelsSnapshotDeltas,
         &DirtyComponent::snapshotDirtyFlags,
@@ -321,8 +336,8 @@ bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
 
 bool Chunk::updateState(entt::registry& reg, uint32_t tickCount)
 {
-    // No snapshot yet: build full snapshot
-    if (state.snapshot.empty()) {
+    // No serialization yet: build full snapshot
+    if (state.isEmpty()) {
         deltaCallCount = 0;
         buildSnapshot(reg, tickCount);
         return true;
@@ -337,6 +352,16 @@ bool Chunk::updateState(entt::registry& reg, uint32_t tickCount)
     // Otherwise: build tick delta
     ++deltaCallCount;
     return buildTickDelta(reg, tickCount);
+}
+
+// ── Gateway data query ─────────────────────────────────────────────────────
+
+uint32_t Chunk::getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const
+{
+    auto result = state.getDataToSend(lastReceivedTick);
+    outData = result.first;
+    outLength = result.second;
+    return state.getLatestTick();
 }
 
 } // namespace voxelmmo

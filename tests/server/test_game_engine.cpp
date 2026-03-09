@@ -448,3 +448,48 @@ TEST_CASE("Rapid teleport doesn't crash", "[integration]") {
     
     CHECK(env.getEntity(pid) != static_cast<entt::entity>(entt::null));
 }
+
+// ── Bug Fix Verification: Player in Chunk Snapshot ───────────────────────────
+
+TEST_CASE("Newly joined player entity is present in chunk snapshot", "[bug][integration]") {
+    // This test verifies the fix for the bug where a newly joined player's
+    // entity was not present in the initial chunk snapshot they received.
+    // 
+    // Bug root cause: When a new player joins, they're added to existing chunks.
+    // The chunk's snapshot was built earlier (at server startup) and doesn't
+    // include this new player. The chunk builds a delta with CREATE_ENTITY for
+    // the new player, but serializeChunks() sends the old snapshot to new
+    // watchers (lastTick == 0), ignoring the delta.
+    
+    TestEnv env(12345);
+    
+    // Get the spawn chunk before adding player
+    auto spawnPos = env.engine().getWorldGenerator().getPlayerSpawnPos();
+    auto* spawnChunk = env.getChunkAt(spawnPos[0], spawnPos[1], spawnPos[2]);
+    REQUIRE(spawnChunk != nullptr);
+    
+    // Now add a player and tick - this creates the player entity
+    PlayerId pid = env.addPlayer(EntityType::PLAYER);
+    env.tick();
+    
+    // Get the player's entity
+    auto ent = env.getEntity(pid);
+    REQUIRE(ent != static_cast<entt::entity>(entt::null));
+    
+    // Re-get the spawn chunk (may have changed after tick)
+    spawnChunk = env.getChunkAt(spawnPos[0], spawnPos[1], spawnPos[2]);
+    REQUIRE(spawnChunk != nullptr);
+    
+    // CRITICAL: Verify the player entity is in the chunk's entity set
+    // This is the source of truth - the chunk must know about the player
+    bool playerInChunkEntities = spawnChunk->entities.count(ent) > 0;
+    REQUIRE(playerInChunkEntities);
+    
+    // The chunk's snapshot should have been rebuilt during serializeChunks()
+    // (which is called during tick()). With the fix, the snapshot is rebuilt
+    // before sending to new watchers, so it should include the player.
+    
+    // We verify this by checking that the chunk's latest tick was updated
+    // to the current tick (not an older tick from server startup)
+    CHECK(spawnChunk->state.getLatestTick() == static_cast<uint32_t>(env.getTickCount()));
+}

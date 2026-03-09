@@ -26,11 +26,11 @@ namespace voxelmmo {
  * @brief Owns all simulation state for one chunk tile.
  *
  * Serialisation is driven by the three build*() methods which write into
- * ChunkState::state.  Each method returns a const-ref to the relevant buffer
- * inside state; an empty vector means there was nothing to send.
+ * ChunkState::buffer (a unified buffer containing snapshot + deltas).
+ * Each method appends to or replaces the buffer content.
  *
  * Buffer ownership / thread-safety:
- *   Each Chunk owns its ChunkState (snapshot, deltas, scratch).  Because the
+ *   Each Chunk owns its ChunkState (unified buffer + entries + scratch). Because the
  *   game loop will eventually serialise chunks in parallel, no buffer is
  *   shared across Chunk instances – each thread works on its own Chunk.
  */
@@ -62,7 +62,7 @@ public:
      */
     std::set<entt::entity> leftEntities;
 
-    /** @brief Serialised state cache (snapshot, deltas, scratch). */
+    /** @brief Serialised state cache (unified buffer with entries). */
     ChunkState state;
 
     /** @brief True if the chunk has been activated (entities spawned). */
@@ -74,30 +74,30 @@ public:
     explicit Chunk(ChunkId chunkId);
 
     /**
-     * @brief Build a full snapshot and store it in state.snapshot.
+     * @brief Build a full snapshot and store it in state.buffer at offset 0.
      *
      * Voxels are LZ4-compressed directly from world.voxels (zero copy for
-     * the voxel section).  Entities are serialised raw into state.scratch,
-     * then copied or LZ4-compressed into state.snapshot depending on size.
-     * Also clears state.deltas (the snapshot supersedes all previous deltas).
+     * the voxel section). Entities are serialised raw into state.scratch,
+     * then copied or LZ4-compressed into the buffer depending on size.
+     * Clears any existing deltas (the snapshot supersedes all previous deltas).
      *
-     * @return const-ref to state.snapshot (always non-empty after this call).
+     * @return const-ref to state.buffer (contains only the snapshot).
      */
     const std::vector<uint8_t>& buildSnapshot(entt::registry& reg, uint32_t tickCount);
 
     /**
-     * @brief Build a snapshot delta and append it to state.deltas.
+     * @brief Build a snapshot delta and append it to state.buffer.
      *
      * Payload is built into a local staging buffer, optionally LZ4-compressed
-     * via state.scratch, then appended to the unified state.deltas buffer.
-     * Sets state.hasNewDelta = true iff anything was appended.
+     * via state.scratch, then appended to the unified buffer.
+     * Sets state.hasNewData = true iff anything was appended.
      *
      * @return true if a delta was appended; false if nothing changed.
      */
     bool buildSnapshotDelta(entt::registry& reg, uint32_t tickCount);
 
     /**
-     * @brief Build a tick delta and append it to state.deltas.
+     * @brief Build a tick delta and append it to state.buffer.
      *
      * Same strategy as buildSnapshotDelta.
      *
@@ -109,7 +109,7 @@ public:
      * @brief Update chunk state based on current conditions.
      *
      * Logic:
-     * - If no snapshot exists (state.snapshot empty),
+     * - If no serialization exists yet (state.buffer empty),
      *   calls buildSnapshot.
      * - Else if first call after snapshot OR every 20 calls, calls buildSnapshotDelta.
      * - Otherwise, calls buildTickDelta.
@@ -117,6 +117,19 @@ public:
      * @return true if any state was built/appended; false otherwise.
      */
     bool updateState(entt::registry& reg, uint32_t tickCount);
+
+    /**
+     * @brief Get data to send to a gateway based on their last received tick.
+     *
+     * Convenience wrapper around state.getDataToSend().
+     * Also returns the latest tick for updating the gateway's tracking.
+     *
+     * @param lastReceivedTick The tick the gateway last acknowledged.
+     * @param outData Pointer to data to send (nullptr if nothing to send).
+     * @param outLength Length of data to send (0 if nothing to send).
+     * @return Latest tick in the buffer (for updating gateway's lastReceivedTick).
+     */
+    uint32_t getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const;
 
     /** @brief Byte length of the chunk message header (including entity_type + size prefix). */
     static constexpr size_t HEADER_SIZE = CHUNK_MESSAGE_HEADER_SIZE; // entity_type(1) + size(2) + ChunkId(8) + tick(4)
