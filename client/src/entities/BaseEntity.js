@@ -66,8 +66,8 @@ export class BaseEntity {
    * @param {number} currentTick
    * @returns {{x: number, y: number, z: number}}
    */
-  predictAt(currentTick) {
-    return this.motion.predictAt(currentTick)
+  getPos(currentTick) {
+    return this.motion.getPos(currentTick)
   }
 
   /**

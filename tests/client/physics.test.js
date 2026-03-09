@@ -36,14 +36,14 @@ function i32le(v) {
   return [...new Uint8Array(b)]
 }
 
-// ── DynamicPositionComponent.predictAt ────────────────────────────────────────
+// ── DynamicPositionComponent.getPos ────────────────────────────────────────
 
-describe('DynamicPositionComponent.predictAt', () => {
+describe('DynamicPositionComponent.getPos', () => {
   it('returns current position when n = 0', () => {
     const c = new DynamicPositionComponent()
     c.tick = 10; c.x = 100; c.y = 200; c.z = 300
     c.vx = 5; c.vy = 5; c.vz = 5; c.grounded = false
-    const p = c.predictAt(10)
+    const p = c.getPos(10)
     expect(p.x).toBe(100)
     expect(p.y).toBe(200)
     expect(p.z).toBe(300)
@@ -53,7 +53,7 @@ describe('DynamicPositionComponent.predictAt', () => {
     const c = new DynamicPositionComponent()
     c.tick = 50; c.x = 100; c.y = 200; c.z = 300
     c.vx = 10; c.vy = 10; c.vz = 10; c.grounded = false
-    const p = c.predictAt(40)  // 10 ticks before the reference
+    const p = c.getPos(40)  // 10 ticks before the reference
     expect(p.x).toBe(100)
     expect(p.y).toBe(200)
     expect(p.z).toBe(300)
@@ -63,7 +63,7 @@ describe('DynamicPositionComponent.predictAt', () => {
     const c = new DynamicPositionComponent()
     c.tick = 0; c.x = 0; c.y = 1000; c.z = 0
     c.vx = 10; c.vy = 0; c.vz = -5; c.grounded = true
-    const p = c.predictAt(3)
+    const p = c.getPos(3)
     expect(p.x).toBe(30)   // 0 + 10*3
     expect(p.y).toBe(1000) // no gravity because grounded
     expect(p.z).toBe(-15)  // 0 + (-5)*3
@@ -74,7 +74,7 @@ describe('DynamicPositionComponent.predictAt', () => {
     c.tick = 0; c.x = 0; c.y = 5000; c.z = 0
     c.vx = 0; c.vy = 0; c.vz = 0; c.grounded = false
     const n = 5
-    const p = c.predictAt(n)
+    const p = c.getPos(n)
     const expectedGravY = GRAVITY_DECREMENT * n * (n + 1) / 2  // 6*5*6/2 = 90
     expect(p.y).toBe(5000 - expectedGravY)
   })
@@ -84,7 +84,7 @@ describe('DynamicPositionComponent.predictAt', () => {
     c.tick = 0; c.x = 0; c.y = 0; c.z = 0
     c.vx = 0; c.vy = 110; c.vz = 0; c.grounded = false  // jump impulse
     const n = 4
-    const p = c.predictAt(n)
+    const p = c.getPos(n)
     // y = vy*n - GRAVITY_DECREMENT*n*(n+1)/2
     const expected = 110 * n - GRAVITY_DECREMENT * n * (n + 1) / 2
     expect(p.y).toBe(expected)
@@ -94,7 +94,7 @@ describe('DynamicPositionComponent.predictAt', () => {
     const c = new DynamicPositionComponent()
     c.tick = 0; c.x = 0; c.y = 0; c.z = 0
     c.vx = 0; c.vy = 50; c.vz = 0; c.grounded = true
-    const p = c.predictAt(3)
+    const p = c.getPos(3)
     expect(p.y).toBe(150)  // 0 + 50*3, no gravity
   })
 
@@ -103,7 +103,7 @@ describe('DynamicPositionComponent.predictAt', () => {
       const c = new DynamicPositionComponent()
       c.tick = 0; c.x = 100; c.y = 500; c.z = 200
       c.vx = 7; c.vy = 0; c.vz = -3; c.grounded = grounded
-      const p = c.predictAt(10)
+      const p = c.getPos(10)
       expect(p.x).toBe(100 + 7 * 10)
       expect(p.z).toBe(200 + (-3) * 10)
     }
@@ -215,16 +215,16 @@ describe('BaseEntity.applyDelta', () => {
   })
 })
 
-// ── BaseEntity.predictAt ──────────────────────────────────────────────────────
+// ── BaseEntity.getPos ──────────────────────────────────────────────────────
 
-describe('BaseEntity.predictAt', () => {
-  it('delegates to motion.predictAt', () => {
+describe('BaseEntity.getPos', () => {
+  it('delegates to motion.getPos', () => {
     const entity = new BaseEntity(1, 0)
     entity.motion.tick = 10
     entity.motion.x = 500; entity.motion.y = 1000; entity.motion.z = 0
     entity.motion.vx = 10; entity.motion.vy = 0;  entity.motion.vz = 0
     entity.motion.grounded = true
-    const p = entity.predictAt(13)
+    const p = entity.getPos(13)
     expect(p.x).toBe(530)  // 500 + 10*3
     expect(p.y).toBe(1000)
     expect(p.z).toBe(0)

@@ -82,7 +82,7 @@ export class PlayerEntity extends BaseEntity {
     // Update position from motion component
     const gameClient = /** @type {any} */ (window).gameClient
     const tick = gameClient?.tick ?? 0
-    const pos = this.predictAt(tick)
+    const pos = this.getPos(tick)
     this.mesh.position.set(
       pos.x / SUBVOXEL_SIZE,
       pos.y / SUBVOXEL_SIZE,

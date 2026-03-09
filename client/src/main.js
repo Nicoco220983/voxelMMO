@@ -141,7 +141,7 @@ function animate() {
   if (selfEnt) {
     // Use the server's last-known state forward-predicted to client.tick.
     // This gives proper voxel collision, gravity, and grounded detection.
-    const pos = selfEnt.predictAt(client.tick)
+    const pos = selfEnt.getPos(client.tick)
     posX = pos.x
     posY = pos.y
     posZ = pos.z

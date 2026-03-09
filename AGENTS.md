@@ -132,7 +132,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `EntityRegistry.js` — **NEW** global entity registry; entities keyed by GlobalEntityId, track current chunkId; handles snapshot/delta entity parsing
 - `GameClient.js` — WebSocket; parses 15-byte chunk header; owns `EntityRegistry` + chunk map; `selfEntity` finds by globalId
 - `Chunk.js` — per-chunk voxel state only (entities moved to EntityRegistry); LZ4 decompression, Three.js mesh rebuild
-- `components/DynamicPositionComponent.js` — mirrors server; `predictAt(tick)` for client-side interpolation
+- `components/DynamicPositionComponent.js` — mirrors server; `getPos(tick)` for client-side interpolation
 - `entities/BaseEntity.js`, `PlayerEntity.js` — now includes `chunkId` property to track current chunk
 - `entities/SheepEntity.js` — procedural mesh (body + head + legs); leg swing animation when WALKING; face movement direction
 - `NetworkProtocol.js` — protocol enums (ServerMessageType, DeltaType, ClientMessageType, InputButton) and serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader, parseChunkHeader, parseSelfEntity). `parseBatch` uses embedded `[type][size]` headers to split concatenated messages.

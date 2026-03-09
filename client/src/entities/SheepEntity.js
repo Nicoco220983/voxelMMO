@@ -136,7 +136,7 @@ export class SheepEntity extends BaseEntity {
     if (!this.mesh) return
 
     // Update position from motion component
-    const pos = this.predictAt(window.gameClient?.currentTick || 0)
+    const pos = this.getPos(window.gameClient?.currentTick || 0)
     this.mesh.position.set(
       pos.x / SUBVOXEL_SIZE,
       pos.y / SUBVOXEL_SIZE,
