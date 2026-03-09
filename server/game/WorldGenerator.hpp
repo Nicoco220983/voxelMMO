@@ -134,22 +134,6 @@ public:
      */
     void generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick) const;
     
-    /**
-     * @brief Queue a player entity spawn at the player spawn position.
-     *
-     * Called when a player joins. Queues the player entity spawn into the
-     * entity factory (deferred creation). The spawn position is the
-     * pre-computed playerSpawnPos from computePlayerSpawnPos().
-     *
-     * Note: Chunk generation and SELF_ENTITY message are handled later
-     * in the flow by GameEngine.
-     *
-     * @param entityFactory Entity factory to queue spawn requests into.
-     * @param type          Entity type (PLAYER or GHOST_PLAYER).
-     * @param playerId      Persistent player identifier.
-     */
-    void addPlayer(EntityFactory& entityFactory, EntityType type, PlayerId playerId) const;
-    
 private:
     uint32_t seed_;
     GeneratorType type_;

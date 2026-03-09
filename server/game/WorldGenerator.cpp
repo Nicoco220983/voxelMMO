@@ -184,11 +184,6 @@ int32_t WorldGenerator::getSurfaceY(int voxelX, int voxelZ) const noexcept {
     return static_cast<int32_t>(computeHeight(static_cast<float>(voxelX), static_cast<float>(voxelZ), seed_));
 }
 
-void WorldGenerator::addPlayer(EntityFactory& entityFactory, EntityType type, PlayerId playerId) const {
-    // Queue player spawn at pre-computed spawn position
-    entityFactory.spawnPlayer(type, playerSpawnPos_[0], playerSpawnPos_[1], playerSpawnPos_[2], playerId);
-}
-
 void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick) const {
     const int32_t cx = chunkId.x();
     const int32_t cy = chunkId.y();

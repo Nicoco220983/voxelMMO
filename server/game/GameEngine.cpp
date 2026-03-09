@@ -66,7 +66,8 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
         if (!msg) return;
         // Ignore if player already has an entity (already spawned).
         if (playerEntities.find(playerId) != playerEntities.end()) return;
-        addPlayer(playerId, msg->entityType);
+        // Enqueue player creation request for processing in tick()
+        pendingPlayerCreations_.push_back({playerId, msg->entityType});
         break;
     }
 
@@ -99,24 +100,7 @@ void GameEngine::registerPlayer(GatewayId gwId, PlayerId playerId)
         it->second.players.insert(playerId);
 }
 
-void GameEngine::addPlayer(PlayerId playerId, EntityType type)
-{
-    std::lock_guard<std::recursive_mutex> lock(mtx_);
 
-    // Queue player spawn at world generator's spawn position
-    worldGenerator.addPlayer(entityFactory, type, playerId);
-
-    // Create all pending entities (including the player)
-    auto created = createPendingEntities();
-    if (created.empty()) return;
-
-    // The last created entity should be our player
-    const entt::entity ent = created.back();
-    playerEntities[playerId] = ent;
-
-    // Note: Chunk generation and SELF_ENTITY message are handled later in the flow
-    // by rebuildGatewayWatchedChunks() and updateEntitiesChunks() respectively.
-}
 
 void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
@@ -230,6 +214,9 @@ void GameEngine::tick() {
     // Create any pending entities at the start of the tick
     createPendingEntities();
 
+    // Process pending player creation requests
+    processPendingPlayerCreations();
+
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
     stepPhysics();
@@ -284,6 +271,27 @@ void GameEngine::sendSelfEntityMessages() {
 }
 
 // ── Dirty Flags Clearing ───────────────────────────────────────────────────
+
+void GameEngine::processPendingPlayerCreations() {
+    for (const auto& req : pendingPlayerCreations_) {
+        const auto* spawnPos = worldGenerator.getPlayerSpawnPos();
+        const GlobalEntityId globalId = acquireEntityId();
+        entt::entity ent;
+        
+        switch (req.entityType) {
+            case EntityType::PLAYER:
+                ent = PlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
+                break;
+            case EntityType::GHOST_PLAYER:
+            default:
+                ent = GhostPlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
+                break;
+        }
+        
+        playerEntities[req.playerId] = ent;
+    }
+    pendingPlayerCreations_.clear();
+}
 
 void GameEngine::clearAllDirtyFlags() {
     // Clear chunk-level state

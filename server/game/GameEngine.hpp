@@ -38,7 +38,7 @@ namespace voxelmmo {
  *   2. tick() → stepPhysics → checkPlayersChunks → serializeChunks.
  *      Each chunk's updateState() decides snapshot/snapshot-delta/tick-delta.
  *   On new player join:
- *   3. addPlayer() → chunk.updateState() for all chunks in watch radius.
+ *   3. JOIN message → pending queue → create in tick() → chunk activation.
  */
 class GameEngine {
 public:
@@ -55,7 +55,7 @@ public:
 
     // ── Gateway management ────────────────────────────────────────────────
 
-    /** @brief Register a gateway. Must be called before addPlayer(). */
+    /** @brief Register a gateway. */
     void registerGateway(GatewayId gwId);
 
     /** @brief Unregister a gateway and remove all its players. */
@@ -71,17 +71,6 @@ public:
      * the requested EntityType and send the initial snapshot.
      */
     void registerPlayer(GatewayId gwId, PlayerId playerId);
-
-    /**
-     * @brief Spawn a new player entity with the given type.
-     *
-     * Delegates to entityFactory->spawnPlayer() for deferred creation.
-     * Entities are actually created during createPendingEntities().
-     *
-     * @param playerId Persistent player identifier.
-     * @param type     Entity type (selects physics mode).
-     */
-    void addPlayer(PlayerId playerId, EntityType type = EntityType::GHOST_PLAYER);
 
     /** @brief Destroy a player entity and remove it from all chunk sets. */
     void removePlayer(PlayerId playerId);
@@ -220,6 +209,17 @@ private:
     /** @brief Entities marked for deletion that will be destroyed after serialization. */
     std::vector<entt::entity> pendingDeletions;
     
+    /**
+     * @brief Pending player creation request (enqueued at JOIN, processed in tick).
+     */
+    struct PendingPlayerCreation {
+        PlayerId playerId;
+        EntityType entityType;
+    };
+    
+    /** @brief Queue of pending player entity creation requests. */
+    std::vector<PendingPlayerCreation> pendingPlayerCreations_;
+    
     /** @brief Stateless procedural terrain generator for world generation. */
     WorldGenerator worldGenerator;
 
@@ -251,6 +251,15 @@ private:
      * for all chunks. Called at the end of tick() after all serialization.
      */
     void clearAllDirtyFlags();
+
+    /**
+     * @brief Process pending player creation requests.
+     *
+     * Creates player entities directly (without EntityFactory) from the
+     * pendingPlayerCreations_ queue. Called at the start of tick() after
+     * createPendingEntities().
+     */
+    void processPendingPlayerCreations();
 
     /**
      * @brief Step physics simulation for all entities.
