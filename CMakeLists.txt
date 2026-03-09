@@ -19,7 +19,6 @@ add_executable(voxelmmo
     server/game/Chunk.cpp
     server/game/ChunkRegistry.cpp
     server/gateway/GatewayEngine.cpp
-    server/gateway/StateManager.cpp
     server/game/entities/EntityFactory.cpp
     server/game/entities/PlayerEntity.cpp
     server/game/entities/GhostPlayerEntity.cpp

@@ -10,7 +10,7 @@
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/InputComponent.hpp"
 #include "common/Types.hpp"
-#include "common/GatewayInfo.hpp"
+#include "game/GatewayInfo.hpp"
 #include "common/NetworkProtocol.hpp"
 #include "game/WorldGenerator.hpp"
 #include <entt/entt.hpp>

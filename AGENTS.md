@@ -51,8 +51,8 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - `Types.hpp` — ChunkId, VoxelId, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
 - `ChunkRegistry.hpp` — Central chunk registry owning the chunks map. Provides `getChunk()` (read-only) for physics/serialization, and `generate()/activate()/deactivate()` for chunk lifecycle management. All chunk access goes through the registry; systems should use the read-only `getChunk()` when possible.
 - `MessageTypes.hpp` — ServerMessageType (CHUNK_SNAPSHOT=0, CHUNK_SNAPSHOT_DELTA=2, CHUNK_TICK_DELTA=4, SELF_ENTITY=6), DeltaType, ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
-- `ChunkState.hpp` — snapshot + deltas + scratch buffers; shared by Chunk and StateManager
-- `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick)
+- `ChunkState.hpp` — snapshot + deltas + scratch buffers; used by Chunk and GatewayEngine
+- `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick) — located in `server/game/`
 - `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
 - `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendToBatch). All messages use `[type(1)][size(2)]` header (3 bytes). Chunk state messages add `[chunk_id(8)][tick(4)]` = 15 byte header total. Messages are batched by direct concatenation (no length prefix).
 - `VoxelTypes.hpp` — named voxel type constants (AIR=0, STONE=1, DIRT=2, GRASS=3)
@@ -124,7 +124,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 
 **server/gateway/**
 - `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameBatch()` forwards to clients
-- `StateManager` — `map[ChunkId, ChunkState]`; routes chunk state messages to watching players
+- `GatewayEngine` — uWS server; manages WebSocket connections, per-chunk state cache (`chunkStates`), and per-player metadata (`players`)
 
 **client/src/**
 - `types.js` — game constants (EntityType, VoxelType, SUBVOXEL_SIZE, physics constants …)

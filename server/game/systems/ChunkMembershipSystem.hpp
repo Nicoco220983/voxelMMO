@@ -5,7 +5,7 @@
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
 #include "common/Types.hpp"
-#include "common/GatewayInfo.hpp"
+#include "game/GatewayInfo.hpp"
 
 // chunkIdOf is defined in common/Types.hpp
 #include <entt/entt.hpp>

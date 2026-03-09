@@ -1,5 +1,6 @@
 #include "gateway/GatewayEngine.hpp"
 #include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include <iostream>
 #include <cstring>
 #include <vector>
@@ -21,14 +22,14 @@ void GatewayEngine::receiveGameBatch(const uint8_t* data, size_t size) {
 
     uwsLoop->defer([this, buf]() {
         // Parse individual messages using their embedded [type(1)][size(2)] header
-        // and update StateManager for each message.
+        // and update chunk state for each message.
         size_t off = 0;
         while (off + 3 <= buf->size()) {
             // Read size from header (bytes 1-2, little-endian)
             uint16_t msgSize;
             std::memcpy(&msgSize, buf->data() + off + 1, 2);
             if (off + msgSize > buf->size()) break;
-            stateManager.receiveChunkMessage(buf->data() + off, msgSize);
+            receiveChunkMessage(buf->data() + off, msgSize);
             off += msgSize;
         }
         // Forward the entire batch as a single WebSocket frame to all clients
@@ -96,7 +97,7 @@ void GatewayEngine::listen(int port) {
                         int /*code*/, std::string_view /*reason*/) {
             const PlayerId pid = ws->getUserData()->playerId;
             sockets.erase(pid);
-            stateManager.removePlayer(pid);
+            removePlayer(pid);
             std::cout << "[gateway] Player " << pid << " disconnected\n";
             if (disconnectCb) disconnectCb(pid);
         },
@@ -109,6 +110,64 @@ void GatewayEngine::listen(int port) {
         }
     })
     .run();
+}
+
+// ── Per-chunk state management ────────────────────────────────────────────
+
+void GatewayEngine::receiveChunkMessage(const uint8_t* data, size_t size) {
+    // Minimum header: [type(1)][size(2)][chunk_id(8)][tick(4)] = 15 bytes
+    if (size < NetworkProtocol::CHUNK_MESSAGE_HEADER_SIZE) return;
+
+    const auto msgType = static_cast<ServerMessageType>(data[0]);
+    // size is at bytes 1-2, chunk_id at bytes 3-10
+    ChunkId cid;
+    std::memcpy(&cid.packed, data + 3, sizeof(int64_t));
+
+    ChunkState& state = getChunkState(cid);
+
+    switch (msgType) {
+        case ServerMessageType::CHUNK_SNAPSHOT_COMPRESSED:
+            state.receiveSnapshot(data, size);
+            break;
+        case ServerMessageType::CHUNK_SNAPSHOT_DELTA:
+        case ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED:
+        case ServerMessageType::CHUNK_TICK_DELTA:
+        case ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED:
+            state.receiveDelta(data, size);
+            break;
+        default:
+            break;
+    }
+}
+
+ChunkState& GatewayEngine::getChunkState(ChunkId id) {
+    return chunkStates[id];
+}
+
+const ChunkState* GatewayEngine::findChunkState(ChunkId id) const {
+    const auto it = chunkStates.find(id);
+    return (it != chunkStates.end()) ? &it->second : nullptr;
+}
+
+void GatewayEngine::removeChunk(ChunkId id) {
+    chunkStates.erase(id);
+}
+
+// ── Per-player snapshot tick tracking ─────────────────────────────────────
+
+void GatewayEngine::setPlayerStateTick(PlayerId pid, ChunkId cid, uint32_t tick) {
+    players[pid].lastStateTick[cid] = tick;
+}
+
+uint32_t GatewayEngine::getPlayerStateTick(PlayerId pid, ChunkId cid) const {
+    const auto pit = players.find(pid);
+    if (pit == players.end()) return 0;
+    const auto cit = pit->second.lastStateTick.find(cid);
+    return (cit != pit->second.lastStateTick.end()) ? cit->second : 0;
+}
+
+void GatewayEngine::removePlayer(PlayerId pid) {
+    players.erase(pid);
 }
 
 } // namespace voxelmmo

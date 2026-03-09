@@ -1,6 +1,7 @@
 #pragma once
-#include "StateManager.hpp"
 #include "common/Types.hpp"
+#include "common/ChunkState.hpp"
+#include "gateway/PlayerInfo.hpp"
 #include <uwebsockets/App.h>
 #include <unordered_map>
 #include <functional>
@@ -23,7 +24,7 @@ struct PlayerConnection {
  *   - Forward serialised chunk state messages (received from GameEngine via IPC)
  *     to the appropriate connected players.
  *   - Forward raw player-input messages from clients to the GameEngine.
- *   - Maintain StateManager so late-joining players can receive cached state.
+ *   - Maintain per-chunk state cache so late-joining players can receive cached state.
  *
  * Threading note: receiveGameBatch() is called from the game-engine thread.
  * uWebSockets' App::run() blocks the calling thread. Use uWS::Loop::defer() to
@@ -86,9 +87,47 @@ public:
     using PlayerInputCallback = std::function<void(PlayerId, const uint8_t*, size_t)>;
     void setPlayerInputCallback(PlayerInputCallback cb);
 
-private:
-    StateManager stateManager;
+    // ── Per-chunk state management ─────────────────────────────────────────
 
+    /**
+     * @brief Route an incoming chunk message to the correct ChunkState bucket.
+     *
+     * Snapshots call receiveSnapshot() (clears deltas); all delta variants call
+     * receiveDelta() (appends to the unified delta buffer).
+     * The message type is read from byte[0]; the ChunkId from bytes [3:10].
+     *
+     * @param data  Raw message bytes.
+     * @param size  Byte count (minimum 15 — header size).
+     */
+    void receiveChunkMessage(const uint8_t* data, size_t size);
+
+    /** @brief Get (or create) the ChunkState for a chunk. */
+    ChunkState& getChunkState(ChunkId id);
+
+    /** @brief Read-only access; returns nullptr if chunk is not tracked. */
+    const ChunkState* findChunkState(ChunkId id) const;
+
+    /** @brief Remove state for a chunk that is no longer watched. */
+    void removeChunk(ChunkId id);
+
+    // ── Per-player snapshot tick tracking ─────────────────────────────────
+    // Records which snapshot tick each player currently holds for each chunk.
+    // Used to decide whether to send a full snapshot or just accumulated deltas
+    // when a player starts watching a chunk.
+
+    /** @brief Record that player @p pid has state up to @p tick for @p cid. */
+    void setPlayerStateTick(PlayerId pid, ChunkId cid, uint32_t tick);
+
+    /**
+     * @brief Latest state tick @p pid holds for @p cid (snapshot or delta).
+     * @return 0 if the player has not yet received any state for that chunk.
+     */
+    uint32_t getPlayerStateTick(PlayerId pid, ChunkId cid) const;
+
+    /** @brief Remove all per-chunk tracking for a disconnected player. */
+    void removePlayer(PlayerId pid);
+
+private:
     uWS::App  wsApp;
 
     /**
@@ -106,6 +145,12 @@ private:
     PlayerConnectCallback    connectCb;
     PlayerDisconnectCallback disconnectCb;
     PlayerInputCallback      inputCb;
+
+    /** @brief Cached chunk states keyed by ChunkId. */
+    std::unordered_map<ChunkId, ChunkState> chunkStates;
+
+    /** @brief Per-player metadata keyed by PlayerId. */
+    std::unordered_map<PlayerId, PlayerInfo> players;
 
     /**
      * @brief Send a complete batch to all connected players.
