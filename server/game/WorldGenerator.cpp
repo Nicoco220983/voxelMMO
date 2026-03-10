@@ -160,7 +160,8 @@ void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
                 const int32_t cz = centerCz + dz;
                 const ChunkId chunkId = ChunkId::make(cy, cx, cz);
                 // Generate voxels, activate chunk, and generate entities
-                chunkRegistry.generateAndActivate(*this, chunkId, entityFactory, tick);
+                chunkRegistry.generate(*this, chunkId);
+                chunkRegistry.activate(chunkId, *this, entityFactory, tick);
             }
         }
     }

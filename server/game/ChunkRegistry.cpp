@@ -50,16 +50,6 @@ Chunk* ChunkRegistry::activate(ChunkId id, WorldGenerator& generator, EntityFact
     return chunk;
 }
 
-Chunk* ChunkRegistry::generateAndActivate(WorldGenerator& generator, ChunkId id, EntityFactory& entityFactory, uint32_t tick) {
-    Chunk* chunk = generate(generator, id);
-    if (chunk) {
-        chunk->activated = true;
-        // Generate entities for the newly activated chunk
-        generator.generateEntities(id, entityFactory, tick);
-    }
-    return chunk;
-}
-
 bool ChunkRegistry::deactivate(ChunkId id, entt::registry& registry) {
     auto it = chunks_.find(id);
     if (it == chunks_.end() || !it->second->activated) {

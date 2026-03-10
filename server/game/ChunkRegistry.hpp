@@ -99,20 +99,6 @@ public:
     Chunk* activate(ChunkId id, WorldGenerator& generator, EntityFactory& entityFactory, uint32_t tick);
 
     /**
-     * @brief Generate and activate a chunk in one step.
-     *
-     * Convenience method that generates voxels, marks as activated,
-     * and generates entities for the chunk.
-     *
-     * @param generator WorldGenerator for terrain and entity generation.
-     * @param id Chunk ID to generate and activate.
-     * @param entityFactory Factory to queue entity spawn requests.
-     * @param tick Current server tick.
-     * @return Pointer to the generated and activated chunk.
-     */
-    Chunk* generateAndActivate(WorldGenerator& generator, ChunkId id, EntityFactory& entityFactory, uint32_t tick);
-
-    /**
      * @brief Deactivate a chunk, removing all its entities.
      *
      * This removes all non-player entities from the chunk.

@@ -169,7 +169,8 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
                         // Ensure activation-radius chunks exist
                         if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
                             bool wasNew = !chunkRegistry.hasChunk(cid);
-                            Chunk* chunk = chunkRegistry.generateAndActivate(generator, cid, entityFactory, tick);
+                            Chunk* chunk = chunkRegistry.generate(generator, cid);
+                            chunkRegistry.activate(cid, generator, entityFactory, tick);
                             if (chunk && wasNew) {
                                 result.activatedChunks.push_back(cid);
                             }
