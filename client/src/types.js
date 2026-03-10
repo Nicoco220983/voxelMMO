@@ -8,8 +8,9 @@
  */
 
 /**
- * Packed VoxelId as a number: uint5(y) | uint5(x) | uint5(z) in 15 bits.
- * @typedef {number} VoxelId
+ * Packed VoxelIndex as a number: uint5(y) | uint5(x) | uint5(z) in 15 bits.
+ * Used as flat array index into the voxels[] buffer.
+ * @typedef {number} VoxelIndex
  */
 
 /**
@@ -191,41 +192,41 @@ export function chunkIdToString(chunkId) {
   return `ChunkId(${cx}, ${cy}, ${cz})`
 }
 
-// ── VoxelId helper functions ─────────────────────────────────────────────────
+// ── VoxelIndex helper functions ──────────────────────────────────────────────
 
 /**
- * Create a VoxelId from its three unsigned voxel coordinates (0-31).
+ * Create a VoxelIndex from its three unsigned voxel coordinates (0-31).
  * Layout: uint5(y) | uint5(x) | uint5(z) in 15 bits.
  * @param {number} vx - Voxel X, 0-31
  * @param {number} vy - Voxel Y, 0-31
  * @param {number} vz - Voxel Z, 0-31
- * @returns {VoxelId}
+ * @returns {VoxelIndex}
  */
-export function voxelIdFromVoxelPos(vx, vy, vz) {
+export function voxelIndexFromPos(vx, vy, vz) {
   return ((vy & 0x1F) << 10) | ((vx & 0x1F) << 5) | (vz & 0x1F)
 }
 
 /**
- * Extract voxel coordinates from a packed VoxelId.
- * @param {VoxelId} voxelId
+ * Extract voxel coordinates from a packed VoxelIndex.
+ * @param {VoxelIndex} voxelIndex
  * @returns {{vx: number, vy: number, vz: number}}
  */
-export function getVoxelPos(voxelId) {
+export function getVoxelIndexPos(voxelIndex) {
   return {
-    vy: (voxelId >> 10) & 0x1F,
-    vx: (voxelId >> 5) & 0x1F,
-    vz: voxelId & 0x1F,
+    vy: (voxelIndex >> 10) & 0x1F,
+    vx: (voxelIndex >> 5) & 0x1F,
+    vz: voxelIndex & 0x1F,
   }
 }
 
 /**
- * String representation of a VoxelId for debugging.
- * @param {VoxelId} voxelId
+ * String representation of a VoxelIndex for debugging.
+ * @param {VoxelIndex} voxelIndex
  * @returns {string}
  */
-export function voxelIdToString(voxelId) {
-  const { vx, vy, vz } = getVoxelPos(voxelId)
-  return `VoxelId(${vx}, ${vy}, ${vz})`
+export function voxelIndexToString(voxelIndex) {
+  const { vx, vy, vz } = getVoxelIndexPos(voxelIndex)
+  return `VoxelIndex(${vx}, ${vy}, ${vz})`
 }
 
 // ── Physics constants (must match server Types.hpp) ──────────────────────────
