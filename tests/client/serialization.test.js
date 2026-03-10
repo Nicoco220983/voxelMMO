@@ -37,7 +37,7 @@ vi.mock('../../client/src/utils.js', () => ({
 import { Chunk } from '../../client/src/Chunk.js'
 import {
   CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT,
-  VoxelType,
+  VoxelType, voxelIdFromVoxelPos, getVoxelPos,
 } from '../../client/src/types.js'
 import { ServerMessageType } from '../../client/src/NetworkProtocol.js'
 
@@ -48,11 +48,6 @@ function packChunkId(y, x, z) {
   return (BigInt(y & 0x3F) << 58n)
        | (BigInt(x & 0x1FFFFFFF) << 29n)
        |  BigInt(z & 0x1FFFFFFF)
-}
-
-/** Pack VoxelId: uint5(y) | uint5(x) | uint5(z) → uint16. */
-function packVoxelId(y, x, z) {
-  return ((y & 0x1F) << 10) | ((x & 0x1F) << 5) | (z & 0x1F)
 }
 
 /**
@@ -106,7 +101,7 @@ function buildDeltaMsg(chunkId, tick, mods, msgType = ServerMessageType.CHUNK_TI
   view.setUint32(off, tick, true);      off += 4
   view.setInt32(off, mods.length, true); off += 4
   for (const { vy, vx, vz, vtype } of mods) {
-    view.setUint16(off, packVoxelId(vy, vx, vz), true); off += 2
+    view.setUint16(off, voxelIdFromVoxelPos(vx, vy, vz), true); off += 2
     view.setUint8(off++, vtype)
   }
 
@@ -145,10 +140,11 @@ describe('VoxelId packing', () => {
       { y: 3,  x: 7,  z: 7 },
     ]
     for (const { y, x, z } of cases) {
-      const packed = packVoxelId(y, x, z)
-      expect((packed >> 10) & 0x1f).toBe(y)
-      expect((packed >>  5) & 0x1f).toBe(x)
-      expect( packed        & 0x1f).toBe(z)
+      const packed = voxelIdFromVoxelPos(x, y, z)
+      const { vx, vy, vz } = getVoxelPos(packed)
+      expect(vy).toBe(y)
+      expect(vx).toBe(x)
+      expect(vz).toBe(z)
     }
   })
 })
