@@ -23,8 +23,6 @@ GameEngine::GameEngine(uint32_t seed, bool seedProvided,
     entityFactory.registerSpawnImpl(EntityType::GHOST_PLAYER, GhostPlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::PLAYER, PlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::SHEEP, SheepEntity::spawnImpl);
-    // generate initial chunks and player spawn point
-    worldGenerator.init(chunkRegistry, entityFactory, ACTIVATION_RADIUS);
 }
 
 uint32_t GameEngine::generateRandomSeed() {
@@ -268,7 +266,7 @@ void GameEngine::sendSelfEntityMessages() {
 
 void GameEngine::processPendingPlayerCreations() {
     for (const auto& req : pendingPlayerCreations_) {
-        const auto* spawnPos = worldGenerator.getPlayerSpawnPos();
+        const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS);
         const GlobalEntityId globalId = acquireEntityId();
         entt::entity ent;
         

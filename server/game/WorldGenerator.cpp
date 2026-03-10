@@ -135,11 +135,6 @@ WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, std::optional<
     // Lean constructor - no chunk generation here
 }
 
-void WorldGenerator::init(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius) {
-    // Generate initial chunks around (0,0,0) and compute player spawn position
-    generateChunks(chunkRegistry, 0, 0, 0, radius, entityFactory, 0);
-    computePlayerSpawnPos();
-}
 
 void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
                                     int32_t centerX, int32_t centerY, int32_t centerZ,
@@ -165,6 +160,16 @@ void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
             }
         }
     }
+}
+
+const int32_t* WorldGenerator::getPlayerSpawnPos(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius) {
+    if (!spawnPosComputed_) {
+        // Generate initial chunks first
+        generateChunks(chunkRegistry, 0, 0, 0, radius, entityFactory, 0);
+        computePlayerSpawnPos();
+        spawnPosComputed_ = true;
+    }
+    return playerSpawnPos_;
 }
 
 void WorldGenerator::computePlayerSpawnPos() {

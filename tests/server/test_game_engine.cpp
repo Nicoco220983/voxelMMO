@@ -49,7 +49,7 @@ TEST_CASE("Player receives SELF_ENTITY message on join", "[integration]") {
 TEST_CASE("Player spawns at world spawn position", "[integration]") {
     TestEnv env(12345);
     
-    auto spawnPos = env.engine().getWorldGenerator().getPlayerSpawnPos();
+    auto spawnPos = env.engine().getWorldGenerator().getPlayerSpawnPos(env.engine().getChunkRegistry(), *env.engine().getEntityFactory(), GameEngine::ACTIVATION_RADIUS);
     
     PlayerId pid = env.addPlayer(EntityType::PLAYER);
     env.tick();
@@ -464,7 +464,7 @@ TEST_CASE("Newly joined player entity is present in chunk snapshot", "[bug][inte
     TestEnv env(12345);
     
     // Get the spawn chunk before adding player
-    auto spawnPos = env.engine().getWorldGenerator().getPlayerSpawnPos();
+    auto spawnPos = env.engine().getWorldGenerator().getPlayerSpawnPos(env.engine().getChunkRegistry(), *env.engine().getEntityFactory(), GameEngine::ACTIVATION_RADIUS);
     auto* spawnChunk = env.getChunkAt(spawnPos[0], spawnPos[1], spawnPos[2]);
     REQUIRE(spawnChunk != nullptr);
     

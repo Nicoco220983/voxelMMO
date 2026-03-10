@@ -66,10 +66,17 @@ public:
     std::optional<EntityType> getTestEntityType() const noexcept { return testEntityType_; }
     
     /**
-     * @brief Get the computed player spawn position.
+     * @brief Get the player spawn position, computing it if necessary.
+     * 
+     * On first call, generates initial chunks around (0,0,0) and computes spawn.
+     * Subsequent calls return cached position.
+     * 
+     * @param chunkRegistry  Registry to populate with generated chunks.
+     * @param entityFactory  Factory to queue entity spawn requests.
+     * @param radius         Radius around center to generate chunks.
      * @return Spawn position in sub-voxels as {x, y, z}.
      */
-    const int32_t* getPlayerSpawnPos() const noexcept { return playerSpawnPos_; }
+    const int32_t* getPlayerSpawnPos(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius);
     
     /**
      * @brief Generate and activate initial chunks around a center position.
@@ -88,14 +95,6 @@ public:
                         int32_t radius,
                         EntityFactory& entityFactory,
                         uint32_t tick);
-    
-    /**
-     * @brief Compute player spawn position at column (0,0).
-     *
-     * Finds the top solid voxel at world column (0,0) and sets spawn
-     * 1 meter (SUBVOXEL_SIZE units) above it.
-     */
-    void computePlayerSpawnPos();
     
     /**
      * @brief Fill @p voxels with terrain data for chunk (cx, cy, cz).
@@ -135,11 +134,20 @@ public:
     void generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick) const;
     
 private:
+    /**
+     * @brief Compute player spawn position at column (0,0).
+     *
+     * Finds the top solid voxel at world column (0,0) and sets spawn
+     * 1 meter (SUBVOXEL_SIZE units) above it.
+     */
+    void computePlayerSpawnPos();
+    
     uint32_t seed_;
     GeneratorType type_;
     std::optional<EntityType> testEntityType_;
     mutable bool testEntitySpawned_ = false;      ///< Track if test entity was spawned
     int32_t playerSpawnPos_[3] = {0, 0, 0};       ///< Player spawn (computed separately)
+    mutable bool spawnPosComputed_ = false;       ///< Whether spawn position has been computed
 };
 
 } // namespace voxelmmo

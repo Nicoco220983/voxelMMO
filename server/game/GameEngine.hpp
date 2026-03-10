@@ -150,6 +150,9 @@ public:
 
     /** @brief Access the world generator for terrain queries. */
     const WorldGenerator& getWorldGenerator() const { return worldGenerator; }
+    
+    /** @brief Access the world generator (non-const, for tests). */
+    WorldGenerator& getWorldGenerator() { return worldGenerator; }
 
     // ── Test accessors ────────────────────────────────────────────────────
 
