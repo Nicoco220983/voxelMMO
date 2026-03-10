@@ -46,7 +46,7 @@ struct BaseEntity {
         reg.get<DirtyComponent>(ent).markCreated();
 
         // Chunk membership - assigned at spawn, updated by ChunkMembershipSystem
-        const ChunkId chunkId = chunkIdOf(x, y, z);
+        const ChunkId chunkId = ChunkId::fromSubVoxelPos(x, y, z);
         reg.emplace<ChunkMembershipComponent>(ent, chunkId);
 
         return ent;

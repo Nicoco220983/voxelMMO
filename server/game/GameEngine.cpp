@@ -185,7 +185,7 @@ void GameEngine::stepPhysics() {
 // ── Chunk lookup ──────────────────────────────────────────────────────────
 
 const Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
-    return chunkRegistry.getChunk(chunkIdOf(px, py, pz));
+    return chunkRegistry.getChunk(ChunkId::fromSubVoxelPos(px, py, pz));
 }
 
 // ── Main tick ─────────────────────────────────────────────────────────────
@@ -285,7 +285,7 @@ void GameEngine::processPendingPlayerCreations() {
         playerEntities[req.playerId] = ent;
         
         // Add player entity to its chunk
-        const ChunkId chunkId = chunkIdOf(spawnPos[0], spawnPos[1], spawnPos[2]);
+        const ChunkId chunkId = ChunkId::fromSubVoxelPos(spawnPos[0], spawnPos[1], spawnPos[2]);
         chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
     }
     pendingPlayerCreations_.clear();

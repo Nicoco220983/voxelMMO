@@ -42,7 +42,7 @@ void EntityFactory::createEntities(
         entt::entity ent = it->second(registry, globalId, req);
 
         // Add non-player entity to its chunk
-        const ChunkId chunkId = chunkIdOf(req.x, req.y, req.z);
+        const ChunkId chunkId = ChunkId::fromSubVoxelPos(req.x, req.y, req.z);
         chunkRegistry.addEntity(chunkId, ent);
     }
 

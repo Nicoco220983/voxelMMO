@@ -74,7 +74,7 @@ inline void checkChunkMembership(
         if (!dyn.moved) return;
         dyn.moved = false;
 
-        const ChunkId newChunkId = chunkIdOf(dyn.x, dyn.y, dyn.z);
+        const ChunkId newChunkId = ChunkId::fromSubVoxelPos(dyn.x, dyn.y, dyn.z);
         
         // No chunk change - skip
         if (membership.currentChunkId == newChunkId) return;

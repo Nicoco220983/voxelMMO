@@ -195,8 +195,8 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
         if (!testEntityType_ || testEntitySpawned_) return;
         
         // Calculate test entity spawn position: 5 voxels in front (+X) of player
-        const int32_t testX = 5 * SUBVOXEL_SIZE;
-        const int32_t testZ = 0;
+        const int32_t testX = 0;
+        const int32_t testZ = -5 * SUBVOXEL_SIZE;
         const int32_t surfaceY = getSurfaceY(0, 0);
         const int32_t testY = (surfaceY + 1) * SUBVOXEL_SIZE;
         

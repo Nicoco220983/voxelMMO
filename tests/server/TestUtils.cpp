@@ -139,7 +139,7 @@ bool TestEnv::hasChunk(int32_t cx, int32_t cy, int32_t cz) {
 }
 
 Chunk* TestEnv::getChunkAt(int32_t x, int32_t y, int32_t z) {
-    return chunks().getChunkMutable(chunkIdOf(x, y, z));
+    return chunks().getChunkMutable(ChunkId::fromSubVoxelPos(x, y, z));
 }
 
 void TestEnv::tick(int n) {
@@ -189,7 +189,7 @@ void TestEnv::assertGrounded(PlayerId pid, bool grounded) {
 void TestEnv::assertInChunk(PlayerId pid, int32_t cx, int32_t cy, int32_t cz) {
     auto* pos = getPosition(pid);
     REQUIRE(pos != nullptr);
-    ChunkId actual = chunkIdOf(pos->x, pos->y, pos->z);
+    ChunkId actual = ChunkId::fromSubVoxelPos(pos->x, pos->y, pos->z);
     ChunkId expected = ChunkId::make(cy, cx, cz);
     CHECK(actual == expected);
 }
@@ -263,7 +263,7 @@ entt::entity PhysicsTestEnv::spawnEntity(int32_t x, int32_t y, int32_t z, Physic
     registry.emplace<PhysicsModeComponent>(ent, mode);
     
     // Add to chunk
-    ChunkId cid = chunkIdOf(x, y, z);
+    ChunkId cid = ChunkId::fromSubVoxelPos(x, y, z);
     if (auto* chunk = chunks.getChunkMutable(cid)) {
         chunk->entities.insert(ent);
     }

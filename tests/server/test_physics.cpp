@@ -238,12 +238,12 @@ TEST_CASE("Entity moving between chunks updates membership", "[physics]") {
     auto ent = env.spawnEntity(edgeX, 256 * 12, 128, PhysicsMode::GHOST);
     env.setVelocity(ent, 200, 0, 0);  // Moving toward next chunk
     
-    ChunkId startChunk = chunkIdOf(edgeX, 256 * 12, 128);
+    ChunkId startChunk = ChunkId::fromSubVoxelPos(edgeX, 256 * 12, 128);
     
     env.tick(10);
     
     auto* pos = env.getPosition(ent);
-    ChunkId endChunk = chunkIdOf(pos->x, pos->y, pos->z);
+    ChunkId endChunk = ChunkId::fromSubVoxelPos(pos->x, pos->y, pos->z);
     
     // Should have moved to next chunk
     CHECK(endChunk.x() == startChunk.x() + 1);

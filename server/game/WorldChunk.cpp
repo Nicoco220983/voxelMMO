@@ -8,7 +8,7 @@ WorldChunk::WorldChunk() {
 }
 
 void WorldChunk::setVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ, VoxelType type) {
-    const VoxelIndex idx = packVoxelIndex(voxelX, voxelY, voxelZ);
+    const VoxelIndex idx = voxelIndexFromPos(voxelX, voxelY, voxelZ);
     voxels[idx] = type;
     // TODO: check that idx is not already present in deltas
     voxelsSnapshotDeltas.emplace_back(idx, type);

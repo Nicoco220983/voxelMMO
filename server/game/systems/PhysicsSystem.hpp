@@ -36,7 +36,7 @@ struct VoxelContext {
      *        Returns AIR for unloaded chunks (passable = safe outside loaded world).
      */
     VoxelType getAtVoxel(int32_t vx, int32_t vy, int32_t vz) {
-        const ChunkId cid = chunkIdOfVoxel(vx, vy, vz);
+        const ChunkId cid = ChunkId::fromVoxelPos(vx, vy, vz);
         if (cid != lastChunkId) {
             lastChunkId = cid;
             lastChunk   = registry.getChunk(cid);

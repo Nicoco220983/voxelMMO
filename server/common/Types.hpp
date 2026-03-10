@@ -101,27 +101,11 @@ inline std::ostream& operator<<(std::ostream& os, const ChunkId& id) {
  *         Bit layout: [14:10] y (5-bit) | [9:5] x (5-bit) | [4:0] z (5-bit) */
 using VoxelIndex = uint16_t;
 
-/** @brief Pack (x,y,z) chunk-local coordinates into a VoxelIndex.
- *  @deprecated Use voxelIndexFromPos() for naming consistency with client.
- */
-inline constexpr VoxelIndex packVoxelIndex(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) noexcept {
-    return static_cast<VoxelIndex>(((voxelY & 0x1F) << 10) | ((voxelX & 0x1F) << 5) | (voxelZ & 0x1F));
-}
-
-/** @brief Unpack VoxelIndex into (x,y,z) chunk-local coordinates.
- *  @deprecated Use getVoxelIndexPos() for naming consistency with client.
- */
-inline constexpr void unpackVoxelIndex(VoxelIndex idx, uint32_t& x, uint32_t& y, uint32_t& z) noexcept {
-    y = (idx >> 10) & 0x1F;
-    x = (idx >>  5) & 0x1F;
-    z =  idx        & 0x1F;
-}
-
 /** @brief Create a VoxelIndex from its three unsigned voxel coordinates (0-31).
  *  Matches client-side naming: voxelIndexFromPos()
  */
 inline constexpr VoxelIndex voxelIndexFromPos(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) noexcept {
-    return packVoxelIndex(voxelX, voxelY, voxelZ);
+    return static_cast<VoxelIndex>(((voxelY & 0x1F) << 10) | ((voxelX & 0x1F) << 5) | (voxelZ & 0x1F));
 }
 
 /** @brief Voxel coordinates unpacked from VoxelIndex. */
@@ -141,11 +125,6 @@ inline constexpr VoxelIndexPos getVoxelIndexPos(VoxelIndex idx) noexcept {
 /** @brief Voxel type byte. */
 using VoxelType = uint8_t;
 
-/** @brief Per-chunk wire entity id (uint16, unique within one chunk's lifetime).
- *  @deprecated Use GlobalEntityId instead for stable entity identification.
- */
-using ChunkEntityId = uint16_t;
-
 /** @brief Global entity identifier (uint32, stable across chunk moves and server lifetime).
  *
  * Assigned once at entity spawn by GameEngine; never changes during the entity's lifetime.
@@ -158,46 +137,6 @@ using PlayerId = uint32_t;
 
 /** @brief Gateway instance identifier (uint32). */
 using GatewayId = uint32_t;
-
-/**
- * @brief ChunkId for the chunk that contains sub-voxel coordinates (sx, sy, sz).
- * @deprecated Use ChunkId::fromSubVoxelPos() for naming consistency with client.
- */
-inline constexpr ChunkId chunkIdOf(int32_t worldX, int32_t worldY, int32_t worldZ) noexcept {
-    return ChunkId::fromSubVoxelPos(worldX, worldY, worldZ);
-}
-
-/**
- * @brief ChunkId for the chunk that contains voxel coordinates (vx, vy, vz).
- * @deprecated Use ChunkId::fromVoxelPos() for naming consistency with client.
- */
-inline constexpr ChunkId chunkIdOfVoxel(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
-    return ChunkId::fromVoxelPos(voxelX, voxelY, voxelZ);
-}
-
-/**
- * @brief Create a ChunkId from its three signed chunk coordinates.
- * @deprecated Use ChunkId::fromChunkPos() for naming consistency with client.
- */
-inline constexpr ChunkId chunkIdFromChunkPos(int32_t chunkX, int32_t chunkY, int32_t chunkZ) noexcept {
-    return ChunkId::fromChunkPos(chunkX, chunkY, chunkZ);
-}
-
-/**
- * @brief ChunkId for the chunk that contains voxel coordinates (vx, vy, vz).
- * @deprecated Use ChunkId::fromVoxelPos() for naming consistency with client.
- */
-inline constexpr ChunkId chunkIdFromVoxelPos(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
-    return ChunkId::fromVoxelPos(voxelX, voxelY, voxelZ);
-}
-
-/**
- * @brief ChunkId for the chunk that contains sub-voxel coordinates (sx, sy, sz).
- * @deprecated Use ChunkId::fromSubVoxelPos() for naming consistency with client.
- */
-inline constexpr ChunkId chunkIdFromSubVoxelPos(int32_t subX, int32_t subY, int32_t subZ) noexcept {
-    return ChunkId::fromSubVoxelPos(subX, subY, subZ);
-}
 
 /** @brief Chunk coordinates unpacked from ChunkId. */
 struct ChunkPos { int32_t cx, cy, cz; };

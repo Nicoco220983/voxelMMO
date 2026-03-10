@@ -20,7 +20,7 @@ class WorldChunk {
 public:
 
     /** @brief All voxels in row-major (y, x, z) order. Size = CHUNK_VOXEL_COUNT.
-     *         Use packVoxelIndex(x, y, z) to compute the index. */
+     *         Use voxelIndexFromPos(x, y, z) to compute the index. */
     std::vector<VoxelType> voxels;
 
     /** @brief Accumulated voxel changes since the last snapshot was sent. */
@@ -36,7 +36,7 @@ public:
 
     /** @brief Get voxel type at local chunk coordinates. */
     VoxelType getVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) const {
-        return voxels[packVoxelIndex(voxelX, voxelY, voxelZ)];
+        return voxels[voxelIndexFromPos(voxelX, voxelY, voxelZ)];
     }
 
     /** @brief Set voxel type at local chunk coordinates and record as delta. */

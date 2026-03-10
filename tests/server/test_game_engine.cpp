@@ -82,7 +82,7 @@ TEST_CASE("Teleport moves player between chunks", "[integration]") {
     PlayerId pid = env.addPlayer(EntityType::GHOST_PLAYER);
     env.tick();
     
-    auto startChunk = chunkIdOf(env.getPosition(pid)->x, env.getPosition(pid)->y, env.getPosition(pid)->z);
+    auto startChunk = ChunkId::fromSubVoxelPos(env.getPosition(pid)->x, env.getPosition(pid)->y, env.getPosition(pid)->z);
     
     // Teleport far away to a different chunk
     int32_t targetX = CHUNK_SIZE_X * SUBVOXEL_SIZE * 5 + 100;
@@ -91,7 +91,7 @@ TEST_CASE("Teleport moves player between chunks", "[integration]") {
     env.teleport(pid, targetX, targetY, targetZ);
     env.tick();
     
-    auto endChunk = chunkIdOf(env.getPosition(pid)->x, env.getPosition(pid)->y, env.getPosition(pid)->z);
+    auto endChunk = ChunkId::fromSubVoxelPos(env.getPosition(pid)->x, env.getPosition(pid)->y, env.getPosition(pid)->z);
     
     // Should be in a different chunk
     CHECK(endChunk.packed != startChunk.packed);
