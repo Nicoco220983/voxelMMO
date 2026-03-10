@@ -8,6 +8,7 @@ import { EntityRegistry } from './EntityRegistry.js'
 import { lz4Decompress, BufReader } from './utils.js'
 import { BaseEntity } from './entities/BaseEntity.js'
 import { TICK_RATE } from './types.js'
+import { PhysicsPredictionSystem } from './systems/PhysicsPredictionSystem.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
@@ -167,10 +168,14 @@ export class GameClient {
   }
 
   /**
-   * Update all entity animations. Call once per animation frame.
+   * Update all entity predictions and animations. Call once per animation frame.
    * @param {number} dt  Delta time in seconds.
    */
   updateEntities(dt) {
+    // Run physics prediction for all entities (updates currentPos based on last received state)
+    PhysicsPredictionSystem.update(this.#entityRegistry, this.tick)
+    
+    // Update entity animations
     for (const entity of this.#entityRegistry.all()) {
       if (entity.updateAnimation) {
         entity.updateAnimation(dt)

@@ -30,9 +30,10 @@ export class ChunkId {
    * @returns {ChunkId}
    */
   static make(chunkY, chunkX, chunkZ) {
-    const packed = (BigInt.asIntN(6, BigInt(chunkY)) << 58n)
-                 | (BigInt.asIntN(29, BigInt(chunkX)) << 29n)
-                 | BigInt.asIntN(29, BigInt(chunkZ))
+    // Mask first (like C++), then shift - this gives unsigned masking behavior
+    const packed = (BigInt(BigInt.asIntN(32, BigInt(chunkY)) & 0x3Fn) << 58n)
+                 | (BigInt(BigInt.asIntN(32, BigInt(chunkX)) & 0x1FFFFFFFn) << 29n)
+                 | BigInt(BigInt.asIntN(32, BigInt(chunkZ)) & 0x1FFFFFFFn)
     return new ChunkId(packed)
   }
 
@@ -85,7 +86,7 @@ export class ChunkId {
    * @returns {string}
    */
   toString() {
-    return `ChunkId(${this.packed}: ${this.x}, ${this.y}, ${this.z})`
+    return `ChunkId(${this.x}, ${this.y}, ${this.z})`
   }
 }
 

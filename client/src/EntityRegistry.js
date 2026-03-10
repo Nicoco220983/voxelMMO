@@ -97,31 +97,30 @@ export class EntityRegistry {
   }
 
   /**
-   * Detect if entity's current position puts it in a different chunk than expected.
+   * Detect if entity's current position puts it in a different chunk than entity.chunkId.
    * If so, update entity.chunkId and move entity between chunk entity sets.
    * @param {ChunkRegistry} chunkRegistry
-   * @param {ChunkIdPacked} expectedChunkId - The chunk ID from the message
    * @param {BaseEntity} entity
    * @private
    */
-  #detectAndHandleChunkChange(chunkRegistry, expectedChunkId, entity) {
+  #detectAndHandleChunkChange(chunkRegistry, entity) {
     const pos = entity.motion
     const actualChunkId = chunkIdOfSubVoxel(pos.x, pos.y, pos.z)
     
-    if (actualChunkId.packed !== expectedChunkId) {
+    if (actualChunkId.packed !== entity.chunkId) {
       console.debug('[EntityRegistry] Entity crossed chunk boundary:', { 
         entityId: entity.id, 
-        fromChunk: new ChunkId(expectedChunkId).toString(), 
+        fromChunk: new ChunkId(entity.chunkId).toString(), 
         toChunk: actualChunkId.toString(),
         pos: { x: pos.x, y: pos.y, z: pos.z }
       })
       
+      // Remove from old chunk's entities
+      const oldChunk = chunkRegistry.get(entity.chunkId)
+      if (oldChunk) oldChunk.entities.delete(entity.id)
+      
       // Update entity's chunk reference
       entity.chunkId = actualChunkId.packed
-      
-      // Remove from old chunk's entities
-      const oldChunk = chunkRegistry.get(expectedChunkId)
-      if (oldChunk) oldChunk.entities.delete(entity.id)
       
       // Add to new chunk's entities
       const newChunk = chunkRegistry.getOrCreate(actualChunkId.packed)
@@ -169,10 +168,7 @@ export class EntityRegistry {
     // Remove existing entities that were in this chunk
     for (const globalId of chunkEntities) {
       const entity = this.#entities.get(globalId)
-      // Only delete if entity is still in this chunk (might have moved)
-      if (entity && entity.chunkId === chunkId) {
-        this.#entities.delete(globalId)
-      }
+      if (entity) this.#entities.delete(globalId)
     }
     chunkEntities.clear()
 
@@ -241,7 +237,6 @@ export class EntityRegistry {
         const entityType = reader.readUint8()
         const componentMask = reader.readUint8()
         
-        console.log("TMP entities", this.#entities)
         let entity = this.#entities.get(entityId)
         
         // Protocol error: UPDATE_ENTITY for unknown entity without CREATED flag
@@ -259,10 +254,11 @@ export class EntityRegistry {
         }
         entity.applyComponents(reader, componentMask, messageTick)
         
+        // TODO: should be done in a separated flow to detect at each tick
         // For UPDATE_ENTITY (not CREATE), detect if position change caused chunk boundary crossing
         // This handles cases where server may not send explicit CHUNK_CHANGE_ENTITY
         if (!wasCreate && (componentMask & POSITION_BIT)) {
-          this.#detectAndHandleChunkChange(chunkRegistry, chunkId, entity)
+          this.#detectAndHandleChunkChange(chunkRegistry, entity)
         }
       } else {
         console.error('[EntityRegistry] Unknown delta type:', deltaType, 'for entity', entityId)

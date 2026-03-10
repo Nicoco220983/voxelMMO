@@ -36,14 +36,15 @@ function i32le(v) {
   return [...new Uint8Array(b)]
 }
 
-// ── DynamicPositionComponent.getPos ────────────────────────────────────────
+// ── DynamicPositionComponent.updatePrediction / getCurrentPos ───────────────
 
-describe('DynamicPositionComponent.getPos', () => {
+describe('DynamicPositionComponent.updatePrediction', () => {
   it('returns current position when n = 0', () => {
     const c = new DynamicPositionComponent()
-    c.tick = 10; c.x = 100; c.y = 200; c.z = 300
-    c.vx = 5; c.vy = 5; c.vz = 5; c.grounded = false
-    const p = c.getPos(10)
+    c.receivedTick = 10; c.receivedX = 100; c.receivedY = 200; c.receivedZ = 300
+    c.receivedVx = 5; c.receivedVy = 5; c.receivedVz = 5; c.receivedGrounded = false
+    c.updatePrediction(10)
+    const p = c.getCurrentPos()
     expect(p.x).toBe(100)
     expect(p.y).toBe(200)
     expect(p.z).toBe(300)
@@ -51,9 +52,10 @@ describe('DynamicPositionComponent.getPos', () => {
 
   it('returns current position when n < 0 (past tick)', () => {
     const c = new DynamicPositionComponent()
-    c.tick = 50; c.x = 100; c.y = 200; c.z = 300
-    c.vx = 10; c.vy = 10; c.vz = 10; c.grounded = false
-    const p = c.getPos(40)  // 10 ticks before the reference
+    c.receivedTick = 50; c.receivedX = 100; c.receivedY = 200; c.receivedZ = 300
+    c.receivedVx = 10; c.receivedVy = 10; c.receivedVz = 10; c.receivedGrounded = false
+    c.updatePrediction(40)  // 10 ticks before the reference
+    const p = c.getCurrentPos()
     expect(p.x).toBe(100)
     expect(p.y).toBe(200)
     expect(p.z).toBe(300)
@@ -61,9 +63,10 @@ describe('DynamicPositionComponent.getPos', () => {
 
   it('advances position linearly when grounded (no gravity)', () => {
     const c = new DynamicPositionComponent()
-    c.tick = 0; c.x = 0; c.y = 1000; c.z = 0
-    c.vx = 10; c.vy = 0; c.vz = -5; c.grounded = true
-    const p = c.getPos(3)
+    c.receivedTick = 0; c.receivedX = 0; c.receivedY = 1000; c.receivedZ = 0
+    c.receivedVx = 10; c.receivedVy = 0; c.receivedVz = -5; c.receivedGrounded = true
+    c.updatePrediction(3)
+    const p = c.getCurrentPos()
     expect(p.x).toBe(30)   // 0 + 10*3
     expect(p.y).toBe(1000) // no gravity because grounded
     expect(p.z).toBe(-15)  // 0 + (-5)*3
@@ -71,20 +74,22 @@ describe('DynamicPositionComponent.getPos', () => {
 
   it('applies gravity quadratically when airborne (grounded = false)', () => {
     const c = new DynamicPositionComponent()
-    c.tick = 0; c.x = 0; c.y = 5000; c.z = 0
-    c.vx = 0; c.vy = 0; c.vz = 0; c.grounded = false
+    c.receivedTick = 0; c.receivedX = 0; c.receivedY = 5000; c.receivedZ = 0
+    c.receivedVx = 0; c.receivedVy = 0; c.receivedVz = 0; c.receivedGrounded = false
     const n = 5
-    const p = c.getPos(n)
+    c.updatePrediction(n)
+    const p = c.getCurrentPos()
     const expectedGravY = GRAVITY_DECREMENT * n * (n + 1) / 2  // 6*5*6/2 = 90
     expect(p.y).toBe(5000 - expectedGravY)
   })
 
   it('combines vy and gravity when airborne', () => {
     const c = new DynamicPositionComponent()
-    c.tick = 0; c.x = 0; c.y = 0; c.z = 0
-    c.vx = 0; c.vy = 110; c.vz = 0; c.grounded = false  // jump impulse
+    c.receivedTick = 0; c.receivedX = 0; c.receivedY = 0; c.receivedZ = 0
+    c.receivedVx = 0; c.receivedVy = 110; c.receivedVz = 0; c.receivedGrounded = false  // jump impulse
     const n = 4
-    const p = c.getPos(n)
+    c.updatePrediction(n)
+    const p = c.getCurrentPos()
     // y = vy*n - GRAVITY_DECREMENT*n*(n+1)/2
     const expected = 110 * n - GRAVITY_DECREMENT * n * (n + 1) / 2
     expect(p.y).toBe(expected)
@@ -92,18 +97,20 @@ describe('DynamicPositionComponent.getPos', () => {
 
   it('grounded = true suppresses gravity even if vy is non-zero', () => {
     const c = new DynamicPositionComponent()
-    c.tick = 0; c.x = 0; c.y = 0; c.z = 0
-    c.vx = 0; c.vy = 50; c.vz = 0; c.grounded = true
-    const p = c.getPos(3)
+    c.receivedTick = 0; c.receivedX = 0; c.receivedY = 0; c.receivedZ = 0
+    c.receivedVx = 0; c.receivedVy = 50; c.receivedVz = 0; c.receivedGrounded = true
+    c.updatePrediction(3)
+    const p = c.getCurrentPos()
     expect(p.y).toBe(150)  // 0 + 50*3, no gravity
   })
 
   it('horizontal axes are always linear regardless of grounded', () => {
     for (const grounded of [true, false]) {
       const c = new DynamicPositionComponent()
-      c.tick = 0; c.x = 100; c.y = 500; c.z = 200
-      c.vx = 7; c.vy = 0; c.vz = -3; c.grounded = grounded
-      const p = c.getPos(10)
+      c.receivedTick = 0; c.receivedX = 100; c.receivedY = 500; c.receivedZ = 200
+      c.receivedVx = 7; c.receivedVy = 0; c.receivedVz = -3; c.receivedGrounded = grounded
+      c.updatePrediction(10)
+      const p = c.getCurrentPos()
       expect(p.x).toBe(100 + 7 * 10)
       expect(p.z).toBe(200 + (-3) * 10)
     }
@@ -122,14 +129,14 @@ describe('DynamicPositionComponent.deserialize', () => {
     const reader = makeReader(bytes)
     const c = new DynamicPositionComponent()
     c.deserialize(reader, 42)
-    expect(c.tick).toBe(42)
-    expect(c.x).toBe(1000)
-    expect(c.y).toBe(2000)
-    expect(c.z).toBe(3000)
-    expect(c.vx).toBe(10)
-    expect(c.vy).toBe(-6)
-    expect(c.vz).toBe(5)
-    expect(c.grounded).toBe(true)
+    expect(c.receivedTick).toBe(42)
+    expect(c.receivedX).toBe(1000)
+    expect(c.receivedY).toBe(2000)
+    expect(c.receivedZ).toBe(3000)
+    expect(c.receivedVx).toBe(10)
+    expect(c.receivedVy).toBe(-6)
+    expect(c.receivedVz).toBe(5)
+    expect(c.receivedGrounded).toBe(true)
   })
 
   it('treats grounded byte = 0 as false', () => {
@@ -140,7 +147,7 @@ describe('DynamicPositionComponent.deserialize', () => {
     ]
     const c = new DynamicPositionComponent()
     c.deserialize(makeReader(bytes), 1)
-    expect(c.grounded).toBe(false)
+    expect(c.receivedGrounded).toBe(false)
   })
 })
 
@@ -163,12 +170,12 @@ describe('BaseEntity.fromRecord', () => {
     const entity = BaseEntity.fromRecord(makeReader(bytes), 100)
     expect(entity.id).toBe(5)
     expect(entity.type).toBe(1)
-    expect(entity.motion.tick).toBe(100)
-    expect(entity.motion.x).toBe(256)
-    expect(entity.motion.y).toBe(512)
-    expect(entity.motion.z).toBe(768)
-    expect(entity.motion.vy).toBe(-6)
-    expect(entity.motion.grounded).toBe(false)
+    expect(entity.motion.receivedTick).toBe(100)
+    expect(entity.motion.receivedX).toBe(256)
+    expect(entity.motion.receivedY).toBe(512)
+    expect(entity.motion.receivedZ).toBe(768)
+    expect(entity.motion.receivedVy).toBe(-6)
+    expect(entity.motion.receivedGrounded).toBe(false)
   })
 
   it('leaves motion at defaults when POSITION_BIT is not set', () => {
@@ -179,9 +186,9 @@ describe('BaseEntity.fromRecord', () => {
     ]
     const entity = BaseEntity.fromRecord(makeReader(bytes), 50)
     expect(entity.id).toBe(3)
-    expect(entity.motion.x).toBe(0)
-    expect(entity.motion.y).toBe(0)
-    expect(entity.motion.z).toBe(0)
+    expect(entity.motion.receivedX).toBe(0)
+    expect(entity.motion.receivedY).toBe(0)
+    expect(entity.motion.receivedZ).toBe(0)
   })
 })
 
@@ -197,36 +204,48 @@ describe('BaseEntity.applyDelta', () => {
       1,  // grounded = true
     ]
     entity.applyDelta(makeReader(bytes), 200)
-    expect(entity.motion.tick).toBe(200)
-    expect(entity.motion.x).toBe(1024)
-    expect(entity.motion.y).toBe(2048)
-    expect(entity.motion.z).toBe(4096)
-    expect(entity.motion.vx).toBe(77)
-    expect(entity.motion.vz).toBe(-77)
-    expect(entity.motion.grounded).toBe(true)
+    expect(entity.motion.receivedTick).toBe(200)
+    expect(entity.motion.receivedX).toBe(1024)
+    expect(entity.motion.receivedY).toBe(2048)
+    expect(entity.motion.receivedZ).toBe(4096)
+    expect(entity.motion.receivedVx).toBe(77)
+    expect(entity.motion.receivedVz).toBe(-77)
+    expect(entity.motion.receivedGrounded).toBe(true)
   })
 
   it('does not change motion when no bits are set', () => {
     const entity = new BaseEntity(1, 0)
-    entity.motion.x = 999; entity.motion.tick = 5
+    entity.motion.receivedX = 999; entity.motion.receivedTick = 5
     entity.applyDelta(makeReader([0x00]), 99)  // flags = 0
-    expect(entity.motion.x).toBe(999)
-    expect(entity.motion.tick).toBe(5)  // unchanged
+    expect(entity.motion.receivedX).toBe(999)
+    expect(entity.motion.receivedTick).toBe(5)  // unchanged
   })
 })
 
-// ── BaseEntity.getPos ──────────────────────────────────────────────────────
+// ── BaseEntity.currentPos ────────────────────────────────────────────────────
 
-describe('BaseEntity.getPos', () => {
-  it('delegates to motion.getPos', () => {
+describe('BaseEntity.currentPos', () => {
+  it('returns the current predicted position', () => {
     const entity = new BaseEntity(1, 0)
-    entity.motion.tick = 10
-    entity.motion.x = 500; entity.motion.y = 1000; entity.motion.z = 0
-    entity.motion.vx = 10; entity.motion.vy = 0;  entity.motion.vz = 0
-    entity.motion.grounded = true
-    const p = entity.getPos(13)
+    entity.motion.receivedTick = 10
+    entity.motion.receivedX = 500; entity.motion.receivedY = 1000; entity.motion.receivedZ = 0
+    entity.motion.receivedVx = 10; entity.motion.receivedVy = 0;  entity.motion.receivedVz = 0
+    entity.motion.receivedGrounded = true
+    // First update prediction to compute current position
+    entity.motion.updatePrediction(13)  // 3 ticks later
+    const p = entity.currentPos
     expect(p.x).toBe(530)  // 500 + 10*3
     expect(p.y).toBe(1000)
     expect(p.z).toBe(0)
+  })
+})
+
+// ── PhysicsPredictionSystem ──────────────────────────────────────────────────
+
+describe('PhysicsPredictionSystem', () => {
+  it('can be imported', async () => {
+    const { PhysicsPredictionSystem } = await import('../../client/src/systems/PhysicsPredictionSystem.js')
+    expect(PhysicsPredictionSystem).toBeDefined()
+    expect(typeof PhysicsPredictionSystem.update).toBe('function')
   })
 })

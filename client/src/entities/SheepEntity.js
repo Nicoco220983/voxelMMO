@@ -135,8 +135,8 @@ export class SheepEntity extends BaseEntity {
   updateAnimation(dt) {
     if (!this.mesh) return
 
-    // Update position from motion component
-    const pos = this.getPos(window.gameClient?.currentTick || 0)
+    // Update position from motion component (predicted position from PhysicsPredictionSystem)
+    const pos = this.currentPos
     this.mesh.position.set(
       pos.x / SUBVOXEL_SIZE,
       pos.y / SUBVOXEL_SIZE,
@@ -144,8 +144,8 @@ export class SheepEntity extends BaseEntity {
     )
 
     // Update rotation from velocity (face movement direction)
-    if (Math.abs(this.motion.vx) > 1 || Math.abs(this.motion.vz) > 1) {
-      const targetYaw = Math.atan2(this.motion.vx, this.motion.vz)
+    if (Math.abs(this.motion.receivedVx) > 1 || Math.abs(this.motion.receivedVz) > 1) {
+      const targetYaw = Math.atan2(this.motion.receivedVx, this.motion.receivedVz)
       // Smooth rotation
       let yawDiff = targetYaw - this.mesh.rotation.y
       while (yawDiff > Math.PI) yawDiff -= Math.PI * 2

@@ -148,13 +148,13 @@ function animate() {
   let predGrounded = false
 
   if (localPlayer) {
-    // Use the server's last-known state forward-predicted to client.tick.
+    // Use currentPos which is forward-predicted by PhysicsPredictionSystem.
     // This gives proper voxel collision, gravity, and grounded detection.
-    const pos = localPlayer.getPos(client.tick)
+    const pos = localPlayer.currentPos
     posX = pos.x
     posY = pos.y
     posZ = pos.z
-    predGrounded = localPlayer.motion.grounded
+    predGrounded = localPlayer.motion.receivedGrounded
   }
   // Note: Before SELF_ENTITY arrives, camera stays at default spawn position.
   // The initial position is set by server-sent entity in chunk snapshot.

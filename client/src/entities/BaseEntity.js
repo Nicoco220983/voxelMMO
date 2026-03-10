@@ -8,8 +8,12 @@ import { POSITION_BIT } from '../types.js'
 /**
  * @class BaseEntity
  * @abstract
- * @description Client-side base entity — holds components, drives deserialization
- * and straight-line prediction. Does not render. Mirrors server BaseEntity.
+ * @description Client-side base entity — holds components, drives deserialization.
+ * Does not render. Mirrors server BaseEntity.
+ *
+ * Position access:
+ * - Use `currentPos` getter for render position (predicted, updated each tick)
+ * - Use `receivedPos` getter for last confirmed server position
  *
  * Snapshot record format (server → client):
  *   uint32 GlobalEntityId · uint8 EntityType · uint8 ComponentFlags · ComponentStates…
@@ -61,12 +65,23 @@ export class BaseEntity {
   }
 
   /**
-   * Compute predicted world position at currentTick without mutating state.
-   * @param {number} currentTick
+   * Get current predicted world position (sub-voxel coordinates).
+   * Updated by PhysicsPredictionSystem each tick. Use this for rendering.
+   * Divide by SUBVOXEL_SIZE for Three.js world-space coordinates.
    * @returns {{x: number, y: number, z: number}}
    */
-  getPos(currentTick) {
-    return this.motion.getPos(currentTick)
+  get currentPos() {
+    return this.motion.getCurrentPos()
+  }
+
+  /**
+   * Get last confirmed server position (sub-voxel coordinates).
+   * Use this when you need the authoritative server state.
+   * Divide by SUBVOXEL_SIZE for Three.js world-space coordinates.
+   * @returns {{x: number, y: number, z: number}}
+   */
+  get receivedPos() {
+    return this.motion.getReceivedPos()
   }
 
   /**

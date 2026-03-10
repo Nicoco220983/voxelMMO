@@ -79,10 +79,8 @@ export class PlayerEntity extends BaseEntity {
   updateAnimation(dt) {
     if (!this.mesh) return
 
-    // Update position from motion component
-    const gameClient = /** @type {any} */ (window).gameClient
-    const tick = gameClient?.tick ?? 0
-    const pos = this.getPos(tick)
+    // Update position from motion component (predicted position from PhysicsPredictionSystem)
+    const pos = this.currentPos
     this.mesh.position.set(
       pos.x / SUBVOXEL_SIZE,
       pos.y / SUBVOXEL_SIZE,
