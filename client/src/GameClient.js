@@ -1,8 +1,8 @@
 // @ts-check
 import * as THREE from 'three'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Z } from './types.js'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Z, getChunkPos } from './types.js'
 import { NetworkProtocol, ServerMessageType } from './NetworkProtocol.js'
-import { Chunk, ChunkId } from './Chunk.js'
+import { Chunk } from './Chunk.js'
 import { ChunkRegistry } from './ChunkRegistry.js'
 import { EntityRegistry } from './EntityRegistry.js'
 import { lz4Decompress, BufReader } from './utils.js'
@@ -11,7 +11,7 @@ import { TICK_RATE } from './types.js'
 import { PhysicsPredictionSystem } from './systems/PhysicsPredictionSystem.js'
 import { ChunkMembershipSystem } from './systems/ChunkMembershipSystem.js'
 
-/** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
+/** @typedef {import('./types.js').ChunkId} ChunkId */
 
 /** @type {Record<number, string>} */
 const MSG_TYPE_NAMES = Object.fromEntries(
@@ -147,7 +147,7 @@ export class GameClient {
   /**
    * Iterate all entities across all known chunks.
    * Each entry is { chunkId, entity } — use the composite key for stable mesh tracking.
-   * @returns {IterableIterator<{chunkId: ChunkIdPacked, entity: BaseEntity}>}
+   * @returns {IterableIterator<{chunkId: ChunkId, entity: BaseEntity}>}
    */
   * allEntities() {
     for (const entity of this.#entityRegistry.all()) {
@@ -209,8 +209,8 @@ export class GameClient {
     const pcx = Math.floor(playerX / CHUNK_SIZE_X)
     const pcz = Math.floor(playerZ / CHUNK_SIZE_Z)
     for (const [chunkIdPacked, chunk] of this.#chunkRegistry.entries()) {
-      const chunkId = new ChunkId(chunkIdPacked)
-      if (Math.abs(chunkId.x - pcx) > maxRadius || Math.abs(chunkId.z - pcz) > maxRadius) {
+      const { cx, cz } = getChunkPos(chunkIdPacked)
+      if (Math.abs(cx - pcx) > maxRadius || Math.abs(cz - pcz) > maxRadius) {
         // Remove entities belonging to this chunk
         for (const entityId of chunk.entities) {
           this.#entityRegistry.deleteEntity(this.#chunkRegistry, entityId)
@@ -223,7 +223,7 @@ export class GameClient {
   // ── private ──────────────────────────────────────────────────────────────
 
   /**
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @returns {Chunk}
    */
   #getOrCreateChunk(chunkId) {
@@ -301,7 +301,7 @@ export class GameClient {
   /**
    * Apply a CHUNK_SNAPSHOT_COMPRESSED message.
    * @param {DataView} view
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @param {number} messageTick
    * @returns {{voxelCount: number, entityCount: number}}
    */
@@ -331,7 +331,7 @@ export class GameClient {
    * Apply a delta message (snapshot delta or tick delta).
    * @param {DataView} view
    * @param {boolean} compressed
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @param {number} messageTick
    * @returns {{voxelCount: number, entityCount: number}}
    */

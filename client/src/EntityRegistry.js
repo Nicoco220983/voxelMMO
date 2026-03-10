@@ -5,9 +5,9 @@ import { PlayerEntity } from './entities/PlayerEntity.js'
 import { EntityType, CREATED_BIT, POSITION_BIT } from './types.js'
 import { DeltaType } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
-import { ChunkId } from './Chunk.js'
 
 /** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
+/** @typedef {import('./types.js').ChunkId} ChunkId */
 
 /**
  * @class EntityRegistry
@@ -41,7 +41,7 @@ export class EntityRegistry {
    * @param {ChunkRegistry} chunkRegistry
    * @param {number} entityId
    * @param {number} entityType
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @returns {BaseEntity} The created entity
    * @private
    */
@@ -122,7 +122,7 @@ export class EntityRegistry {
    * Parse and apply entity records from a snapshot message.
    * Replaces all entities in the chunk with the new set.
    * @param {ChunkRegistry} chunkRegistry - The chunk registry
-   * @param {ChunkIdPacked} chunkId - The chunk ID
+   * @param {ChunkId} chunkId - The chunk ID
    * @param {DataView} view
    * @param {number} offset Byte offset to start of entity section (entity count int32)
    * @param {number} entitySectionSize Size of entity section in bytes
@@ -178,7 +178,7 @@ export class EntityRegistry {
    * Handles CREATE_ENTITY (new), UPDATE_ENTITY (update), DELETE_ENTITY (remove),
    * and CHUNK_CHANGE_ENTITY (entity moved to different chunk).
    * @param {ChunkRegistry} chunkRegistry - The chunk registry
-   * @param {ChunkIdPacked} chunkId - The source chunk ID
+   * @param {ChunkId} chunkId - The source chunk ID
    * @param {BufReader} reader Positioned at entity count
    * @param {number} messageTick Server tick from message header
    * @returns {number} Number of entity deltas parsed

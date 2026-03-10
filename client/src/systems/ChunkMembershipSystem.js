@@ -1,7 +1,7 @@
 // @ts-check
 import { EntityRegistry } from '../EntityRegistry.js'
 import { ChunkRegistry } from '../ChunkRegistry.js'
-import { chunkIdOfSubVoxel, ChunkId } from '../Chunk.js'
+import { chunkIdFromSubVoxelPos, chunkIdToString } from '../types.js'
 
 /**
  * @class ChunkMembershipSystem
@@ -32,13 +32,13 @@ export class ChunkMembershipSystem {
   static #detectAndHandleChunkChange(chunkRegistry, entity) {
     // Use current predicted position for chunk detection
     const pos = entity.currentPos
-    const actualChunkId = chunkIdOfSubVoxel(pos.x, pos.y, pos.z)
+    const actualChunkId = chunkIdFromSubVoxelPos(pos.x, pos.y, pos.z)
     
-    if (actualChunkId.packed !== entity.chunkId) {
+    if (actualChunkId !== entity.chunkId) {
       console.debug('[ChunkMembershipSystem] Entity crossed chunk boundary:', { 
         entityId: entity.id, 
-        fromChunk: new ChunkId(entity.chunkId).toString(), 
-        toChunk: actualChunkId.toString(),
+        fromChunk: chunkIdToString(entity.chunkId), 
+        toChunk: chunkIdToString(actualChunkId),
         pos: { x: pos.x, y: pos.y, z: pos.z }
       })
       
@@ -47,10 +47,10 @@ export class ChunkMembershipSystem {
       if (oldChunk) oldChunk.entities.delete(entity.id)
       
       // Update entity's chunk reference
-      entity.chunkId = actualChunkId.packed
+      entity.chunkId = actualChunkId
       
       // Add to new chunk's entities
-      const newChunk = chunkRegistry.getOrCreate(actualChunkId.packed)
+      const newChunk = chunkRegistry.getOrCreate(actualChunkId)
       newChunk.entities.add(entity.id)
     }
   }

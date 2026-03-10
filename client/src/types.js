@@ -1,10 +1,10 @@
 // @ts-check
 // ── Type definitions via JSDoc ──────────────────────────────────────────────
-// Import this file only for its typedefs; it exports no runtime values.
+// Import this file for its typedefs and ChunkId helper functions.
 
 /**
  * Packed ChunkId as a BigInt: sint6(y) | sint29(x) | sint29(z) in 64 bits.
- * @typedef {bigint} ChunkIdPacked
+ * @typedef {bigint} ChunkId
  */
 
 /**
@@ -103,6 +103,93 @@ export const VoxelType = Object.freeze({
 /** @type {number} */ export const CHUNK_SHIFT_Y = 13  // log2(32 × 256)
 /** @type {number} */ export const CHUNK_SHIFT_X = 13  // log2(32 × 256)
 /** @type {number} */ export const CHUNK_SHIFT_Z = 13  // log2(32 × 256)
+
+// ── ChunkId helper functions ─────────────────────────────────────────────────
+
+const MASK_6 = 0x3Fn
+const MASK_29 = 0x1FFFFFFFn
+const SIGN_BIT_6 = 0x20n
+const SIGN_BIT_29 = 0x10000000n
+const SIGN_EXT_6 = 0xFFFFFFFFFFFFFFC0n
+const SIGN_EXT_29 = 0xFFFFFFFFE0000000n
+
+/**
+ * Create a ChunkId from its three signed chunk coordinates.
+ * @param {number} cx - Chunk X, signed 29-bit
+ * @param {number} cy - Chunk Y, signed 6-bit (range [-32, 31])
+ * @param {number} cz - Chunk Z, signed 29-bit
+ * @returns {ChunkId}
+ */
+export function chunkIdFromChunkPos(cx, cy, cz) {
+  const packed = (BigInt(BigInt.asIntN(32, BigInt(cy)) & MASK_6) << 58n)
+               | (BigInt(BigInt.asIntN(32, BigInt(cx)) & MASK_29) << 29n)
+               | BigInt(BigInt.asIntN(32, BigInt(cz)) & MASK_29)
+  return BigInt.asIntN(64, packed)
+}
+
+/**
+ * Compute ChunkId for the chunk containing world voxel coordinates (vx, vy, vz).
+ * Uses arithmetic right-shift for correct negative coordinate handling.
+ * @param {number} vx - World voxel X
+ * @param {number} vy - World voxel Y
+ * @param {number} vz - World voxel Z
+ * @returns {ChunkId}
+ */
+export function chunkIdFromVoxelPos(vx, vy, vz) {
+  return chunkIdFromChunkPos(
+    vx >> CHUNK_SHIFT_X,
+    vy >> CHUNK_SHIFT_Y,
+    vz >> CHUNK_SHIFT_Z
+  )
+}
+
+/**
+ * Compute ChunkId for the chunk containing sub-voxel coordinates.
+ * @param {number} sx - Sub-voxel X coordinate
+ * @param {number} sy - Sub-voxel Y coordinate
+ * @param {number} sz - Sub-voxel Z coordinate
+ * @returns {ChunkId}
+ */
+export function chunkIdFromSubVoxelPos(sx, sy, sz) {
+  return chunkIdFromChunkPos(
+    sx >> CHUNK_SHIFT_X,
+    sy >> CHUNK_SHIFT_Y,
+    sz >> CHUNK_SHIFT_Z
+  )
+}
+
+/**
+ * Extract chunk coordinates from a packed ChunkId.
+ * @param {ChunkId} chunkId
+ * @returns {{cx: number, cy: number, cz: number}}
+ */
+export function getChunkPos(chunkId) {
+  const packed = BigInt.asIntN(64, chunkId)
+  
+  // Extract Y (6 bits at bit 58)
+  const yRaw = Number((packed >> 58n) & MASK_6)
+  const cy = (yRaw & Number(SIGN_BIT_6)) ? (yRaw | Number(SIGN_EXT_6)) : yRaw
+  
+  // Extract X (29 bits at bit 29)
+  const xRaw = Number((packed >> 29n) & MASK_29)
+  const cx = (xRaw & Number(SIGN_BIT_29)) ? (xRaw | Number(SIGN_EXT_29)) : xRaw
+  
+  // Extract Z (29 bits at bit 0)
+  const zRaw = Number(packed & MASK_29)
+  const cz = (zRaw & Number(SIGN_BIT_29)) ? (zRaw | Number(SIGN_EXT_29)) : zRaw
+  
+  return { cx, cy, cz }
+}
+
+/**
+ * String representation of a ChunkId for debugging.
+ * @param {ChunkId} chunkId
+ * @returns {string}
+ */
+export function chunkIdToString(chunkId) {
+  const { cx, cy, cz } = getChunkPos(chunkId)
+  return `ChunkId(${cx}, ${cy}, ${cz})`
+}
 
 // ── Physics constants (must match server Types.hpp) ──────────────────────────
 

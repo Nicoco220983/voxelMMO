@@ -1,125 +1,12 @@
 // @ts-check
 import * as THREE from 'three'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, SUBVOXEL_BITS, CHUNK_SHIFT_X, CHUNK_SHIFT_Y, CHUNK_SHIFT_Z } from './types.js'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, getChunkPos } from './types.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
-/** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
+/** @typedef {import('./types.js').ChunkId} ChunkId */
 
-/**
- * @class ChunkId
- * @description Chunk identifier packed as sint6(y) | sint29(x) | sint29(z) into 64 bits.
- * Bit layout (MSB first): [63:58] y (6-bit signed) | [57:29] x (29-bit signed) | [28:0] z (29-bit signed)
- * World extents: y ∈ [-32, 31], x/z ∈ [-268435456, 268435455]
- */
-export class ChunkId {
-  /** @type {bigint} Packed 64-bit representation */
-  packed
-
-  /**
-   * @param {bigint|number} packed - The packed 64-bit chunk ID
-   */
-  constructor(packed) {
-    this.packed = BigInt.asIntN(64, BigInt(packed))
-  }
-
-  /**
-   * Create a ChunkId from its three signed components.
-   * @param {number} chunkY - Y component, signed 6-bit (range [-32, 31])
-   * @param {number} chunkX - X component, signed 29-bit
-   * @param {number} chunkZ - Z component, signed 29-bit
-   * @returns {ChunkId}
-   */
-  static make(chunkY, chunkX, chunkZ) {
-    // Mask first (like C++), then shift - this gives unsigned masking behavior
-    const packed = (BigInt(BigInt.asIntN(32, BigInt(chunkY)) & 0x3Fn) << 58n)
-                 | (BigInt(BigInt.asIntN(32, BigInt(chunkX)) & 0x1FFFFFFFn) << 29n)
-                 | BigInt(BigInt.asIntN(32, BigInt(chunkZ)) & 0x1FFFFFFFn)
-    return new ChunkId(packed)
-  }
-
-  /** @returns {number} Y component, signed 6-bit (range [-32, 31]) */
-  get y() {
-    const v = Number((this.packed >> 58n) & 0x3Fn)
-    return (v & 0x20) ? (v | 0xFFFFFFC0) : v
-  }
-
-  /** @returns {number} X component, signed 29-bit */
-  get x() {
-    const v = Number((this.packed >> 29n) & 0x1FFFFFFFn)
-    return (v & 0x10000000) ? (v | 0xE0000000) : v
-  }
-
-  /** @returns {number} Z component, signed 29-bit */
-  get z() {
-    const v = Number(this.packed & 0x1FFFFFFFn)
-    return (v & 0x10000000) ? (v | 0xE0000000) : v
-  }
-
-  /**
-   * Compare equality with another ChunkId.
-   * @param {ChunkId} other
-   * @returns {boolean}
-   */
-  equals(other) {
-    return this.packed === other.packed
-  }
-
-  /**
-   * Compare ordering with another ChunkId (for sorting).
-   * @param {ChunkId} other
-   * @returns {number} negative if this < other, 0 if equal, positive if this > other
-   */
-  compareTo(other) {
-    return this.packed < other.packed ? -1 : this.packed > other.packed ? 1 : 0
-  }
-
-  /**
-   * Returns the packed value for use as Map key.
-   * @returns {bigint}
-   */
-  valueOf() {
-    return this.packed
-  }
-
-  /**
-   * String representation for debugging.
-   * @returns {string}
-   */
-  toString() {
-    return `ChunkId(${this.x}, ${this.y}, ${this.z})`
-  }
-}
-
-/**
- * Compute ChunkId for the chunk that contains integer world-voxel coordinate (ix, iy, iz).
- * Uses arithmetic right-shift for correct negative coordinate handling.
- * @param {number} worldX
- * @param {number} worldY
- * @param {number} worldZ
- * @returns {ChunkId}
- */
-export function chunkIdOf(worldX, worldY, worldZ) {
-  return ChunkId.make(
-    worldY >> CHUNK_SHIFT_Y,
-    worldX >> CHUNK_SHIFT_X,
-    worldZ >> CHUNK_SHIFT_Z
-  )
-}
-
-/**
- * Compute ChunkId for the chunk that contains sub-voxel coordinates.
- * @param {number} subX - Sub-voxel X coordinate
- * @param {number} subY - Sub-voxel Y coordinate
- * @param {number} subZ - Sub-voxel Z coordinate
- * @returns {ChunkId}
- */
-export function chunkIdOfSubVoxel(subX, subY, subZ) {
-  return ChunkId.make(
-    subY >> CHUNK_SHIFT_Y,
-    subX >> CHUNK_SHIFT_X,
-    subZ >> CHUNK_SHIFT_Z
-  )
-}
+// Re-export ChunkId helpers for backward compatibility
+export { chunkIdFromChunkPos, chunkIdFromVoxelPos, chunkIdFromSubVoxelPos } from './types.js'
 
 /** Voxel-type → 0xRRGGBB colour. AIR (0) is unused (never rendered). */
 const VOXEL_COLORS = /** @type {Record<number,number>} */ ({
@@ -174,7 +61,7 @@ function voxelHash(wx, wy, wz) {
  * The actual entity objects are managed by EntityRegistry.
  */
 export class Chunk {
-  /** @type {ChunkIdPacked} */
+  /** @type {ChunkId} */
   chunkId
 
   /** @type {Uint8Array} */
@@ -192,7 +79,7 @@ export class Chunk {
   /** @returns {Uint8Array} */
   get voxels() { return this.#voxels }
 
-  /** @param {ChunkIdPacked} chunkId */
+  /** @param {ChunkId} chunkId */
   constructor(chunkId) {
     this.chunkId = chunkId
     this.#voxels = new Uint8Array(CHUNK_VOXEL_COUNT)
@@ -242,10 +129,7 @@ export class Chunk {
       this.#mesh = null
     }
 
-    const chunkId = new ChunkId(this.chunkId)
-    const cx = chunkId.x
-    const cy = chunkId.y
-    const cz = chunkId.z
+    const { cx, cy, cz } = getChunkPos(this.chunkId)
 
     /** @type {number[]} */ const positions = []
     /** @type {number[]} */ const colors    = []

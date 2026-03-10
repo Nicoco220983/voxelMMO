@@ -1,7 +1,7 @@
 // @ts-check
 import { Chunk } from './Chunk.js'
 
-/** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
+/** @typedef {import('./types.js').ChunkId} ChunkId */
 
 /**
  * @class ChunkRegistry
@@ -10,12 +10,12 @@ import { Chunk } from './Chunk.js'
  * This is separate from EntityRegistry which manages the actual entity objects.
  */
 export class ChunkRegistry {
-  /** @type {Map<ChunkIdPacked, Chunk>} */
+  /** @type {Map<ChunkId, Chunk>} */
   #chunks = new Map()
 
   /**
    * Get a chunk by its ID.
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @returns {Chunk|undefined}
    */
   get(chunkId) {
@@ -24,7 +24,7 @@ export class ChunkRegistry {
 
   /**
    * Get or create a chunk.
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @returns {Chunk}
    */
   getOrCreate(chunkId) {
@@ -38,7 +38,7 @@ export class ChunkRegistry {
 
   /**
    * Check if a chunk exists.
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @returns {boolean}
    */
   has(chunkId) {
@@ -47,7 +47,7 @@ export class ChunkRegistry {
 
   /**
    * Remove a chunk and dispose its resources.
-   * @param {ChunkIdPacked} chunkId
+   * @param {ChunkId} chunkId
    * @param {THREE.Scene} scene
    * @returns {boolean} True if chunk was removed
    */
@@ -61,7 +61,7 @@ export class ChunkRegistry {
 
   /**
    * Get all chunk IDs.
-   * @returns {IterableIterator<ChunkIdPacked>}
+   * @returns {IterableIterator<ChunkId>}
    */
   keys() {
     return this.#chunks.keys()
@@ -77,7 +77,7 @@ export class ChunkRegistry {
 
   /**
    * Get all chunk entries.
-   * @returns {IterableIterator<[ChunkIdPacked, Chunk]>}
+   * @returns {IterableIterator<[ChunkId, Chunk]>}
    */
   entries() {
     return this.#chunks.entries()

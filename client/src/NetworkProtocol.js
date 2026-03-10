@@ -1,5 +1,5 @@
 // @ts-check
-import { ChunkId } from './Chunk.js'
+import { getChunkPos } from './types.js'
 
 /**
  * Server message types - first byte of every server → client message.
@@ -145,7 +145,7 @@ export class NetworkProtocol {
    * Parse the 15-byte chunk state message header.
    * Wire: type(1) + size(2) + ChunkId int64LE(8) + tick uint32LE(4).
    * @param {DataView} view
-   * @returns {{ msgType: number, size: number, chunkId: bigint, messageTick: number, cx: number, cy: number, cz: number } | null}
+   * @returns {{ msgType: number, size: number, chunkId: import('./types.js').ChunkId, messageTick: number, cx: number, cy: number, cz: number } | null}
    *   null if the message is shorter than 15 bytes.
    */
   static parseChunkHeader(view) {
@@ -154,8 +154,8 @@ export class NetworkProtocol {
     const size        = view.getUint16(1, true)
     const chunkIdPacked = view.getBigInt64(3, true)
     const messageTick = view.getUint32(11, true)
-    const chunkId = new ChunkId(chunkIdPacked)
-    return { msgType, size, chunkId: chunkIdPacked, messageTick, cx: chunkId.x, cy: chunkId.y, cz: chunkId.z }
+    const { cx, cy, cz } = getChunkPos(chunkIdPacked)
+    return { msgType, size, chunkId: chunkIdPacked, messageTick, cx, cy, cz }
   }
 
   /**
