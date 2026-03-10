@@ -194,17 +194,11 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
         // Skip if no test entity type specified
         if (!testEntityType_ || testEntitySpawned_) return;
         
-        // Calculate test entity spawn position: 5 meters in front (+X) of player
-        const int32_t testX = playerSpawnPos_[0] + 5 * SUBVOXEL_SIZE;
-        const int32_t testY = playerSpawnPos_[1];
-        const int32_t testZ = playerSpawnPos_[2];
-        
-        // Check if this chunk contains the test entity spawn position
-        const int32_t testCx = testX >> CHUNK_SHIFT_X;
-        const int32_t testCy = testY >> CHUNK_SHIFT_Y;
-        const int32_t testCz = testZ >> CHUNK_SHIFT_Z;
-        
-        if (cx != testCx || cy != testCy || cz != testCz) return;
+        // Calculate test entity spawn position: 5 voxels in front (+X) of player
+        const int32_t testX = 5 * SUBVOXEL_SIZE;
+        const int32_t testZ = 0;
+        const int32_t surfaceY = getSurfaceY(0, 0);
+        const int32_t testY = (surfaceY + 1) * SUBVOXEL_SIZE;
         
         // Mark as spawned
         testEntitySpawned_ = true;
