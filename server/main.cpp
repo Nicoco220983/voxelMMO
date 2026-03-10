@@ -83,6 +83,18 @@ int main(int argc, char* argv[]) {
         [&](voxelmmo::PlayerId pid, const uint8_t* data, size_t size) {
             gateway.receiveGameMessageForPlayer(pid, data, size);
         });
+    
+    // Wire per-player watched chunks updates
+    game.setPlayerWatchedChunksCallback(
+        [&](voxelmmo::PlayerId pid, const std::set<voxelmmo::ChunkId>& chunks) {
+            gateway.setPlayerWatchedChunks(pid, chunks);
+        });
+    
+    // Wire initial chunk send for new players
+    game.setSendInitialChunksCallback(
+        [&](voxelmmo::PlayerId pid, uint32_t tick) {
+            gateway.sendInitialChunksToPlayer(pid, tick);
+        });
 
     // ── Wire GatewayEngine → GameEngine ────────────────────────────────────
     game.registerGateway(0);

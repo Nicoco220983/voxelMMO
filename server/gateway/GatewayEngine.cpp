@@ -29,12 +29,22 @@ void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
             uint16_t msgSize;
             std::memcpy(&msgSize, buf->data() + off + 1, 2);
             if (off + msgSize > buf->size()) break;
+            
+            // Extract chunkId and tick from the 15-byte header
+            // [type(1)][size(2)][chunk_id(8)][tick(4)]
+            ChunkId cid;
+            std::memcpy(&cid.packed, buf->data() + off + 3, sizeof(int64_t));
+            uint32_t tick;
+            std::memcpy(&tick, buf->data() + off + 11, sizeof(uint32_t));
+            
+            // Store in chunk state cache
             receiveChunkMessage(buf->data() + off, msgSize);
+            
+            // Filter: send only to players watching this chunk
+            processChunkUpdate(cid, buf->data() + off, msgSize, tick);
+            
             off += msgSize;
         }
-        // Forward the entire batch as a single WebSocket frame to all clients
-        // TODO: filter per-client by watched chunks
-        broadcastBatch(buf->data(), buf->size());
     });
 }
 
@@ -112,6 +122,65 @@ void GatewayEngine::listen(int port) {
     .run();
 }
 
+// ── Per-player chunk watching ─────────────────────────────────────────────
+
+void GatewayEngine::setPlayerWatchedChunks(PlayerId pid, const std::set<ChunkId>& chunks) {
+    players[pid].watchedChunks = chunks;
+}
+
+void GatewayEngine::sendInitialChunksToPlayer(PlayerId pid, uint32_t currentTick) {
+    auto it = players.find(pid);
+    if (it == players.end()) return;
+    
+    PlayerInfo& pinfo = it->second;
+    
+    // Build batch: for each watched chunk, send full snapshot (lastTick=0)
+    std::vector<uint8_t> batch;
+    for (ChunkId cid : pinfo.watchedChunks) {
+        const ChunkState* state = findChunkState(cid);
+        if (!state) continue;  // Chunk not yet in cache (will come in future tick)
+        
+        auto [dataPtr, dataLen] = state->getDataToSend(0);  // Full buffer
+        if (dataLen > 0) {
+            batch.insert(batch.end(), dataPtr, dataPtr + dataLen);
+            pinfo.lastStateTick[cid] = currentTick;
+        }
+    }
+    
+    if (!batch.empty()) {
+        sendToPlayer(pid, batch.data(), batch.size());
+    }
+}
+
+void GatewayEngine::processChunkUpdate(ChunkId cid, const uint8_t* data, size_t size, uint32_t tick) {
+    (void)data;  // data is already stored in ChunkState via receiveChunkMessage
+    (void)size;
+    
+    const ChunkState* state = findChunkState(cid);
+    if (!state) return;
+    
+    // For each player watching this chunk, send appropriate data slice
+    for (auto& [pid, pinfo] : players) {
+        if (pinfo.watchedChunks.find(cid) == pinfo.watchedChunks.end()) {
+            continue;  // Player not watching this chunk
+        }
+        
+        const uint32_t lastTick = pinfo.lastStateTick[cid];  // 0 if new
+        
+        // Use ChunkState::getDataToSend to determine what this player needs
+        auto [dataPtr, dataLen] = state->getDataToSend(lastTick);
+        
+        if (dataLen > 0) {
+            sendToPlayer(pid, dataPtr, dataLen);
+            pinfo.lastStateTick[cid] = tick;
+        }
+    }
+}
+
+void GatewayEngine::removePlayer(PlayerId pid) {
+    players.erase(pid);
+}
+
 // ── Per-chunk state management ────────────────────────────────────────────
 
 void GatewayEngine::receiveChunkMessage(const uint8_t* data, size_t size) {
@@ -144,21 +213,6 @@ void GatewayEngine::removeChunk(ChunkId id) {
     chunkStates.erase(id);
 }
 
-// ── Per-player snapshot tick tracking ─────────────────────────────────────
 
-void GatewayEngine::setPlayerStateTick(PlayerId pid, ChunkId cid, uint32_t tick) {
-    players[pid].lastStateTick[cid] = tick;
-}
-
-uint32_t GatewayEngine::getPlayerStateTick(PlayerId pid, ChunkId cid) const {
-    const auto pit = players.find(pid);
-    if (pit == players.end()) return 0;
-    const auto cit = pit->second.lastStateTick.find(cid);
-    return (cit != pit->second.lastStateTick.end()) ? cit->second : 0;
-}
-
-void GatewayEngine::removePlayer(PlayerId pid) {
-    players.erase(pid);
-}
 
 } // namespace voxelmmo

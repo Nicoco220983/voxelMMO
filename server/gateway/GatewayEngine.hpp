@@ -113,21 +113,31 @@ public:
     /** @brief Remove state for a chunk that is no longer watched. */
     void removeChunk(ChunkId id);
 
-    // ── Per-player snapshot tick tracking ─────────────────────────────────
-    // Records which snapshot tick each player currently holds for each chunk.
-    // Used to decide whether to send a full snapshot or just accumulated deltas
-    // when a player starts watching a chunk.
-
-    /** @brief Record that player @p pid has state up to @p tick for @p cid. */
-    void setPlayerStateTick(PlayerId pid, ChunkId cid, uint32_t tick);
+    // ── Per-player chunk watching ─────────────────────────────────────────
 
     /**
-     * @brief Latest state tick @p pid holds for @p cid (snapshot or delta).
-     * @return 0 if the player has not yet received any state for that chunk.
+     * @brief Set the watched chunks for a player.
+     *
+     * Called by GameEngine when a player's watched chunks change.
+     * Used to filter chunk updates per-player.
+     *
+     * @param pid     Player ID.
+     * @param chunks  Set of chunk IDs the player should receive updates for.
      */
-    uint32_t getPlayerStateTick(PlayerId pid, ChunkId cid) const;
+    void setPlayerWatchedChunks(PlayerId pid, const std::set<ChunkId>& chunks);
 
-    /** @brief Remove all per-chunk tracking for a disconnected player. */
+    /**
+     * @brief Send initial chunk snapshots to a newly connected player.
+     *
+     * Called by GameEngine after a player entity is created.
+     * Sends full snapshots (from ChunkState cache) for all watched chunks.
+     *
+     * @param pid         Player ID.
+     * @param currentTick Current server tick (recorded as lastStateTick).
+     */
+    void sendInitialChunksToPlayer(PlayerId pid, uint32_t currentTick);
+
+    /** @brief Remove all per-player tracking for a disconnected player. */
     void removePlayer(PlayerId pid);
 
 private:
@@ -151,6 +161,19 @@ private:
 
     /** @brief Cached chunk states keyed by ChunkId. */
     std::unordered_map<ChunkId, ChunkState> chunkStates;
+
+    /**
+     * @brief Process a chunk update and forward to watching players.
+     *
+     * For each player watching this chunk, uses ChunkState::getDataToSend
+     * to determine appropriate data slice based on player's lastStateTick.
+     *
+     * @param cid   Chunk ID.
+     * @param data  Raw message data (includes header).
+     * @param size  Message size.
+     * @param tick  Server tick from message header.
+     */
+    void processChunkUpdate(ChunkId cid, const uint8_t* data, size_t size, uint32_t tick);
 
     /** @brief Per-player metadata keyed by PlayerId. */
     std::unordered_map<PlayerId, PlayerInfo> players;
