@@ -5,6 +5,22 @@
 
 namespace voxelmmo {
 
+// ── Chunk voxel dimensions (must match VoxelIndex bit widths) ─────────────────
+inline constexpr uint8_t CHUNK_SIZE_Y = 32;   ///< uint5 range [0,31]
+inline constexpr uint8_t CHUNK_SIZE_X = 32;   ///< uint5 range [0,31]
+inline constexpr uint8_t CHUNK_SIZE_Z = 32;   ///< uint5 range [0,31]
+inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z; // 32 768
+
+/// Sub-voxel precision: 1 voxel = 256 position units.
+inline constexpr int     SUBVOXEL_BITS = 8;
+inline constexpr int32_t SUBVOXEL_SIZE = 1 << SUBVOXEL_BITS;  ///< 256
+inline constexpr int32_t SUBVOXEL_MASK = SUBVOXEL_SIZE - 1;   ///< 0xFF
+
+/// Bit-shift from sub-voxel position to chunk coordinate = log2(chunk_dim × SUBVOXEL_SIZE).
+inline constexpr int CHUNK_SHIFT_Y = 13;  ///< log2(CHUNK_SIZE_Y × SUBVOXEL_SIZE) = log2(32 × 256)
+inline constexpr int CHUNK_SHIFT_X = 13;  ///< log2(CHUNK_SIZE_X × SUBVOXEL_SIZE) = log2(32 × 256)
+inline constexpr int CHUNK_SHIFT_Z = 13;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZE) = log2(32 × 256)
+
 /**
  * @brief Chunk identifier packed as sint6(y) | sint29(x) | sint29(z) into 64 bits.
  *
@@ -22,6 +38,34 @@ struct ChunkId {
                   | (static_cast<int64_t>(chunkX  & 0x1FFFFFFF)  << 29)
                   |  static_cast<int64_t>(chunkZ  & 0x1FFFFFFF);
         return id;
+    }
+
+    /** @brief Create a ChunkId from its three signed chunk coordinates.
+     *  Matches client-side naming: chunkIdFromChunkPos()
+     */
+    static constexpr ChunkId fromChunkPos(int32_t chunkX, int32_t chunkY, int32_t chunkZ) noexcept {
+        return make(chunkY, chunkX, chunkZ);
+    }
+
+    /** @brief ChunkId for the chunk that contains voxel coordinates (vx, vy, vz).
+     *  Matches client-side naming: chunkIdFromVoxelPos()
+     */
+    static constexpr ChunkId fromVoxelPos(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
+        return make(
+            voxelY >> (CHUNK_SHIFT_Y - SUBVOXEL_BITS),
+            voxelX >> (CHUNK_SHIFT_X - SUBVOXEL_BITS),
+            voxelZ >> (CHUNK_SHIFT_Z - SUBVOXEL_BITS));
+    }
+
+    /** @brief ChunkId for the chunk that contains sub-voxel coordinates (sx, sy, sz).
+     *  Uses arithmetic right-shift for correct negative coordinate handling.
+     *  Matches client-side naming: chunkIdFromSubVoxelPos()
+     */
+    static constexpr ChunkId fromSubVoxelPos(int32_t subX, int32_t subY, int32_t subZ) noexcept {
+        return make(
+            subY >> CHUNK_SHIFT_Y,
+            subX >> CHUNK_SHIFT_X,
+            subZ >> CHUNK_SHIFT_Z);
     }
 
     /** @brief Y component, signed 6-bit (range [-32, 31]). */
@@ -57,16 +101,41 @@ inline std::ostream& operator<<(std::ostream& os, const ChunkId& id) {
  *         Bit layout: [14:10] y (5-bit) | [9:5] x (5-bit) | [4:0] z (5-bit) */
 using VoxelIndex = uint16_t;
 
-/** @brief Pack (x,y,z) chunk-local coordinates into a VoxelIndex. */
+/** @brief Pack (x,y,z) chunk-local coordinates into a VoxelIndex.
+ *  @deprecated Use voxelIndexFromPos() for naming consistency with client.
+ */
 inline constexpr VoxelIndex packVoxelIndex(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) noexcept {
     return static_cast<VoxelIndex>(((voxelY & 0x1F) << 10) | ((voxelX & 0x1F) << 5) | (voxelZ & 0x1F));
 }
 
-/** @brief Unpack VoxelIndex into (x,y,z) chunk-local coordinates. */
+/** @brief Unpack VoxelIndex into (x,y,z) chunk-local coordinates.
+ *  @deprecated Use getVoxelIndexPos() for naming consistency with client.
+ */
 inline constexpr void unpackVoxelIndex(VoxelIndex idx, uint32_t& x, uint32_t& y, uint32_t& z) noexcept {
     y = (idx >> 10) & 0x1F;
     x = (idx >>  5) & 0x1F;
     z =  idx        & 0x1F;
+}
+
+/** @brief Create a VoxelIndex from its three unsigned voxel coordinates (0-31).
+ *  Matches client-side naming: voxelIndexFromPos()
+ */
+inline constexpr VoxelIndex voxelIndexFromPos(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) noexcept {
+    return packVoxelIndex(voxelX, voxelY, voxelZ);
+}
+
+/** @brief Voxel coordinates unpacked from VoxelIndex. */
+struct VoxelIndexPos { uint32_t x, y, z; };
+
+/** @brief Extract voxel coordinates from a packed VoxelIndex.
+ *  Matches client-side naming: getVoxelIndexPos()
+ */
+inline constexpr VoxelIndexPos getVoxelIndexPos(VoxelIndex idx) noexcept {
+    return VoxelIndexPos{ 
+        static_cast<uint32_t>((idx >> 5) & 0x1F), 
+        static_cast<uint32_t>((idx >> 10) & 0x1F), 
+        static_cast<uint32_t>(idx & 0x1F) 
+    };
 }
 
 /** @brief Voxel type byte. */
@@ -90,46 +159,55 @@ using PlayerId = uint32_t;
 /** @brief Gateway instance identifier (uint32). */
 using GatewayId = uint32_t;
 
-// ── Chunk voxel dimensions (must match VoxelId bit widths) ──────────────────
-inline constexpr uint8_t CHUNK_SIZE_Y = 32;   ///< uint5 range [0,31]
-inline constexpr uint8_t CHUNK_SIZE_X = 32;   ///< uint5 range [0,31]
-inline constexpr uint8_t CHUNK_SIZE_Z = 32;   ///< uint5 range [0,31]
-inline constexpr size_t  CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z; // 32 768
-
-/// Sub-voxel precision: 1 voxel = 256 position units.
-inline constexpr int     SUBVOXEL_BITS = 8;
-inline constexpr int32_t SUBVOXEL_SIZE = 1 << SUBVOXEL_BITS;  ///< 256
-inline constexpr int32_t SUBVOXEL_MASK = SUBVOXEL_SIZE - 1;   ///< 0xFF
-
-/// Bit-shift from sub-voxel position to chunk coordinate = log2(chunk_dim × SUBVOXEL_SIZE).
-inline constexpr int CHUNK_SHIFT_Y = 13;  ///< log2(CHUNK_SIZE_Y × SUBVOXEL_SIZE) = log2(32 × 256)
-inline constexpr int CHUNK_SHIFT_X = 13;  ///< log2(CHUNK_SIZE_X × SUBVOXEL_SIZE) = log2(32 × 256)
-inline constexpr int CHUNK_SHIFT_Z = 13;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZE) = log2(32 × 256)
-
 /**
- * @brief ChunkId for the chunk that contains integer world-voxel coordinate (ix, iy, iz).
- *
- * Uses arithmetic right-shift (guaranteed by C++20 two's complement) instead of
- * division so negative coordinates floor correctly without a branch.
+ * @brief ChunkId for the chunk that contains sub-voxel coordinates (sx, sy, sz).
+ * @deprecated Use ChunkId::fromSubVoxelPos() for naming consistency with client.
  */
 inline constexpr ChunkId chunkIdOf(int32_t worldX, int32_t worldY, int32_t worldZ) noexcept {
-    return ChunkId::make(
-        worldY >> CHUNK_SHIFT_Y,
-        worldX >> CHUNK_SHIFT_X,
-        worldZ >> CHUNK_SHIFT_Z);
+    return ChunkId::fromSubVoxelPos(worldX, worldY, worldZ);
 }
 
 /**
  * @brief ChunkId for the chunk that contains voxel coordinates (vx, vy, vz).
- *
- * Voxel coordinates are at a lower resolution than sub-voxel coordinates.
- * Uses arithmetic right-shift for correct negative coordinate handling.
+ * @deprecated Use ChunkId::fromVoxelPos() for naming consistency with client.
  */
 inline constexpr ChunkId chunkIdOfVoxel(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
-    return ChunkId::make(
-        voxelY >> (CHUNK_SHIFT_Y - SUBVOXEL_BITS),
-        voxelX >> (CHUNK_SHIFT_X - SUBVOXEL_BITS),
-        voxelZ >> (CHUNK_SHIFT_Z - SUBVOXEL_BITS));
+    return ChunkId::fromVoxelPos(voxelX, voxelY, voxelZ);
+}
+
+/**
+ * @brief Create a ChunkId from its three signed chunk coordinates.
+ * @deprecated Use ChunkId::fromChunkPos() for naming consistency with client.
+ */
+inline constexpr ChunkId chunkIdFromChunkPos(int32_t chunkX, int32_t chunkY, int32_t chunkZ) noexcept {
+    return ChunkId::fromChunkPos(chunkX, chunkY, chunkZ);
+}
+
+/**
+ * @brief ChunkId for the chunk that contains voxel coordinates (vx, vy, vz).
+ * @deprecated Use ChunkId::fromVoxelPos() for naming consistency with client.
+ */
+inline constexpr ChunkId chunkIdFromVoxelPos(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
+    return ChunkId::fromVoxelPos(voxelX, voxelY, voxelZ);
+}
+
+/**
+ * @brief ChunkId for the chunk that contains sub-voxel coordinates (sx, sy, sz).
+ * @deprecated Use ChunkId::fromSubVoxelPos() for naming consistency with client.
+ */
+inline constexpr ChunkId chunkIdFromSubVoxelPos(int32_t subX, int32_t subY, int32_t subZ) noexcept {
+    return ChunkId::fromSubVoxelPos(subX, subY, subZ);
+}
+
+/** @brief Chunk coordinates unpacked from ChunkId. */
+struct ChunkPos { int32_t cx, cy, cz; };
+
+/**
+ * @brief Extract chunk coordinates from a packed ChunkId.
+ * Matches client-side naming: getChunkPos()
+ */
+inline constexpr ChunkPos getChunkPos(ChunkId chunkId) noexcept {
+    return ChunkPos{ chunkId.x(), chunkId.y(), chunkId.z() };
 }
 
 /** @brief Minimum payload size (bytes) that triggers LZ4 compression. */

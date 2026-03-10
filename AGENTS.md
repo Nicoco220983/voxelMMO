@@ -35,21 +35,21 @@ A high performance online webgame massive multiplayer, on wide generated world.
 
 | Type | Repr | Notes |
 |------|------|-------|
-| ChunkId | int64 packed | sint6(y) · sint29(x) · sint29(z) |
-| VoxelIndex | uint16 | uint5(y) · uint5(x) · uint5(z) — flat array index for deltas |
+| ChunkId | int64 packed | sint6(y) · sint29(x) · sint29(z); helpers: `fromChunkPos()`, `fromVoxelPos()`, `fromSubVoxelPos()` (server) / `chunkIdFrom*Pos()` (client) |
+| VoxelIndex | uint16 | uint5(y) · uint5(x) · uint5(z) — flat array index; helpers: `voxelIndexFromPos()`, `getVoxelIndexPos()` |
 | VoxelType | uint8 | 0 = air |
 | GlobalEntityId | uint32 | assigned at spawn, stable across moves |
 | PlayerId | uint32 | persistent |
 | GatewayId | uint32 | |
 
-Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to compute flat index.
+Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to compute flat array index.
 
 > **Note:** `ChunkEntityId` (uint16) is deprecated; `GlobalEntityId` is now used on the wire.
 
 # Code structure
 
 **server/common/**
-- `Types.hpp` — ChunkId, VoxelId, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; `GHOST_MOVE_SPEED=256`, `PLAYER_WALK_SPEED=77`, `PLAYER_JUMP_VY=110`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
+- `Types.hpp` — ChunkId (struct with static methods: `make()`, `fromChunkPos()`, `fromVoxelPos()`, `fromSubVoxelPos()`), VoxelIndex (uint16), VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; helper functions `getChunkPos()`, `voxelIndexFromPos()`, `getVoxelIndexPos()`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
 - `ChunkRegistry.hpp` — Central chunk registry owning the chunks map. Provides `getChunk()` (read-only) for physics/serialization, and `generate()/activate()/deactivate()` for chunk lifecycle management. All chunk access goes through the registry; systems should use the read-only `getChunk()` when possible.
 - `MessageTypes.hpp` — ServerMessageType (CHUNK_SNAPSHOT=0, CHUNK_SNAPSHOT_DELTA=2, CHUNK_TICK_DELTA=4, SELF_ENTITY=6), DeltaType, ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
 - `ChunkState.hpp` — unified buffer with entries (tracks tick/offset/length per message) + scratch; used by Chunk and GatewayEngine; `receiveMessage()` handles all message types with proper cleaning logic
@@ -131,7 +131,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `packVoxelIndex(x,y,z)` to comp
 - Manages per-chunk state cache (`chunkStates`) and per-player metadata (`players`)
 
 **client/src/**
-- `types.js` — game constants (EntityType, VoxelType, SUBVOXEL_SIZE, physics constants …)
+- `types.js` — game constants (EntityType, VoxelType, SUBVOXEL_SIZE, physics constants …); ChunkId helpers: `chunkIdFromChunkPos()`, `chunkIdFromVoxelPos()`, `chunkIdFromSubVoxelPos()`, `getChunkPos()`; VoxelIndex helpers: `voxelIndexFromPos()`, `getVoxelIndexPos()`
 - `utils.js` — `lz4Decompress`, `BufReader` (sequential binary read)
 - `EntityRegistry.js` — **NEW** global entity registry; entities keyed by GlobalEntityId, track current chunkId; handles snapshot/delta entity parsing
 - `GameClient.js` — WebSocket; parses 15-byte chunk header; owns `EntityRegistry` + chunk map; `selfEntity` finds by globalId
