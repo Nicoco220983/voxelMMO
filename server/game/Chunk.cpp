@@ -221,29 +221,32 @@ bool Chunk::buildDeltaImpl(
             const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
             const auto etype = reg.get<EntityTypeComponent>(ent).type;
             
-            // Determine delta type based on lifecycle flags and movedEntities
-            DeltaType deltaType;
+            // Build delta type mask based on lifecycle flags and movedEntities
+            uint8_t deltaType = 0;
             if (reg.all_of<PendingDeleteComponent>(ent)) {
-                deltaType = DeltaType::DELETE_ENTITY;
-            } else if (leftEntities.count(ent)) {
+                deltaType |= static_cast<uint8_t>(DeltaType::DELETE_ENTITY);
+            }
+            if (leftEntities.count(ent)) {
                 // Entity is leaving this chunk - old chunk sends CHUNK_CHANGE
-                deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
-            } else if (mask & DirtyComponent::CREATED_BIT) {
-                deltaType = DeltaType::CREATE_ENTITY;
-            } else {
-                deltaType = DeltaType::UPDATE_ENTITY;
+                deltaType |= static_cast<uint8_t>(DeltaType::CHUNK_CHANGE_ENTITY);
+            }
+            if (mask & DirtyComponent::CREATED_BIT) {
+                deltaType |= static_cast<uint8_t>(DeltaType::CREATE_ENTITY);
+            }
+            if (mask & 0x3F) {  // Has component changes (bits 0-5)
+                deltaType |= static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
             }
             
-            w.write(static_cast<uint8_t>(deltaType));
+            w.write(deltaType);
             w.write(gid.id);  // uint32 GlobalEntityId
             
-            if (deltaType == DeltaType::DELETE_ENTITY) {
+            if (deltaType & static_cast<uint8_t>(DeltaType::DELETE_ENTITY)) {
                 // DELETE: just GlobalEntityId, no additional data
                 ++entityCount;
                 continue;
             }
             
-            if (deltaType == DeltaType::CHUNK_CHANGE_ENTITY) {
+            if (deltaType & static_cast<uint8_t>(DeltaType::CHUNK_CHANGE_ENTITY)) {
                 // CHUNK_CHANGE: include new chunk ID computed from position
                 const auto& dyn = reg.get<DynamicPositionComponent>(ent);
                 const ChunkId newChunkId = ChunkId::make(
@@ -252,8 +255,7 @@ bool Chunk::buildDeltaImpl(
                     dyn.z >> CHUNK_SHIFT_Z
                 );
                 w.write(newChunkId.packed);
-                ++entityCount;
-                continue;
+                // Note: Don't continue here - allow concatenation with CREATE/UPDATE data
             }
             
             // CREATE and UPDATE: include EntityType and component data
@@ -261,7 +263,7 @@ bool Chunk::buildDeltaImpl(
             
             // Component mask: keep component bits 0-5, add CREATED_BIT for new entities
             uint8_t componentMask = mask & 0x3F;
-            if (deltaType == DeltaType::CREATE_ENTITY) {
+            if (deltaType & static_cast<uint8_t>(DeltaType::CREATE_ENTITY)) {
                 componentMask |= DirtyComponent::CREATED_BIT;  // 1 << 6
             }
             w.write(componentMask);

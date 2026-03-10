@@ -3,7 +3,7 @@ import { BaseEntity } from './entities/BaseEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
 import { PlayerEntity } from './entities/PlayerEntity.js'
 import { EntityType, CREATED_BIT, POSITION_BIT } from './types.js'
-import { DeltaType } from './NetworkProtocol.js'
+import { DeltaType, isCreateDelta, isUpdateDelta, isDeleteDelta, isChunkChangeDelta } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
@@ -190,32 +190,52 @@ export class EntityRegistry {
       const deltaType = reader.readUint8()
       const entityId = reader.readUint32()
 
-      if (deltaType === DeltaType.DELETE_ENTITY) {
+      if (isDeleteDelta(deltaType)) {
         this.deleteEntity(chunkRegistry, entityId)
-      } else if (deltaType === DeltaType.CHUNK_CHANGE_ENTITY) {
-        // Only remove if the target chunk is not registered
-        // The actual entity.chunkId update is handled automatically by ChunkMembershipSystem
+        continue
+      }
+      // Read CHUNK_CHANGE data first if present (before CREATE/UPDATE handling)
+      let entityWasDeleted = false
+      if (isChunkChangeDelta(deltaType)) {
         const newChunkIdPacked = reader.readInt64()
+        // Only remove if the target chunk is not registered
         if (!chunkRegistry.has(newChunkIdPacked)) {
-          console.debug('[EntityRegistry] Entity moved to unregistered chunk, removing:', { entityId, newChunkId: newChunkId.toString() })
+          console.debug('[EntityRegistry] Entity moved to unregistered chunk, removing:', { entityId, newChunkId: newChunkIdPacked.toString() })
           this.deleteEntity(chunkRegistry, entityId)
+          entityWasDeleted = true
+          // Fall through to consume CREATE/UPDATE data if present, but don't create entity
         }
-      } else if (deltaType === DeltaType.CREATE_ENTITY || deltaType === DeltaType.UPDATE_ENTITY) {
+      }
+      if (isCreateDelta(deltaType) || isUpdateDelta(deltaType)) {
         // CREATE_ENTITY or UPDATE_ENTITY - both have entityType + component data
         const entityType = reader.readUint8()
         const componentMask = reader.readUint8()
         
+        // If entity was deleted due to CHUNK_CHANGE, just consume the data without creating
+        if (entityWasDeleted) {
+          // Consume component data without applying (match server serialization format)
+          if (componentMask & POSITION_BIT) {
+            reader.readInt32(); reader.readInt32(); reader.readInt32()  // x, y, z (int32 each)
+            reader.readInt32(); reader.readInt32(); reader.readInt32()  // vx, vy, vz (int32 each)
+            reader.readUint8()  // grounded (uint8)
+          }
+          if (componentMask & SHEEP_BEHAVIOR_BIT) {
+            reader.readUint8()  // state only (uint8)
+          }
+          continue
+        }
+        
         let entity = this.#entities.get(entityId)
         
         // Protocol error: UPDATE_ENTITY for unknown entity without CREATED flag
-        if (deltaType === DeltaType.UPDATE_ENTITY && !entity && !(componentMask & CREATED_BIT)) {
+        if (isUpdateDelta(deltaType) && !entity && !(componentMask & CREATED_BIT)) {
           console.error('[EntityRegistry] UPDATE_ENTITY for unknown entity without CREATED flag:', entityId)
           continue
         }
         
         const wasCreate = !entity
         if (wasCreate) {
-          console.debug('[EntityRegistry] Creating entity:', { entityId, entityType, isCreate: deltaType === DeltaType.CREATE_ENTITY })
+          console.debug('[EntityRegistry] Creating entity:', { entityId, entityType, isCreate: isCreateDelta(deltaType) })
           entity = this.#createEntity(chunkRegistry, entityId, entityType, chunkId)
         } else {
           console.debug('[EntityRegistry] Updating entity:', { entityId, entityType })
@@ -224,8 +244,6 @@ export class EntityRegistry {
         
         // Note: Chunk boundary detection is now handled by ChunkMembershipSystem
         // which runs every tick in GameClient.updateEntities()
-      } else {
-        console.error('[EntityRegistry] Unknown delta type:', deltaType, 'for entity', entityId)
       }
     }
     return count

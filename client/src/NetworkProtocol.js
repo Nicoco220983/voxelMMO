@@ -24,11 +24,47 @@ export const ServerMessageType = Object.freeze({
  * @enum {number}
  */
 export const DeltaType = Object.freeze({
-  CREATE_ENTITY:       0,  // Entity appears in this chunk
-  UPDATE_ENTITY:       1,  // Entity component updates
-  DELETE_ENTITY:       2,  // Entity removed from this chunk
-  CHUNK_CHANGE_ENTITY: 3,  // Entity moved to different chunk
+  CREATE_ENTITY:       1 << 0,  // Entity appears in this chunk (bit 0)
+  UPDATE_ENTITY:       1 << 1,  // Entity component updates (bit 1)
+  DELETE_ENTITY:       1 << 2,  // Entity removed from this chunk (bit 2)
+  CHUNK_CHANGE_ENTITY: 1 << 3,  // Entity moved to different chunk (bit 3)
 })
+
+/**
+ * Check if delta type includes CREATE_ENTITY flag.
+ * @param {number} deltaType - The delta type byte.
+ * @returns {boolean}
+ */
+export function isCreateDelta(deltaType) {
+  return (deltaType & DeltaType.CREATE_ENTITY) !== 0
+}
+
+/**
+ * Check if delta type includes UPDATE_ENTITY flag.
+ * @param {number} deltaType - The delta type byte.
+ * @returns {boolean}
+ */
+export function isUpdateDelta(deltaType) {
+  return (deltaType & DeltaType.UPDATE_ENTITY) !== 0
+}
+
+/**
+ * Check if delta type includes DELETE_ENTITY flag.
+ * @param {number} deltaType - The delta type byte.
+ * @returns {boolean}
+ */
+export function isDeleteDelta(deltaType) {
+  return (deltaType & DeltaType.DELETE_ENTITY) !== 0
+}
+
+/**
+ * Check if delta type includes CHUNK_CHANGE_ENTITY flag.
+ * @param {number} deltaType - The delta type byte.
+ * @returns {boolean}
+ */
+export function isChunkChangeDelta(deltaType) {
+  return (deltaType & DeltaType.CHUNK_CHANGE_ENTITY) !== 0
+}
 
 /**
  * First byte of every client → server binary WebSocket frame.
