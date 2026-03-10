@@ -9,6 +9,7 @@ import { lz4Decompress, BufReader } from './utils.js'
 import { BaseEntity } from './entities/BaseEntity.js'
 import { TICK_RATE } from './types.js'
 import { PhysicsPredictionSystem } from './systems/PhysicsPredictionSystem.js'
+import { ChunkMembershipSystem } from './systems/ChunkMembershipSystem.js'
 
 /** @typedef {import('./types.js').ChunkIdPacked} ChunkIdPacked */
 
@@ -174,6 +175,9 @@ export class GameClient {
   updateEntities(dt) {
     // Run physics prediction for all entities (updates currentPos based on last received state)
     PhysicsPredictionSystem.update(this.#entityRegistry, this.tick)
+    
+    // Update chunk membership based on predicted positions
+    ChunkMembershipSystem.update(this.#entityRegistry, this.#chunkRegistry)
     
     // Update entity animations
     for (const entity of this.#entityRegistry.all()) {

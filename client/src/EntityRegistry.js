@@ -5,7 +5,7 @@ import { PlayerEntity } from './entities/PlayerEntity.js'
 import { EntityType, CREATED_BIT, POSITION_BIT } from './types.js'
 import { DeltaType } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
-import { ChunkId, chunkIdOfSubVoxel } from './Chunk.js'
+import { ChunkId } from './Chunk.js'
 
 /** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
 
@@ -94,38 +94,6 @@ export class EntityRegistry {
    */
   clear() {
     this.#entities.clear()
-  }
-
-  /**
-   * Detect if entity's current position puts it in a different chunk than entity.chunkId.
-   * If so, update entity.chunkId and move entity between chunk entity sets.
-   * @param {ChunkRegistry} chunkRegistry
-   * @param {BaseEntity} entity
-   * @private
-   */
-  #detectAndHandleChunkChange(chunkRegistry, entity) {
-    const pos = entity.motion
-    const actualChunkId = chunkIdOfSubVoxel(pos.x, pos.y, pos.z)
-    
-    if (actualChunkId.packed !== entity.chunkId) {
-      console.debug('[EntityRegistry] Entity crossed chunk boundary:', { 
-        entityId: entity.id, 
-        fromChunk: new ChunkId(entity.chunkId).toString(), 
-        toChunk: actualChunkId.toString(),
-        pos: { x: pos.x, y: pos.y, z: pos.z }
-      })
-      
-      // Remove from old chunk's entities
-      const oldChunk = chunkRegistry.get(entity.chunkId)
-      if (oldChunk) oldChunk.entities.delete(entity.id)
-      
-      // Update entity's chunk reference
-      entity.chunkId = actualChunkId.packed
-      
-      // Add to new chunk's entities
-      const newChunk = chunkRegistry.getOrCreate(actualChunkId.packed)
-      newChunk.entities.add(entity.id)
-    }
   }
 
   /**
@@ -226,7 +194,7 @@ export class EntityRegistry {
         this.deleteEntity(chunkRegistry, entityId)
       } else if (deltaType === DeltaType.CHUNK_CHANGE_ENTITY) {
         // Only remove if the target chunk is not registered
-        // The actual entity.chunkId update is handled automatically by #detectAndHandleChunkChange
+        // The actual entity.chunkId update is handled automatically by ChunkMembershipSystem
         const newChunkIdPacked = reader.readInt64()
         if (!chunkRegistry.has(newChunkIdPacked)) {
           console.debug('[EntityRegistry] Entity moved to unregistered chunk, removing:', { entityId, newChunkId: newChunkId.toString() })
@@ -254,12 +222,8 @@ export class EntityRegistry {
         }
         entity.applyComponents(reader, componentMask, messageTick)
         
-        // TODO: should be done in a separated flow to detect at each tick
-        // For UPDATE_ENTITY (not CREATE), detect if position change caused chunk boundary crossing
-        // This handles cases where server may not send explicit CHUNK_CHANGE_ENTITY
-        if (!wasCreate && (componentMask & POSITION_BIT)) {
-          this.#detectAndHandleChunkChange(chunkRegistry, entity)
-        }
+        // Note: Chunk boundary detection is now handled by ChunkMembershipSystem
+        // which runs every tick in GameClient.updateEntities()
       } else {
         console.error('[EntityRegistry] Unknown delta type:', deltaType, 'for entity', entityId)
       }
