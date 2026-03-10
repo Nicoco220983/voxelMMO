@@ -166,7 +166,6 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
     // Record this entry
     state.entries.push_back({tickCount, 0, buf.size()});
     state.hasNewData = true;
-    deltaCallCount = 0;
 
     return buf;
 }
@@ -338,19 +337,17 @@ bool Chunk::updateState(entt::registry& reg, uint32_t tickCount)
 {
     // No serialization yet: build full snapshot
     if (state.isEmpty()) {
-        deltaCallCount = 0;
         buildSnapshot(reg, tickCount);
         return true;
     }
 
     // First call after snapshot, or every 20 calls: build snapshot delta
-    if (deltaCallCount == 0 || deltaCallCount % 20 == 0) {
-        ++deltaCallCount;
+    const size_t deltaCount = state.getDeltaCount();
+    if (deltaCount == 0 || deltaCount % 20 == 0) {
         return buildSnapshotDelta(reg, tickCount);
     }
 
     // Otherwise: build tick delta
-    ++deltaCallCount;
     return buildTickDelta(reg, tickCount);
 }
 

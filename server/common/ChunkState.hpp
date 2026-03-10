@@ -132,6 +132,22 @@ struct ChunkState {
     }
 
     /**
+     * @brief Check if buffer contains only a snapshot (no deltas).
+     * Assumes buffer is not empty (call isEmpty() first).
+     */
+    bool hasOnlySnapshot() const {
+        return entries.size() == 1;
+    }
+
+    /**
+     * @brief Get the number of delta messages appended after the snapshot.
+     * @return Number of deltas (entries.size() - 1), or 0 if no entries.
+     */
+    size_t getDeltaCount() const {
+        return entries.empty() ? 0 : entries.size() - 1;
+    }
+
+    /**
      * @brief Clear all data (used when rebuilding snapshot).
      */
     void clear() {

@@ -68,9 +68,6 @@ public:
     /** @brief True if the chunk has been activated (entities spawned). */
     bool activated = false;
 
-    /** @brief Counter for delta type selection (reset after snapshot). */
-    uint32_t deltaCallCount = 0;
-
     explicit Chunk(ChunkId chunkId);
 
     /**
