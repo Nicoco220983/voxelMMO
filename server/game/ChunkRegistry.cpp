@@ -45,7 +45,7 @@ Chunk* ChunkRegistry::activate(ChunkId id, WorldGenerator& generator, EntityFact
     chunk->activated = true;
     
     // Generate entities for the newly activated chunk
-    generator.generateEntities(id, entityFactory, tick);
+    generator.generateEntities(id, entityFactory, tick, *this);
     
     return chunk;
 }

@@ -1,7 +1,10 @@
 #include "game/WorldGenerator.hpp"
 #include "game/ChunkRegistry.hpp"
+#include "game/Chunk.hpp"
+#include "game/WorldChunk.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "common/Types.hpp"
+#include "common/VoxelTypes.hpp"
 #include <cmath>
 #include <algorithm>
 
@@ -166,16 +169,15 @@ const int32_t* WorldGenerator::getPlayerSpawnPos(ChunkRegistry& chunkRegistry, E
     if (!spawnPosComputed_) {
         // Generate initial chunks first
         generateChunks(chunkRegistry, 0, 0, 0, radius, entityFactory, 0);
-        computePlayerSpawnPos();
+        computePlayerSpawnPos(chunkRegistry);
         spawnPosComputed_ = true;
     }
     return playerSpawnPos_;
 }
 
-void WorldGenerator::computePlayerSpawnPos() {
+void WorldGenerator::computePlayerSpawnPos(const ChunkRegistry& chunkRegistry) {
     // Find surface Y at column (0,0) and spawn 1 meter above it.
-    // getSurfaceY handles TEST mode (returns 4) vs NORMAL mode (computes height).
-    const int32_t surfaceY = getSurfaceY(0, 0);
+    const int32_t surfaceY = getSurfaceY(0, 0, chunkRegistry);
     const int32_t spawnY = (surfaceY + 1) * SUBVOXEL_SIZE;
     
     playerSpawnPos_[0] = 0;
@@ -183,14 +185,37 @@ void WorldGenerator::computePlayerSpawnPos() {
     playerSpawnPos_[2] = 0;
 }
 
-VoxelCoord WorldGenerator::getSurfaceY(VoxelCoord voxelX, VoxelCoord voxelZ) const noexcept {
+VoxelCoord WorldGenerator::getSurfaceY(VoxelCoord voxelX, VoxelCoord voxelZ, const ChunkRegistry& chunkRegistry) const noexcept {
     if (type_ == GeneratorType::TEST) {
         return 4;  // Test world: grass at worldY = 4
     }
-    return static_cast<int32_t>(computeHeight(static_cast<float>(voxelX), static_cast<float>(voxelZ), seed_));
+    
+    // Find which chunk contains this voxel column
+    const ChunkCoord cx = voxelX >> (CHUNK_SHIFT_X - SUBVOXEL_BITS);
+    const ChunkCoord cz = voxelZ >> (CHUNK_SHIFT_Z - SUBVOXEL_BITS);
+    const ChunkId chunkId = ChunkId::make(0, cx, cz);
+    
+    const Chunk* chunk = chunkRegistry.getChunk(chunkId);
+    if (!chunk) {
+        // Chunk not generated yet - fall back to noise estimate
+        return static_cast<int32_t>(computeHeight(static_cast<float>(voxelX), static_cast<float>(voxelZ), seed_));
+    }
+    
+    // Local coordinates within chunk
+    const uint32_t localX = static_cast<uint32_t>(voxelX) & (CHUNK_SIZE_X - 1);
+    const uint32_t localZ = static_cast<uint32_t>(voxelZ) & (CHUNK_SIZE_Z - 1);
+    
+    // Scan downward from top of chunk to find first non-air voxel
+    for (int y = CHUNK_SIZE_Y - 1; y >= 0; --y) {
+        if (chunk->world.getVoxel(localX, y, localZ) != VoxelTypes::AIR) {
+            return y;  // worldY = y since chunkY = 0
+        }
+    }
+    
+    return 4;  // Fallback: default surface height
 }
 
-void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick) const {
+void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick, const ChunkRegistry& chunkRegistry) const {
     const int32_t cx = chunkId.x();
     const int32_t cy = chunkId.y();
     const int32_t cz = chunkId.z();
@@ -203,7 +228,7 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
         // Calculate test entity spawn position: 5 voxels in front (+X) of player
         const int32_t testX = 0;
         const int32_t testZ = -5 * SUBVOXEL_SIZE;
-        const int32_t surfaceY = getSurfaceY(0, 0);
+        const int32_t surfaceY = getSurfaceY(0, 0, chunkRegistry);
         const int32_t testY = (surfaceY + 1) * SUBVOXEL_SIZE;
         
         // Mark as spawned
@@ -236,7 +261,7 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
         // Find surface height at this position
         const int voxelX = cx * CHUNK_SIZE_X + localX;
         const int voxelZ = cz * CHUNK_SIZE_Z + localZ;
-        const int32_t surfaceY = getSurfaceY(voxelX, voxelZ);
+        const int32_t surfaceY = getSurfaceY(voxelX, voxelZ, chunkRegistry);
         
         // Only spawn if surface is in this chunk's Y range
         const int32_t worldY = surfaceY + 1;  // Spawn one block above grass

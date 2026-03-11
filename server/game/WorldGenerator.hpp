@@ -112,14 +112,16 @@ public:
     /**
      * @brief Return the surface world-Y voxel at voxel column (voxelX, voxelZ).
      *
-     * Matches the height used by generate(): result is in [4, 30].
-     * The surface voxel (GRASS) occupies world-Y = getSurfaceY(voxelX, voxelZ);
-     * the voxel above it is AIR.
+     * Queries the actual generated chunk voxels to find the top solid block.
+     * Result is in [4, 30]. The surface voxel (GRASS) occupies world-Y = 
+     * getSurfaceY(voxelX, voxelZ); the voxel above it is AIR.
      *
-     * @param voxelX  World X coordinate in voxels (not sub-voxels).
-     * @param voxelZ  World Z coordinate in voxels (not sub-voxels).
+     * @param voxelX        World X coordinate in voxels (not sub-voxels).
+     * @param voxelZ        World Z coordinate in voxels (not sub-voxels).
+     * @param chunkRegistry Registry to query for voxel data.
+     * @return Surface Y coordinate in voxels.
      */
-    VoxelCoord getSurfaceY(VoxelCoord voxelX, VoxelCoord voxelZ) const noexcept;
+    VoxelCoord getSurfaceY(VoxelCoord voxelX, VoxelCoord voxelZ, const ChunkRegistry& chunkRegistry) const noexcept;
 
     /**
      * @brief Queue entity spawn requests for a newly activated chunk.
@@ -130,17 +132,20 @@ public:
      * @param chunkId       Chunk being activated.
      * @param entityFactory Entity factory to queue spawn requests into.
      * @param tick          Current server tick (for state initialization).
+     * @param chunkRegistry Registry to query for surface height lookups.
      */
-    void generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick) const;
+    void generateEntities(ChunkId chunkId, EntityFactory& entityFactory, uint32_t tick, const ChunkRegistry& chunkRegistry) const;
     
 private:
     /**
      * @brief Compute player spawn position at column (0,0).
      *
-     * Finds the top solid voxel at world column (0,0) and sets spawn
-     * 1 meter (SUBVOXEL_SIZE units) above it.
+     * Finds the top solid voxel at world column (0,0) by scanning the
+     * actual generated chunk data and sets spawn 1 meter above it.
+     * 
+     * @param chunkRegistry Registry to query for voxel data.
      */
-    void computePlayerSpawnPos();
+    void computePlayerSpawnPos(const ChunkRegistry& chunkRegistry);
     
     uint32_t seed_;
     GeneratorType type_;
