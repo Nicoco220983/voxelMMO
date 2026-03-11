@@ -189,6 +189,50 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
     return result;
 }
 
+/**
+ * @brief Clean up chunk sets by removing entities that no longer exist.
+ *
+ * Iterates over all chunks and removes:
+ * - Entities from chunk.entities that are no longer valid in the registry
+ * - PlayerIds from chunk.presentPlayers that are no longer in playerEntities map
+ *
+ * Call this after destroying player entities (e.g., from DisconnectedPlayerSystem)
+ * to ensure chunk sets stay consistent.
+ *
+ * @param chunkRegistry  Chunk registry for accessing all chunks.
+ * @param registry       The ECS registry (to check entity validity).
+ * @param playerEntities Map from PlayerId to entity (to check player validity).
+ */
+inline void cleanupChunkEntitySets(
+    ChunkRegistry& chunkRegistry,
+    entt::registry& registry,
+    const std::unordered_map<PlayerId, entt::entity>& playerEntities)
+{
+    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        // Remove destroyed entities from chunk.entities
+        std::vector<entt::entity> entitiesToRemove;
+        for (entt::entity ent : chunkPtr->entities) {
+            if (!registry.valid(ent)) {
+                entitiesToRemove.push_back(ent);
+            }
+        }
+        for (entt::entity ent : entitiesToRemove) {
+            chunkPtr->entities.erase(ent);
+        }
+
+        // Remove stale players from chunk.presentPlayers
+        std::vector<PlayerId> playersToRemove;
+        for (PlayerId pid : chunkPtr->presentPlayers) {
+            if (playerEntities.find(pid) == playerEntities.end()) {
+                playersToRemove.push_back(pid);
+            }
+        }
+        for (PlayerId pid : playersToRemove) {
+            chunkPtr->presentPlayers.erase(pid);
+        }
+    }
+}
+
 } // namespace ChunkMembershipSystem
 
 } // namespace voxelmmo

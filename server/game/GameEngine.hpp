@@ -9,6 +9,7 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/InputComponent.hpp"
+#include "game/components/DisconnectedPlayerComponent.hpp"
 #include "common/Types.hpp"
 #include "game/GatewayInfo.hpp"
 #include "common/NetworkProtocol.hpp"
@@ -72,8 +73,27 @@ public:
      */
     void registerPlayer(GatewayId gwId, PlayerId playerId);
 
-    /** @brief Destroy a player entity and remove it from all chunk sets. */
-    //void removePlayer(PlayerId playerId);
+    /**
+     * @brief Mark a player entity for delayed deletion after disconnect.
+     *
+     * The player entity will be kept alive for DISCONNECT_GRACE_PERIOD_TICKS
+     * (60 ticks = 60 seconds) to allow for reconnection. If the player
+     * reconnects before the grace period expires, call cancelPlayerDisconnection()
+     * or the component will be automatically removed.
+     *
+     * @param playerId The player ID to mark for disconnection.
+     */
+    void markPlayerDisconnected(PlayerId playerId);
+
+    /**
+     * @brief Cancel a pending disconnection (player reconnected in time).
+     *
+     * Removes the DisconnectedPlayerComponent from the entity to keep it alive.
+     *
+     * @param playerId The player ID that reconnected.
+     * @return true if a pending disconnection was cancelled, false otherwise.
+     */
+    bool cancelPlayerDisconnection(PlayerId playerId);
 
     /**
      * @brief Directly set a player's world position (sub-voxel coordinates).
@@ -180,6 +200,7 @@ private:
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
 
     int32_t  tickCount{0};
+    uint32_t  lastDisconnectCheckTick{0};  ///< Last tick when disconnect system was run
 
     OutputCallback outputCallback;
     PlayerOutputCallback playerOutputCallback;

@@ -1,5 +1,6 @@
 #include "game/GameEngine.hpp"
 #include "game/systems/InputSystem.hpp"
+#include "game/systems/DisconnectedPlayerSystem.hpp"
 
 #include "game/components/SheepBehaviorComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
@@ -7,6 +8,7 @@
 #include "common/MessageTypes.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
+#include "game/components/DisconnectedPlayerComponent.hpp"
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
@@ -108,6 +110,31 @@ void GameEngine::teleportPlayer(PlayerId playerId, SubVoxelCoord sx, SubVoxelCoo
         sx, sy, sz, dyn.vx, dyn.vy, dyn.vz, dyn.grounded, /*dirty=*/true);
 }
 
+void GameEngine::markPlayerDisconnected(PlayerId playerId) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
+    auto it = playerEntities.find(playerId);
+    if (it == playerEntities.end()) return;
+
+    entt::entity ent = it->second;
+
+    // Avoid double-marking
+    if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
+        return;
+    }
+
+    // Add the disconnected component with current tick
+    const uint32_t tick = static_cast<uint32_t>(tickCount);
+    registry.emplace<DisconnectedPlayerComponent>(ent, tick);
+}
+
+bool GameEngine::cancelPlayerDisconnection(PlayerId playerId) {
+    std::lock_guard<std::recursive_mutex> lock(mtx_);
+    auto it = playerEntities.find(playerId);
+    if (it == playerEntities.end()) return false;
+
+    return DisconnectedPlayerSystem::cancelDisconnection(registry, it->second);
+}
+
 // void GameEngine::removePlayer(PlayerId playerId) {
 //     std::lock_guard<std::recursive_mutex> lock(mtx_);
     
@@ -198,11 +225,6 @@ void GameEngine::tick() {
     ++tickCount;
     const uint32_t tick = static_cast<uint32_t>(tickCount);
 
-    // Destroy any pending deletions from previous tick first
-    // (their DELETE deltas have already been serialized and sent)
-    auto pendingDeletionView = registry.view<PendingDeleteComponent>();
-    registry.destroy(pendingDeletionView.begin(), pendingDeletionView.end());
-
     // Create any pending entities at the start of the tick
     createPendingEntities();
 
@@ -212,6 +234,15 @@ void GameEngine::tick() {
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
     stepPhysics();
+
+    // Process disconnected players once per second (before chunk membership)
+    if (tick - lastDisconnectCheckTick >= TICK_RATE) {
+        DisconnectedPlayerSystem::process(registry, playerEntities, tick);
+        lastDisconnectCheckTick = tick;
+    }
+
+    // Clean up chunk sets after potential player deletions
+    ChunkMembershipSystem::cleanupChunkEntitySets(chunkRegistry, registry, playerEntities);
 
     // Phase A: Check chunk membership for moved entities
     // Updates chunk.leftEntities and chunk.presentPlayers, adds new entities to chunks
@@ -231,9 +262,11 @@ void GameEngine::tick() {
 
     // Clear all dirty flags after serialization
     clearAllDirtyFlags();
-    
-    // Entities in pendingDeletions will be destroyed at the start of next tick
-    // This ensures their DELETE deltas have been sent
+
+    // Destroy any pending deletions from previous tick first
+    // (their DELETE deltas have already been serialized and sent)
+    auto pendingDeletionView = registry.view<PendingDeleteComponent>();
+    registry.destroy(pendingDeletionView.begin(), pendingDeletionView.end());
 }
 
 // ── Self Entity Messages ──────────────────────────────────────────────────
