@@ -2,8 +2,8 @@
 import { BaseEntity } from './entities/BaseEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
 import { PlayerEntity } from './entities/PlayerEntity.js'
-import { EntityType, CREATED_BIT, POSITION_BIT } from './types.js'
-import { DeltaType, isCreateDelta, isUpdateDelta, isDeleteDelta, isChunkChangeDelta } from './NetworkProtocol.js'
+import { EntityType } from './types.js'
+import { DeltaType } from './NetworkProtocol.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
@@ -46,13 +46,11 @@ export class EntityRegistry {
    */
   setSelfEntityId(entityId) {
     this.selfEntityId = entityId
-    console.debug('[EntityRegistry] Self entity ID set:', entityId)
 
     // If entity already exists, mark it as self to hide its mesh
     if (entityId !== null) {
       const entity = this.#entities.get(entityId)
       if (entity && entity.markAsSelf) {
-        console.debug('[EntityRegistry] Marking existing entity as self:', entityId)
         entity.markAsSelf()
       }
     }
@@ -68,6 +66,7 @@ export class EntityRegistry {
    * @private
    */
   #createEntity(chunkRegistry, entityId, entityType, chunkId) {
+    console.debug('[EntityRegistry] Creating entity:', { entityId, entityType })
     let entity = null
     if (entityType === EntityType.SHEEP) {
       entity = new SheepEntity(entityId, this.scene)
@@ -78,7 +77,6 @@ export class EntityRegistry {
       console.error('[EntityRegistry] Unknown entity type:', entityType, 'for entity', entityId)
       return null
     }
-    if(!entity) return null
     this.#entities.set(entityId, entity)
     entity.chunkId = chunkId
     const chunk = chunkRegistry.getOrCreate(chunkId)
@@ -191,19 +189,7 @@ export class EntityRegistry {
       const componentFlags = reader.readUint8()
 
       const entity = this.#createEntity(chunkRegistry, id, type, chunkId)
-      if (entity) {
-        entity.applyComponents(reader, componentFlags, messageTick)
-      } else {
-        // Entity creation failed - consume component data to maintain reader position
-        if (componentFlags & POSITION_BIT) {
-          reader.readInt32(); reader.readInt32(); reader.readInt32()  // x, y, z
-          reader.readInt32(); reader.readInt32(); reader.readInt32()  // vx, vy, vz
-          reader.readUint8()  // grounded
-        }
-        if (componentFlags & SHEEP_BEHAVIOR_BIT) {
-          reader.readUint8()  // state
-        }
-      }
+      entity.applyComponents(reader, componentFlags, messageTick)
     }
     return count
   }
@@ -225,53 +211,38 @@ export class EntityRegistry {
       const deltaType = reader.readUint8()
       const entityId = reader.readUint32()
 
-      if (isDeleteDelta(deltaType)) {
+      if (deltaType === DeltaType.DELETE_ENTITY) {
         this.deleteEntity(chunkRegistry, entityId)
         continue
       }
-      // Read CHUNK_CHANGE data first if present (before CREATE/UPDATE handling)
-      let entityWasDeleted = false
-      if (isChunkChangeDelta(deltaType)) {
+      
+      if (deltaType === DeltaType.CHUNK_CHANGE_ENTITY) {
         const newChunkIdPacked = reader.readInt64()
         // Only remove if the target chunk is not registered
         if (!chunkRegistry.has(newChunkIdPacked)) {
           console.debug('[EntityRegistry] Entity moved to unregistered chunk, removing:', { entityId, newChunkId: newChunkIdPacked.toString() })
           this.deleteEntity(chunkRegistry, entityId)
-          entityWasDeleted = true
-          // Fall through to consume CREATE/UPDATE data if present, but don't create entity
         }
+        // CHUNK_CHANGE has no additional data (entityType/component data)
+        continue
       }
-      if (isCreateDelta(deltaType) || isUpdateDelta(deltaType)) {
+      
+      if (deltaType === DeltaType.CREATE_ENTITY || deltaType === DeltaType.UPDATE_ENTITY) {
         // CREATE_ENTITY or UPDATE_ENTITY - both have entityType + component data
         const entityType = reader.readUint8()
         const componentMask = reader.readUint8()
         
-        // If entity was deleted due to CHUNK_CHANGE, just consume the data without creating
-        if (entityWasDeleted) {
-          // Consume component data without applying (match server serialization format)
-          if (componentMask & POSITION_BIT) {
-            reader.readInt32(); reader.readInt32(); reader.readInt32()  // x, y, z (int32 each)
-            reader.readInt32(); reader.readInt32(); reader.readInt32()  // vx, vy, vz (int32 each)
-            reader.readUint8()  // grounded (uint8)
-          }
-          if (componentMask & SHEEP_BEHAVIOR_BIT) {
-            reader.readUint8()  // state only (uint8)
-          }
-          continue
-        }
-        
         let entity = this.#entities.get(entityId)
         
-        // Protocol error: UPDATE_ENTITY for unknown entity without CREATED flag
-        if (isUpdateDelta(deltaType) && !entity && !(componentMask & CREATED_BIT)) {
-          console.error('[EntityRegistry] UPDATE_ENTITY for unknown entity without CREATED flag:', entityId)
+        // Protocol error: UPDATE_ENTITY for unknown entity
+        if (!entity && deltaType === DeltaType.UPDATE_ENTITY) {
+          console.error('[EntityRegistry] UPDATE_ENTITY for unknown entity:', entityId)
           continue
         }
         
-        const wasCreate = !entity
-        if (wasCreate) {
-          console.debug('[EntityRegistry] Creating entity:', { entityId, entityType, isCreate: isCreateDelta(deltaType) })
+        if (!entity) {
           entity = this.#createEntity(chunkRegistry, entityId, entityType, chunkId)
+          if(!entity) continue
         } else {
           console.debug('[EntityRegistry] Updating entity:', { entityId, entityType })
         }

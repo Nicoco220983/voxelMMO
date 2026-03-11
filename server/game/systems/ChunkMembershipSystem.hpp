@@ -81,6 +81,7 @@ inline ChunkMembershipResult update(
         chunkPtr->presentPlayers.clear();
         chunkPtr->watchingPlayers.clear();
         chunkPtr->leftEntities.clear();
+        chunkPtr->enteredEntities.clear();
     }
 
     // Phase 2: Rebuild chunk.entities and presentPlayers from all living entities
@@ -94,6 +95,10 @@ inline ChunkMembershipResult update(
             // Track in old chunk's leftEntities for delta serialization
             if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
                 oldChunk->leftEntities.insert(ent);
+            }
+            // Track in new chunk's enteredEntities for full serialization
+            if (Chunk* newChunk = chunkRegistry.getChunkMutable(newChunkId)) {
+                newChunk->enteredEntities.insert(ent);
             }
             
             // Update membership

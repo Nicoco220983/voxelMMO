@@ -24,18 +24,23 @@ public:
      * Ignores dirty component state and serializes all serializable components.
      * Forces the CREATED_BIT in the output flags byte for consistency.
      *
-     * Output format:
+     * Output format (snapshot, forDelta=false):
      *   [GlobalEntityId(4)][EntityType(1)][flags(1)][component data...]
+     *
+     * Output format (delta, forDelta=true):
+     *   [deltaType(1)][GlobalEntityId(4)][EntityType(1)][flags(1)][component data...]
      *
      * @param reg Entity registry
      * @param ent Entity handle
      * @param w SafeBufWriter to write to
+     * @param forDelta If true, prepend CREATE_ENTITY delta type byte for delta context
      * @return Number of bytes written
      */
     static size_t serializeFull(
         entt::registry& reg,
         entt::entity ent,
-        SafeBufWriter& w);
+        SafeBufWriter& w,
+        bool forDelta = false);
 
     /**
      * @brief Serialize only dirty components of an entity (delta mode).

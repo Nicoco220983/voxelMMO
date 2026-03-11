@@ -13,13 +13,19 @@ namespace voxelmmo {
 size_t EntitySerializer::serializeFull(
     entt::registry& reg,
     entt::entity ent,
-    SafeBufWriter& w)
+    SafeBufWriter& w,
+    bool forDelta)
 {
     const size_t startOffset = w.offset();
     
     const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
     const auto& etypeComp = reg.get<EntityTypeComponent>(ent);
     const auto etype = etypeComp.type;
+    
+    // For delta contexts, write CREATE_ENTITY delta type first
+    if (forDelta) {
+        w.write(static_cast<uint8_t>(DeltaType::CREATE_ENTITY));
+    }
     
     // Write GlobalEntityId and EntityType
     w.write(gid.id);
@@ -59,31 +65,29 @@ size_t EntitySerializer::serializeDelta(
     const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
     const auto etype = reg.get<EntityTypeComponent>(ent).type;
     
-    // Build delta type mask
-    uint8_t deltaType = 0;
+    // Determine delta type (single value, not a bitmask).
+    // Priority: DELETE > CHUNK_CHANGE > CREATE > UPDATE
+    DeltaType deltaType;
     if (isDeleted) {
-        deltaType |= static_cast<uint8_t>(DeltaType::DELETE_ENTITY);
-    }
-    if (isLeavingChunk) {
-        deltaType |= static_cast<uint8_t>(DeltaType::CHUNK_CHANGE_ENTITY);
-    }
-    if (dirtyFlags & DirtyComponent::CREATED_BIT) {
-        deltaType |= static_cast<uint8_t>(DeltaType::CREATE_ENTITY);
-    }
-    if (dirtyFlags & 0x3F) {  // Has component changes (bits 0-5)
-        deltaType |= static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
+        deltaType = DeltaType::DELETE_ENTITY;
+    } else if (isLeavingChunk) {
+        deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
+    } else if (dirtyFlags & DirtyComponent::CREATED_BIT) {
+        deltaType = DeltaType::CREATE_ENTITY;
+    } else {
+        deltaType = DeltaType::UPDATE_ENTITY;
     }
     
-    w.write(deltaType);
+    w.write(static_cast<uint8_t>(deltaType));
     w.write(gid.id);
     
     // DELETE: just GlobalEntityId, no additional data
-    if (isDeleted) {
+    if (deltaType == DeltaType::DELETE_ENTITY) {
         return w.offset() - startOffset;
     }
     
-    // CHUNK_CHANGE: include new chunk ID computed from position
-    if (isLeavingChunk) {
+    // CHUNK_CHANGE: include new chunk ID computed from position, then done
+    if (deltaType == DeltaType::CHUNK_CHANGE_ENTITY) {
         const auto& dyn = reg.get<DynamicPositionComponent>(ent);
         const ChunkId newChunkId = ChunkId::make(
             dyn.y >> CHUNK_SHIFT_Y,
@@ -91,6 +95,7 @@ size_t EntitySerializer::serializeDelta(
             dyn.z >> CHUNK_SHIFT_Z
         );
         w.write(newChunkId.packed);
+        return w.offset() - startOffset;
     }
     
     // CREATE and UPDATE: include EntityType and component data

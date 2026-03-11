@@ -345,6 +345,7 @@ inline void updateEntityChunks(
         chunkPtr->entities.clear();
         chunkPtr->presentPlayers.clear();
         chunkPtr->leftEntities.clear();
+        chunkPtr->enteredEntities.clear();
     }
 
     // Rebuild from all living entities
@@ -356,6 +357,9 @@ inline void updateEntityChunks(
         if (membership.currentChunkId != newChunkId) {
             if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
                 oldChunk->leftEntities.insert(ent);
+            }
+            if (Chunk* newChunk = chunkRegistry.getChunkMutable(newChunkId)) {
+                newChunk->enteredEntities.insert(ent);
             }
             membership.currentChunkId = newChunkId;
         }

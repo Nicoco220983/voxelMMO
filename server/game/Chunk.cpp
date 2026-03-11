@@ -162,7 +162,9 @@ bool Chunk::buildDeltaImpl(
             [&](entt::entity ent) {
                 return reg.get<DirtyComponent>(ent).*flagsField != 0;
             });
-        if (!anyDirty) return false;
+        // Also check for entities that left (CHUNK_CHANGE) or have pending operations
+        const bool anyLeaving = !leftEntities.empty();
+        if (!anyDirty && !anyLeaving) return false;
     }
 
     // Build into a local staging buffer
@@ -191,16 +193,26 @@ bool Chunk::buildDeltaImpl(
     SafeBufWriter w{staging, off};
     int32_t entityCount = 0;
     
-    for (auto ent : entities) {
+    // Helper lambda to process an entity
+    auto processEntity = [&](entt::entity ent) {
         auto& dirty = reg.get<DirtyComponent>(ent);
         const uint8_t mask = dirty.*flagsField;
-        if (!mask) continue;
-        
         const bool isDeleted = reg.all_of<PendingDeleteComponent>(ent);
         const bool isLeaving = leftEntities.count(ent) > 0;
+        const bool isEntered = enteredEntities.count(ent) > 0;
+        const bool isNewlyCreated = (mask & DirtyComponent::CREATED_BIT) != 0;
         
-        size_t bytesWritten = EntitySerializer::serializeDelta(
-            reg, ent, mask, isLeaving, isDeleted, w);
+        // Entities that entered this chunk or are newly created need full serialization
+        // (not delta) because receiving clients may not have prior state for them.
+        size_t bytesWritten = 0;
+        if (isEntered || isNewlyCreated) {
+            // For entered/created entities, we still check if there's anything to send
+            // (either they have dirty flags OR they're just entering/being created)
+            bytesWritten = EntitySerializer::serializeFull(reg, ent, w, /*forDelta=*/true);
+        } else if (mask || isDeleted || isLeaving) {
+            bytesWritten = EntitySerializer::serializeDelta(
+                reg, ent, mask, isLeaving, isDeleted, w);
+        }
         
         if (bytesWritten > 0) {
             ++entityCount;
@@ -208,6 +220,17 @@ bool Chunk::buildDeltaImpl(
 
         // Note: Dirty flags are cleared centrally in GameEngine::clearAllDirtyFlags()
         // after all serialization is complete for the tick.
+    };
+    
+    // Process current entities
+    for (auto ent : entities) {
+        processEntity(ent);
+    }
+    
+    // Process entities that left this chunk (for CHUNK_CHANGE_ENTITY messages)
+    // These are not in 'entities' anymore but still need to be serialized
+    for (auto ent : leftEntities) {
+        processEntity(ent);
     }
     
     off = w.offset();
