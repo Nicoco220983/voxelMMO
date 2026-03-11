@@ -141,31 +141,12 @@ public:
 
     void setPlayerOutputCallback(PlayerOutputCallback cb);
 
-    // ── Per-player watched chunks callbacks ───────────────────────────────
-
     /**
-     * @brief Callback invoked when a player's watched chunks change.
-     *
-     * Called during updateAndActivatePlayersWatchedChunks for each player.
-     * GatewayEngine uses this to track which chunks each player receives.
-     *
-     * Signature: (PlayerId, const std::set<ChunkId>&)
+     * @brief Force-send a full snapshot for all watched chunks of a gateway.
+     * Use when a player first joins, after a reconnect, or on acknowledgement.
+     * @param gwId  Target gateway.
      */
-    using PlayerWatchedChunksCallback = std::function<void(PlayerId, const std::set<ChunkId>&)>;
-
-    void setPlayerWatchedChunksCallback(PlayerWatchedChunksCallback cb);
-
-    /**
-     * @brief Callback invoked when a player needs initial chunk data.
-     *
-     * Called after a player entity is created (after JOIN).
-     * GatewayEngine uses this to send full snapshots to the new player.
-     *
-     * Signature: (PlayerId, currentTick)
-     */
-    using SendInitialChunksCallback = std::function<void(PlayerId, uint32_t)>;
-
-    void setSendInitialChunksCallback(SendInitialChunksCallback cb);
+    void sendSnapshot(GatewayId gwId);
 
     /** @brief Access the world generator for terrain queries. */
     const WorldGenerator& getWorldGenerator() const { return worldGenerator; }
@@ -202,8 +183,6 @@ private:
 
     OutputCallback outputCallback;
     PlayerOutputCallback playerOutputCallback;
-    PlayerWatchedChunksCallback playerWatchedChunksCallback;
-    SendInitialChunksCallback sendInitialChunksCallback;
 
     /**
      * @brief Serialises all public API access between the game-loop thread and

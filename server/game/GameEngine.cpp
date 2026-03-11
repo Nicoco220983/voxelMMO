@@ -40,14 +40,6 @@ void GameEngine::setPlayerOutputCallback(PlayerOutputCallback cb) {
     playerOutputCallback = std::move(cb);
 }
 
-void GameEngine::setPlayerWatchedChunksCallback(PlayerWatchedChunksCallback cb) {
-    playerWatchedChunksCallback = std::move(cb);
-}
-
-void GameEngine::setSendInitialChunksCallback(SendInitialChunksCallback cb) {
-    sendInitialChunksCallback = std::move(cb);
-}
-
 // ── Player input ──────────────────────────────────────────────────────────
 
 void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_t size) {
@@ -156,26 +148,30 @@ void GameEngine::serializeChunks() {
         chunkPtr->updateState(registry, tick);
     }
 
-    // Build batch of all chunks with new data
-    // GatewayEngine will filter per-player using ChunkState::getDataToSend
-    batchBuf.clear();
-    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        if (!chunkPtr->state.hasNewData) continue;
-        
-        // Get full data (tick=0) - gateway will slice per-player via getDataToSend
-        const uint8_t* data = nullptr;
-        size_t length = 0;
-        chunkPtr->getDataToSend(0, data, length);
-        
-        if (length > 0 && data != nullptr) {
-            NetworkProtocol::appendToBatch(batchBuf, data, length);
+    // Dispatch one batch per gateway
+    for (auto& [gwId, gwInfo] : gateways) {
+        batchBuf.clear();
+        for (const ChunkId& cid : gwInfo.watchedChunks) {
+            Chunk* chunk = chunkRegistry.getChunkMutable(cid);
+            if (!chunk) continue;
+            
+            const uint32_t lastTick = gwInfo.lastStateTick[cid];
+            
+            // Ask the chunk what data to send for this gateway
+            const uint8_t* data = nullptr;
+            size_t length = 0;
+            chunk->getDataToSend(lastTick, data, length);
+            
+            if (length > 0 && data != nullptr) {
+                NetworkProtocol::appendToBatch(batchBuf, data, length);
+            }
+
+            gwInfo.lastStateTick[cid] = tick;
         }
+        if (!batchBuf.empty() && outputCallback)
+            outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
-    
-    // Broadcast to gateway (gateway handles per-player filtering)
-    if (!batchBuf.empty() && outputCallback) {
-        outputCallback(0, batchBuf.data(), batchBuf.size());
-    }
+
 }
 
 // ── Physics ───────────────────────────────────────────────────────────────
@@ -222,11 +218,9 @@ void GameEngine::tick() {
     ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
 
     // Phase B: Update watched chunks and generate/activate needed chunks
-    // Updates chunk.watchingPlayers, generates entities
-    // Invokes playerWatchedChunksCallback for each player
+    // Updates gateway.watchedChunks and chunk.watchingPlayers, generates entities
     auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
-        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, 
-        worldGenerator, entityFactory, tick, playerWatchedChunksCallback);
+        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
 
     // Send state updates to clients (includes chunk snapshots with player entities)
     serializeChunks();
@@ -271,8 +265,6 @@ void GameEngine::sendSelfEntityMessages() {
 // ── Dirty Flags Clearing ───────────────────────────────────────────────────
 
 void GameEngine::processPendingPlayerCreations() {
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
-    
     for (const auto& req : pendingPlayerCreations_) {
         const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS);
         const GlobalEntityId globalId = acquireEntityId();
@@ -293,11 +285,6 @@ void GameEngine::processPendingPlayerCreations() {
         // Add player entity to its chunk
         const ChunkId chunkId = ChunkId::fromSubVoxelPos(spawnPos[0], spawnPos[1], spawnPos[2]);
         chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
-        
-        // Notify gateway to send initial chunks to this new player
-        if (sendInitialChunksCallback) {
-            sendInitialChunksCallback(req.playerId, tick);
-        }
     }
     pendingPlayerCreations_.clear();
 }

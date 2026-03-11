@@ -6,15 +6,12 @@
 #include "game/components/PendingDeleteComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
 #include "common/Types.hpp"
-#include "common/WatchedChunksTracker.hpp"
+#include "game/GatewayInfo.hpp"
 
 // chunkIdOf is defined in common/Types.hpp
 #include <entt/entt.hpp>
 #include <vector>
 #include <set>
-#include <functional>
-
-#include "game/GatewayInfo.hpp"
 
 namespace voxelmmo {
 
@@ -22,15 +19,8 @@ namespace voxelmmo {
 class WorldGenerator;
 class EntityFactory;
 
-// ── Callback types ───────────────────────────────────────────────────────────-
-
-/**
- * @brief Callback invoked when a player's watched chunks change.
- * Called by updateAndActivatePlayersWatchedChunks for each player.
- */
-using PlayerWatchedChunksCallback = std::function<void(PlayerId, const std::set<ChunkId>&)>;
-
 // ── Result structures ─────────────────────────────────────────────────────────
+
 
 /**
  * @brief Result of updatePlayersWatchedChunks containing activated chunks.
@@ -120,16 +110,15 @@ inline void checkChunkMembership(
 /**
  * @brief Update watched chunks for all players, and activate chunks if they do not exist.
  *
- * For each player:
- * - Calculates watched chunks using WatchedChunksTracker
- * - Generates/activates chunks in the activation radius
+ * For each gateway:
+ * - Clears and rebuilds the gateway's watchedChunks set
+ * - Generates/activates chunks in the watch radius
  * - Updates Chunk.watchingPlayers for all affected chunks
  * - Generates entities for newly activated chunks
- * - Invokes callback with the player's watched chunks
  *
  * This function does NOT send snapshots - caller is responsible for that.
  *
- * @param gateways          Map of gateway info (players only, watchedChunks unused).
+ * @param gateways          Map of gateway info (will be modified).
  * @param playerEntities    Map from PlayerId to entt::entity.
  * @param chunkRegistry     Chunk registry for accessing/activating chunks.
  * @param registry          The ECS registry.
@@ -138,7 +127,6 @@ inline void checkChunkMembership(
  * @param generator         WorldGenerator for terrain and entity generation.
  * @param entityFactory     Factory to queue entity spawn requests.
  * @param tick              Current server tick.
- * @param callback          Optional callback invoked for each player with their watched chunks.
  * @return WatchedChunksResult containing list of activated chunks.
  */
 inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
@@ -150,8 +138,7 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
     int32_t activationRadius,
     WorldGenerator& generator,
     EntityFactory& entityFactory,
-    uint32_t tick,
-    const PlayerWatchedChunksCallback& callback = nullptr)
+    uint32_t tick)
 {
     WatchedChunksResult result;
     
@@ -160,47 +147,41 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
         chunkPtr->watchingPlayers.clear();
     }
 
-    // Rebuild watchingPlayers per-player and notify via callback
+    // Rebuild watchingPlayers and gateway watchedChunks
     for (auto& [gwId, gwInfo] : gateways) {
+        gwInfo.watchedChunks.clear();
+
         for (PlayerId pid : gwInfo.players) {
             auto entIt = playerEntities.find(pid);
             if (entIt == playerEntities.end()) continue;
 
             const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
-            
-            // Use WatchedChunksTracker for consistent calculation
-            std::set<ChunkId> watchedChunks = WatchedChunksTracker::calculateWatchedChunks(
-                dyn.x, dyn.y, dyn.z, watchRadius, 1);
-
-            // Activate chunks in activation radius
             const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
             const int32_t cy = dyn.y >> CHUNK_SHIFT_Y;
             const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
 
-            for (int32_t dx = -activationRadius; dx <= activationRadius; ++dx) {
+            for (int32_t dx = -watchRadius; dx <= watchRadius; ++dx) {
                 for (int32_t dy = -1; dy <= 1; ++dy) {
-                    for (int32_t dz = -activationRadius; dz <= activationRadius; ++dz) {
+                    for (int32_t dz = -watchRadius; dz <= watchRadius; ++dz) {
                         const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
-                        bool wasNew = !chunkRegistry.hasChunk(cid);
-                        Chunk* chunk = chunkRegistry.generate(generator, cid);
-                        chunkRegistry.activate(cid, generator, entityFactory, tick);
-                        if (chunk && wasNew) {
-                            result.activatedChunks.push_back(cid);
+                        gwInfo.watchedChunks.insert(cid);
+
+                        // Ensure activation-radius chunks exist
+                        if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
+                            bool wasNew = !chunkRegistry.hasChunk(cid);
+                            Chunk* chunk = chunkRegistry.generate(generator, cid);
+                            chunkRegistry.activate(cid, generator, entityFactory, tick);
+                            if (chunk && wasNew) {
+                                result.activatedChunks.push_back(cid);
+                            }
+                        }
+                        
+                        // Update watchingPlayers
+                        if (Chunk* chunk = chunkRegistry.getChunkMutable(cid)) {
+                            chunk->watchingPlayers.insert(pid);
                         }
                     }
                 }
-            }
-            
-            // Update watchingPlayers for all watched chunks
-            for (ChunkId cid : watchedChunks) {
-                if (Chunk* chunk = chunkRegistry.getChunkMutable(cid)) {
-                    chunk->watchingPlayers.insert(pid);
-                }
-            }
-            
-            // Notify callback with this player's watched chunks
-            if (callback) {
-                callback(pid, watchedChunks);
             }
         }
     }
