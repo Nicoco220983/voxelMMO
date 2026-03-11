@@ -54,17 +54,15 @@ export class GameClient {
   #latestServerTick = 0
   #latestServerTickTimeMs = Date.now()
 
-  /** @type {number|null} GlobalEntityId of the local player entity. */
-  #selfEntityId = null
-
   /**
    * Returns the local player's own entity as tracked by the server, or null until
    * the SELF_ENTITY message has been received.
    * @returns {BaseEntity|null}
    */
   get selfEntity() {
-    if (this.#selfEntityId === null) return null
-    return this.#entityRegistry.get(this.#selfEntityId) ?? null
+    const selfId = this.#entityRegistry.selfEntityId
+    if (selfId === null) return null
+    return this.#entityRegistry.get(selfId) ?? null
   }
 
   /**
@@ -201,6 +199,7 @@ export class GameClient {
     }
     this.#chunkRegistry.clear(this.#scene)
     this.#entityRegistry.clear()
+    this.#entityRegistry.setSelfEntityId(null)
   }
 
   /**
@@ -260,7 +259,7 @@ export class GameClient {
         const selfData = NetworkProtocol.parseSelfEntity(view)
         if (selfData) {
           console.debug('[GameClient] SELF_ENTITY deserialized:', selfData)
-          this.#selfEntityId = selfData.entityId
+          this.#entityRegistry.setSelfEntityId(selfData.entityId)
         } else {
           console.error('[GameClient] Failed to parse SELF_ENTITY message, byteLength:', view.byteLength)
         }

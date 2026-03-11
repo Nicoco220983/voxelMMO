@@ -28,12 +28,34 @@ export class EntityRegistry {
   /** @type {THREE.Scene|null} Scene reference for creating entity meshes */
   scene = null
 
+  /** @type {GlobalEntityId|null} GlobalEntityId of the local player */
+  selfEntityId = null
+
   /**
    * Set the scene for entity mesh creation.
    * @param {THREE.Scene} scene
    */
   setScene(scene) {
     this.scene = scene
+  }
+
+  /**
+   * Set the self entity ID to hide the local player's mesh.
+   * If the entity already exists, mark it as self to hide its mesh.
+   * @param {GlobalEntityId|null} entityId
+   */
+  setSelfEntityId(entityId) {
+    this.selfEntityId = entityId
+    console.debug('[EntityRegistry] Self entity ID set:', entityId)
+
+    // If entity already exists, mark it as self to hide its mesh
+    if (entityId !== null) {
+      const entity = this.#entities.get(entityId)
+      if (entity && entity.markAsSelf) {
+        console.debug('[EntityRegistry] Marking existing entity as self:', entityId)
+        entity.markAsSelf()
+      }
+    }
   }
 
   /**
@@ -50,7 +72,8 @@ export class EntityRegistry {
     if (entityType === EntityType.SHEEP) {
       entity = new SheepEntity(entityId, this.scene)
     } else if (entityType === EntityType.PLAYER || entityType === EntityType.GHOST_PLAYER) {
-      entity = new PlayerEntity(entityId, entityType, this.scene)
+      const isSelf = entityId === this.selfEntityId
+      entity = new PlayerEntity(entityId, entityType, this.scene, isSelf)
     } else {
       console.error('[EntityRegistry] Unknown entity type:', entityType, 'for entity', entityId)
       return null
