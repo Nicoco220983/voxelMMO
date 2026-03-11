@@ -8,7 +8,6 @@
 #include "common/Types.hpp"
 #include "game/GatewayInfo.hpp"
 
-// chunkIdOf is defined in common/Types.hpp
 #include <entt/entt.hpp>
 #include <vector>
 #include <set>
@@ -19,104 +18,38 @@ namespace voxelmmo {
 class WorldGenerator;
 class EntityFactory;
 
-// ── Result structures ─────────────────────────────────────────────────────────
-
-
 /**
- * @brief Result of updatePlayersWatchedChunks containing activated chunks.
+ * @brief Result of updateChunkMembership containing activated chunks.
  */
-struct WatchedChunksResult {
+struct ChunkMembershipResult {
     std::vector<ChunkId> activatedChunks;  ///< Chunks that were activated this call
 };
 
-// ── Forward declarations ──────────────────────────────────────────────────────
-
 namespace ChunkMembershipSystem {
-
 
 /**
  * @brief Mark an entity for deletion at end of tick.
- *
- * Prefer this over direct registry.destroy() to ensure proper
- * cleanup and network synchronization.
  *
  * @param registry  The ECS registry.
  * @param ent       The entity to mark for deletion.
  */
 inline void markForDeletion(entt::registry& registry, entt::entity ent) {
-    // Avoid double-marking
     if (!registry.all_of<PendingDeleteComponent>(ent)) {
         registry.emplace<PendingDeleteComponent>(ent);
-        // DirtyComponent is not modified - PendingDeleteComponent is the source of truth
     }
 }
 
 /**
- * @brief Check and update entity chunk membership.
+ * @brief Update chunk membership for all entities and rebuild chunk player sets.
  *
- * For entities with `moved=true`, computes new chunk from position,
- * removes entity from old chunk.entities, adds to old chunk.leftEntities,
- * and updates chunk.presentPlayers for players.
+ * This function performs a unified update:
+ * 1. Clears and rebuilds chunk.entities and chunk.presentPlayers from living entities
+ * 2. Handles entity movement between chunks
+ * 3. Clears and rebuilds watchingPlayers from gateway player lists
+ * 4. Activates chunks in player watch radius
  *
- * Uses ChunkMembershipComponent for O(1) lookup of current chunk (no searching).
- *
- * @param registry          The ECS registry.
- * @param chunkRegistry     Chunk registry for accessing chunks.
- */
-inline void checkChunkMembership(
-    entt::registry& registry,
-    ChunkRegistry& chunkRegistry)
-{
-    // Find entities that have moved and update their chunk membership
-    // ChunkMembershipComponent is mandatory - all entities must have it
-    auto view = registry.view<DynamicPositionComponent, ChunkMembershipComponent>();
-    view.each([&](entt::entity ent, DynamicPositionComponent& dyn, ChunkMembershipComponent& membership) {
-        if (!dyn.moved) return;
-        dyn.moved = false;
-
-        const ChunkId newChunkId = ChunkId::fromSubVoxelPos(dyn.x, dyn.y, dyn.z);
-        
-        // No chunk change - skip
-        if (membership.currentChunkId == newChunkId) return;
-
-        const bool isPlayer = registry.all_of<PlayerComponent>(ent);
-        PlayerId pid = 0;
-        if (isPlayer) {
-            pid = registry.get<PlayerComponent>(ent).playerId;
-        }
-
-        // Remove from old chunk
-        if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
-            oldChunk->entities.erase(ent);
-            oldChunk->leftEntities.insert(ent);
-            if (isPlayer) {
-                oldChunk->presentPlayers.erase(pid);
-            }
-        }
-
-        // Add to new chunk
-        if (Chunk* newChunk = chunkRegistry.getChunkMutable(newChunkId)) {
-            newChunk->entities.insert(ent);
-            if (isPlayer) {
-                newChunk->presentPlayers.insert(pid);
-            }
-        }
-
-        // Update component
-        membership.currentChunkId = newChunkId;
-    });
-}
-
-/**
- * @brief Update watched chunks for all players, and activate chunks if they do not exist.
- *
- * For each gateway:
- * - Clears and rebuilds the gateway's watchedChunks set
- * - Generates/activates chunks in the watch radius
- * - Updates Chunk.watchingPlayers for all affected chunks
- * - Generates entities for newly activated chunks
- *
- * This function does NOT send snapshots - caller is responsible for that.
+ * Using a rebuild pattern ensures consistency after entity deletions without
+ * needing separate cleanup passes.
  *
  * @param gateways          Map of gateway info (will be modified).
  * @param playerEntities    Map from PlayerId to entt::entity.
@@ -127,9 +60,9 @@ inline void checkChunkMembership(
  * @param generator         WorldGenerator for terrain and entity generation.
  * @param entityFactory     Factory to queue entity spawn requests.
  * @param tick              Current server tick.
- * @return WatchedChunksResult containing list of activated chunks.
+ * @return ChunkMembershipResult containing list of activated chunks.
  */
-inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
+inline ChunkMembershipResult update(
     std::unordered_map<GatewayId, GatewayInfo>& gateways,
     const std::unordered_map<PlayerId, entt::entity>& playerEntities,
     ChunkRegistry& chunkRegistry,
@@ -140,14 +73,46 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
     EntityFactory& entityFactory,
     uint32_t tick)
 {
-    WatchedChunksResult result;
-    
-    // First, clear all watchingPlayers (will be rebuilt)
+    ChunkMembershipResult result;
+
+    // Phase 1: Clear all chunk entity sets (will be rebuilt from living entities)
     for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        chunkPtr->entities.clear();
+        chunkPtr->presentPlayers.clear();
         chunkPtr->watchingPlayers.clear();
+        chunkPtr->leftEntities.clear();
     }
 
-    // Rebuild watchingPlayers and gateway watchedChunks
+    // Phase 2: Rebuild chunk.entities and presentPlayers from all living entities
+    // Also handle entity movement between chunks
+    auto entityView = registry.view<DynamicPositionComponent, ChunkMembershipComponent>();
+    entityView.each([&](entt::entity ent, DynamicPositionComponent& dyn, ChunkMembershipComponent& membership) {
+        const ChunkId newChunkId = ChunkId::fromSubVoxelPos(dyn.x, dyn.y, dyn.z);
+        
+        // Check if entity changed chunks
+        if (membership.currentChunkId != newChunkId) {
+            // Track in old chunk's leftEntities for delta serialization
+            if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
+                oldChunk->leftEntities.insert(ent);
+            }
+            
+            // Update membership
+            membership.currentChunkId = newChunkId;
+            dyn.moved = false;
+        }
+
+        // Add to current chunk's entity set
+        if (Chunk* chunk = chunkRegistry.getChunkMutable(newChunkId)) {
+            chunk->entities.insert(ent);
+            
+            // If player, also add to presentPlayers
+            if (auto* playerComp = registry.try_get<PlayerComponent>(ent)) {
+                chunk->presentPlayers.insert(playerComp->playerId);
+            }
+        }
+    });
+
+    // Phase 3: Rebuild watchingPlayers and gateway watchedChunks from player positions
     for (auto& [gwId, gwInfo] : gateways) {
         gwInfo.watchedChunks.clear();
 
@@ -156,14 +121,12 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
             if (entIt == playerEntities.end()) continue;
 
             const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
-            const ChunkCoord cx = dyn.x >> CHUNK_SHIFT_X;
-            const ChunkCoord cy = dyn.y >> CHUNK_SHIFT_Y;
-            const ChunkCoord cz = dyn.z >> CHUNK_SHIFT_Z;
+            const ChunkPos cpos = subVoxelToChunkPos(dyn.x, dyn.y, dyn.z);
 
             for (int32_t dx = -watchRadius; dx <= watchRadius; ++dx) {
                 for (int32_t dy = -1; dy <= 1; ++dy) {
                     for (int32_t dz = -watchRadius; dz <= watchRadius; ++dz) {
-                        const ChunkId cid = ChunkId::make(cy + dy, cx + dx, cz + dz);
+                        const ChunkId cid = ChunkId::make(cpos.y + dy, cpos.x + dx, cpos.z + dz);
                         gwInfo.watchedChunks.insert(cid);
 
                         // Ensure activation-radius chunks exist
@@ -187,50 +150,6 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
     }
 
     return result;
-}
-
-/**
- * @brief Clean up chunk sets by removing entities that no longer exist.
- *
- * Iterates over all chunks and removes:
- * - Entities from chunk.entities that are no longer valid in the registry
- * - PlayerIds from chunk.presentPlayers that are no longer in playerEntities map
- *
- * Call this after destroying player entities (e.g., from DisconnectedPlayerSystem)
- * to ensure chunk sets stay consistent.
- *
- * @param chunkRegistry  Chunk registry for accessing all chunks.
- * @param registry       The ECS registry (to check entity validity).
- * @param playerEntities Map from PlayerId to entity (to check player validity).
- */
-inline void cleanupChunkEntitySets(
-    ChunkRegistry& chunkRegistry,
-    entt::registry& registry,
-    const std::unordered_map<PlayerId, entt::entity>& playerEntities)
-{
-    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        // Remove destroyed entities from chunk.entities
-        std::vector<entt::entity> entitiesToRemove;
-        for (entt::entity ent : chunkPtr->entities) {
-            if (!registry.valid(ent)) {
-                entitiesToRemove.push_back(ent);
-            }
-        }
-        for (entt::entity ent : entitiesToRemove) {
-            chunkPtr->entities.erase(ent);
-        }
-
-        // Remove stale players from chunk.presentPlayers
-        std::vector<PlayerId> playersToRemove;
-        for (PlayerId pid : chunkPtr->presentPlayers) {
-            if (playerEntities.find(pid) == playerEntities.end()) {
-                playersToRemove.push_back(pid);
-            }
-        }
-        for (PlayerId pid : playersToRemove) {
-            chunkPtr->presentPlayers.erase(pid);
-        }
-    }
 }
 
 } // namespace ChunkMembershipSystem

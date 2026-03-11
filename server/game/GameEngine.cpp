@@ -235,22 +235,15 @@ void GameEngine::tick() {
     SheepAISystem::apply(registry, tick);
     stepPhysics();
 
-    // Process disconnected players once per second (before chunk membership)
+    // Process disconnected players once per second (before chunk membership update)
     if (tick - lastDisconnectCheckTick >= TICK_RATE) {
         DisconnectedPlayerSystem::process(registry, playerEntities, tick);
         lastDisconnectCheckTick = tick;
     }
 
-    // Clean up chunk sets after potential player deletions
-    ChunkMembershipSystem::cleanupChunkEntitySets(chunkRegistry, registry, playerEntities);
-
-    // Phase A: Check chunk membership for moved entities
-    // Updates chunk.leftEntities and chunk.presentPlayers, adds new entities to chunks
-    ChunkMembershipSystem::checkChunkMembership(registry, chunkRegistry);
-
-    // Phase B: Update watched chunks and generate/activate needed chunks
-    // Updates gateway.watchedChunks and chunk.watchingPlayers, generates entities
-    auto watchedResult = ChunkMembershipSystem::updateAndActivatePlayersWatchedChunks(
+    // Unified chunk membership update: rebuilds chunk entity sets, handles movement,
+    // updates watchingPlayers, and activates chunks
+    auto membershipResult = ChunkMembershipSystem::update(
         gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
 
     // Send state updates to clients (includes chunk snapshots with player entities)

@@ -9,12 +9,15 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include "game/GameEngine.hpp"
+#include "game/Chunk.hpp"
+#include "game/ChunkRegistry.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/InputComponent.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/PhysicsModeComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
 #include "common/MessageTypes.hpp"
 #include "common/NetworkProtocol.hpp"
 
@@ -318,6 +321,57 @@ std::vector<uint8_t> loadHexFixture(const std::string& relativePath);
  * @return Absolute path to tests/protocol_fixtures/
  */
 std::filesystem::path getFixturesDirectory();
+
+// ── Test Helpers ────────────────────────────────────────────────────────────
+
+/**
+ * @brief Simple entity chunk assignment for tests.
+ *
+ * Updates chunk membership for all entities based on their current position.
+ * Clears and rebuilds chunk.entities and chunk.presentPlayers.
+ * Does NOT handle watchingPlayers or gateway logic.
+ *
+ * @param chunkRegistry  Chunk registry for accessing chunks.
+ * @param registry       The ECS registry.
+ */
+inline void updateEntityChunks(
+    ChunkRegistry& chunkRegistry,
+    entt::registry& registry)
+{
+    using namespace voxelmmo;
+    
+    // Clear all chunk entity sets
+    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
+        chunkPtr->entities.clear();
+        chunkPtr->presentPlayers.clear();
+        chunkPtr->leftEntities.clear();
+    }
+
+    // Rebuild from all living entities
+    auto view = registry.view<DynamicPositionComponent, ChunkMembershipComponent>();
+    view.each([&](entt::entity ent, DynamicPositionComponent& dyn, ChunkMembershipComponent& membership) {
+        const ChunkId newChunkId = ChunkId::fromSubVoxelPos(dyn.x, dyn.y, dyn.z);
+        
+        // Track chunk changes for delta serialization
+        if (membership.currentChunkId != newChunkId) {
+            if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
+                oldChunk->leftEntities.insert(ent);
+            }
+            membership.currentChunkId = newChunkId;
+        }
+        
+        // Always reset moved flag
+        dyn.moved = false;
+
+        // Add to current chunk
+        if (Chunk* chunk = chunkRegistry.getChunkMutable(newChunkId)) {
+            chunk->entities.insert(ent);
+            if (auto* playerComp = registry.try_get<PlayerComponent>(ent)) {
+                chunk->presentPlayers.insert(playerComp->playerId);
+            }
+        }
+    });
+}
 
 /**
  * @brief Physics test environment for isolated physics testing.

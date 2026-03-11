@@ -160,6 +160,19 @@ inline constexpr ChunkPos getChunkPos(ChunkId chunkId) noexcept {
     return ChunkPos{ chunkId.x(), chunkId.y(), chunkId.z() };
 }
 
+/**
+ * @brief Convert sub-voxel position to chunk coordinates.
+ * @param sx,sy,sz Position in sub-voxels.
+ * @return ChunkPos containing chunk coordinates.
+ */
+inline constexpr ChunkPos subVoxelToChunkPos(SubVoxelCoord sx, SubVoxelCoord sy, SubVoxelCoord sz) noexcept {
+    return ChunkPos{
+        sx >> CHUNK_SHIFT_X,
+        sy >> CHUNK_SHIFT_Y,
+        sz >> CHUNK_SHIFT_Z
+    };
+}
+
 /** @brief Minimum payload size (bytes) that triggers LZ4 compression. */
 inline constexpr size_t LZ4_COMPRESSION_THRESHOLD = 256;
 

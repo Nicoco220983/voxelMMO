@@ -4,6 +4,7 @@
 #include "game/systems/InputSystem.hpp"
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
 
 #include <cstring>
 #include <cmath>
@@ -262,8 +263,9 @@ entt::entity PhysicsTestEnv::spawnEntity(int32_t x, int32_t y, int32_t z, Physic
     registry.emplace<BoundingBoxComponent>(ent, hx, hy, hz);
     registry.emplace<PhysicsModeComponent>(ent, mode);
     
-    // Add to chunk
+    // Add chunk membership and to chunk
     ChunkId cid = ChunkId::fromSubVoxelPos(x, y, z);
+    registry.emplace<ChunkMembershipComponent>(ent, cid);
     if (auto* chunk = chunks.getChunkMutable(cid)) {
         chunk->entities.insert(ent);
     }
@@ -274,7 +276,7 @@ entt::entity PhysicsTestEnv::spawnEntity(int32_t x, int32_t y, int32_t z, Physic
 void PhysicsTestEnv::tick(int n) {
     for (int i = 0; i < n; ++i) {
         PhysicsSystem::apply(registry, chunks);
-        ChunkMembershipSystem::checkChunkMembership(registry, chunks);
+        updateEntityChunks(chunks, registry);
     }
 }
 
