@@ -27,11 +27,14 @@ export class SheepBehaviorComponent {
  * @extends BaseEntity
  * @description Client-side sheep entity with simple procedural mesh and animation.
  *
+ * Mesh origin is at the bounding box center (y=0), matching server convention.
+ * Sheep half-height is 0.5 voxels, so feet are at y=-0.5.
+ *
  * Mesh structure:
- *   - Body: white box (0.7 x 0.5 x 1.0)
- *   - Head: white box (0.35 x 0.35 x 0.4) offset +Z
- *   - Legs: 4 small boxes (0.15 x 0.4 x 0.15) with pivot at top
- *   - Eyes: small black boxes
+ *   - Body: white box (0.7 x 0.5 x 1.0) centered at y=0
+ *   - Head: white box (0.35 x 0.35 x 0.4) at y=0.25, offset +Z
+ *   - Legs: 4 small boxes (0.15 x 0.4 x 0.15) with pivot at y=-0.25, feet at y=-0.65
+ *   - Eyes: small black boxes at y=0.3
  */
 export class SheepEntity extends BaseEntity {
   /** @type {SheepBehaviorComponent} */
@@ -63,35 +66,39 @@ export class SheepEntity extends BaseEntity {
   #createMesh() {
     const group = new THREE.Group()
 
+    const HEIGHT_OFFSET = 0.2
+
     // Materials
     const woolMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee })
     const faceMat = new THREE.MeshBasicMaterial({ color: 0x333333 })
 
-    // Body - centered at y=0.5 to match server bounding box center
+    // Body - centered at y=0 to match server bounding box center
+    // Server position is at center of bbox; sheep half-height is 0.5 voxels
     const bodyGeo = new THREE.BoxGeometry(0.7, 0.5, 1.0)
     const body = new THREE.Mesh(bodyGeo, woolMat)
-    body.position.y = 0.5
+    body.position.y = HEIGHT_OFFSET
     body.castShadow = true
     group.add(body)
 
     // Head
     const headGeo = new THREE.BoxGeometry(0.35, 0.35, 0.4)
     const head = new THREE.Mesh(headGeo, woolMat)
-    head.position.set(0, 0.75, 0.6)
+    head.position.set(0, 0.25 + HEIGHT_OFFSET, 0.6)
     head.castShadow = true
     group.add(head)
 
     // Eyes
     const eyeGeo = new THREE.BoxGeometry(0.06, 0.06, 0.02)
     const leftEye = new THREE.Mesh(eyeGeo, faceMat)
-    leftEye.position.set(-0.1, 0.8, 0.81)
+    leftEye.position.set(-0.1, 0.3 + HEIGHT_OFFSET, 0.81)
     group.add(leftEye)
     const rightEye = new THREE.Mesh(eyeGeo, faceMat)
-    rightEye.position.set(0.1, 0.8, 0.81)
+    rightEye.position.set(0.1, 0.3 + HEIGHT_OFFSET, 0.81)
     group.add(rightEye)
 
     // Legs - stored for animation
     // Pivot groups allow rotation around the top of the leg
+    // Legs extend from y=-0.25 down to y=-0.65 (0.4 length), feet at y=-0.65
     const legGeo = new THREE.BoxGeometry(0.15, 0.4, 0.15)
     const legPositions = [
       { x: -0.22, z: 0.35, name: 'FL' },  // Front left
@@ -102,7 +109,7 @@ export class SheepEntity extends BaseEntity {
 
     for (const pos of legPositions) {
       const legGroup = new THREE.Group()
-      legGroup.position.set(pos.x, 0.25, pos.z)
+      legGroup.position.set(pos.x, -0.25 + HEIGHT_OFFSET, pos.z)
 
       const leg = new THREE.Mesh(legGeo, woolMat)
       leg.position.y = -0.2  // Offset so pivot is at top
