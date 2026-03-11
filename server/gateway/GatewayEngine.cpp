@@ -33,7 +33,6 @@ void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
             off += msgSize;
         }
         // Forward the entire batch as a single WebSocket frame to all clients
-        // TODO: filter per-client by watched chunks
         broadcastBatch(buf->data(), buf->size());
     });
 }
@@ -79,6 +78,15 @@ void GatewayEngine::listen(int port) {
             ws->getUserData()->playerId = pid;
             sockets[pid] = ws;
             std::cout << "[gateway] Player " << pid << " connected\n";
+            
+            // Send all cached chunk state to the new player
+            for (const auto& [cid, state] : chunkStates) {
+                auto [data, length] = state.getDataToSend(0);
+                if (length > 0) {
+                    sendToPlayer(pid, data, length);
+                }
+            }
+            
             if (connectCb) connectCb(pid);
         },
 
