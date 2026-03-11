@@ -169,8 +169,8 @@ export class EntityRegistry {
 
     const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
 
-    // Check if compressed (flags byte at position 13)
-    const flags = view.getUint8(13)
+    // Check if compressed (flags byte at position 15, after 15-byte header)
+    const flags = view.getUint8(15)
     let entityData
 
     if (flags & 0x01) {
@@ -191,7 +191,19 @@ export class EntityRegistry {
       const componentFlags = reader.readUint8()
 
       const entity = this.#createEntity(chunkRegistry, id, type, chunkId)
-      entity.applyComponents(reader, componentFlags, messageTick)
+      if (entity) {
+        entity.applyComponents(reader, componentFlags, messageTick)
+      } else {
+        // Entity creation failed - consume component data to maintain reader position
+        if (componentFlags & POSITION_BIT) {
+          reader.readInt32(); reader.readInt32(); reader.readInt32()  // x, y, z
+          reader.readInt32(); reader.readInt32(); reader.readInt32()  // vx, vy, vz
+          reader.readUint8()  // grounded
+        }
+        if (componentFlags & SHEEP_BEHAVIOR_BIT) {
+          reader.readUint8()  // state
+        }
+      }
     }
     return count
   }

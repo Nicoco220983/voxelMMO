@@ -1,5 +1,5 @@
 #pragma once
-#include "common/BufWriter.hpp"
+#include "common/SafeBufWriter.hpp"
 #include <cstdint>
 
 namespace voxelmmo {
@@ -25,7 +25,7 @@ struct SheepBehaviorComponent {
      * @brief Serialize behavior state.
      * Wire layout: uint8 state
      */
-    void serializeFields(BufWriter& w) const noexcept {
+    void serializeFields(SafeBufWriter& w) const noexcept {
         w.write(static_cast<uint8_t>(state));
     }
 

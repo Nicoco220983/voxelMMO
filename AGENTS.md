@@ -27,8 +27,9 @@ A high performance online webgame massive multiplayer, on wide generated world.
 - **Dirty flags**: `DirtyComponent` carries `snapshotDirtyFlags` and `tickDirtyFlags` (1 bit per component).
   `modify(dirty=true)` marks both; cleared after the matching delta is sent.
 - **GlobalEntityId** (uint32): assigned at spawn, stable across chunk moves and server lifetime. Used on wire.
-- **Serialisation ownership**: each component's `serializeFields(BufWriter&)` writes its own bytes only.
+- **Serialisation ownership**: each component's `serializeFields(SafeBufWriter&)` writes its own bytes only.
   The caller (Chunk) writes the component-flags byte and decides which components to include.
+- **SafeBufWriter**: auto-growing vector-based writer prevents buffer overflows. Old `BufWriter` (raw pointer) migrated for safety.
 - **TEST world entity control**: `--test-entity-type <type>` is optional. If omitted, TEST mode spawns flat terrain with no entities (player-only). Use `--test-entity-type sheep` to spawn a test entity.
 
 # Coordinate Systems
@@ -72,7 +73,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 - `MessageTypes.hpp` — ServerMessageType, DeltaType, ClientMessageType, `InputButton` bitmask
 - `ChunkState.hpp` — unified buffer for snapshot/delta messages; used by Chunk and GatewayEngine
 - `VoxelTypes.hpp` — named voxel type constants (AIR=0, STONE=1, DIRT=2, GRASS=3)
-- `BufWriter.hpp` — sequential binary write helper
+- `SafeBufWriter.hpp` — safe sequential binary write helper (auto-growing, bounds-checked)
 - `NetworkProtocol.hpp` — serialization helpers; message format: `[type(1)][size(2)]` header, chunk messages add `[chunk_id(8)][tick(4)]` = 15 bytes
 
 **server/game/entities/**
@@ -83,7 +84,9 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 
 **server/game/WorldGenerator.hpp/cpp** — simplex noise terrain generator; `generate()` fills voxels, `generateEntities()` spawns sheep on grass
 
-**server/game/Chunk.hpp/cpp** — chunk entity set + snapshot/delta builders; `getDataForGateway()` returns data for a gateway's last tick
+**server/game/Chunk.hpp/cpp** — chunk entity set + snapshot/delta builders; uses `SafeBufWriter` for entity serialization
+
+**server/game/EntitySerializer.hpp/cpp** — entity serialization utilities; `serializeFull()` for snapshots, `serializeDelta()` for deltas
 
 **server/game/ChunkRegistry.hpp** — owns `unordered_map<ChunkId, unique_ptr<Chunk>>`; provides `getChunk()` / `getChunkMutable()`, `generate()` / `activate()` / `deactivate()`
 
@@ -92,7 +95,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 **server/game/components/**
 - `GlobalEntityIdComponent` — stable uint32 ID assigned at spawn
 - `DirtyComponent` — `snapshot/tickDirtyFlags` + lifecycle bits (CREATED_BIT=1<<6, DELETED_BIT=1<<7)
-- `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded flag
+- `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded flag; `serializeFields(SafeBufWriter&)`
 - `EntityTypeComponent`, `PlayerComponent`, `ChunkMembershipComponent`, `PhysicsModeComponent`, `BoundingBoxComponent`, `SheepBehaviorComponent`
 - `Pending{Create,ChunkChange,Delete}Component` — deferred chunk membership changes
 

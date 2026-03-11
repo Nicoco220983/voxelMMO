@@ -1,7 +1,7 @@
 #pragma once
 #include "DirtyComponent.hpp"
 #include "common/Types.hpp"
-#include "common/BufWriter.hpp"
+#include "common/SafeBufWriter.hpp"
 #include <entt/entt.hpp>
 
 namespace voxelmmo {
@@ -35,7 +35,7 @@ struct DynamicPositionComponent {
      * Wire layout: int32 x,y,z | int32 vx,vy,vz | uint8 grounded
      * The caller is responsible for writing the component-flags byte beforehand.
      */
-    void serializeFields(BufWriter& w) const noexcept {
+    void serializeFields(SafeBufWriter& w) const noexcept {
         w.write(x);  w.write(y);  w.write(z);
         w.write(vx); w.write(vy); w.write(vz);
         w.write<uint8_t>(grounded ? 1u : 0u);

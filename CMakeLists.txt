@@ -18,6 +18,7 @@ add_executable(voxelmmo
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
     server/game/ChunkRegistry.cpp
+    server/game/EntitySerializer.cpp
     server/gateway/GatewayEngine.cpp
     server/game/entities/EntityFactory.cpp
     server/game/entities/PlayerEntity.cpp
@@ -57,6 +58,7 @@ add_executable(voxelmmo_tests
     server/game/Chunk.cpp
     server/game/ChunkRegistry.cpp
     server/game/GameEngine.cpp
+    server/game/EntitySerializer.cpp
     server/game/entities/EntityFactory.cpp
     server/game/entities/PlayerEntity.cpp
     server/game/entities/GhostPlayerEntity.cpp

@@ -1,9 +1,8 @@
 #include "game/Chunk.hpp"
+#include "game/EntitySerializer.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/components/DynamicPositionComponent.hpp"
-#include "game/components/EntityTypeComponent.hpp"
-#include "game/components/SheepBehaviorComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
+#include "common/SafeBufWriter.hpp"
 #include <lz4.h>
 #include <algorithm>
 #include <cstring>
@@ -84,42 +83,19 @@ const std::vector<uint8_t>& Chunk::buildSnapshot(entt::registry& reg, uint32_t t
 
     // ── Entities: serialize raw into scratch ──────────────────────────────
     auto& scratch = state.scratch;
-    // Upper bound: int32 count + 64 bytes per entity (actual max ~28 bytes)
-    scratch.resize(sizeof(int32_t) + entities.size() * 64);
-    size_t entityOff = sizeof(int32_t);  // leave room for count prefix
+    scratch.clear();
+    
+    // Create writer with space reserved for count
+    SafeBufWriter w{scratch, sizeof(int32_t)};
+    
     int32_t entityCount = 0;
-
-    BufWriter w{scratch.data(), entityOff};
     for (auto ent : entities) {
-        const auto& dyn   = reg.get<DynamicPositionComponent>(ent);
-        const auto& etype = reg.get<EntityTypeComponent>(ent);
-        const auto& gid   = reg.get<GlobalEntityIdComponent>(ent);
-        w.write(gid.id);                          // uint32 GlobalEntityId (was uint16 ChunkEntityId)
-        w.write(static_cast<uint8_t>(etype.type));
-        
-        // Build component flags
-        uint8_t flags = POSITION_BIT;
-        if (etype.type == EntityType::SHEEP) {
-            flags |= SHEEP_BEHAVIOR_BIT;
-        }
-        // Include CREATED_BIT for newly created entities
-        if (auto* dirty = reg.try_get<DirtyComponent>(ent)) {
-            if (dirty->isCreated()) {
-                flags |= DirtyComponent::CREATED_BIT;
-            }
-        }
-        w.write(flags);
-        
-        dyn.serializeFields(w);
-        
-        // Serialize sheep behavior if present
-        if (etype.type == EntityType::SHEEP) {
-            const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
-            behavior.serializeFields(w);
-        }
+        EntitySerializer::serializeFull(reg, ent, w);
         ++entityCount;
     }
-    scratch.resize(entityOff);
+    
+    // Finalize buffer and write count at the beginning
+    w.finalize();
     std::memcpy(scratch.data(), &entityCount, sizeof(int32_t));
 
     // ── Entity section: copy raw or LZ4-compress into buf ─────────────────
@@ -211,73 +187,30 @@ bool Chunk::buildDeltaImpl(
     // Entity delta section
     const size_t entityCountOff = off;
     off += sizeof(int32_t);
+    
+    SafeBufWriter w{staging, off};
     int32_t entityCount = 0;
-    {
-        BufWriter w{staging.data(), off};
-        for (auto ent : entities) {
-            auto& dirty = reg.get<DirtyComponent>(ent);
-            const uint8_t mask = dirty.*flagsField;
-            if (!mask) continue;
-            const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
-            const auto etype = reg.get<EntityTypeComponent>(ent).type;
-            
-            // Build delta type mask based on lifecycle flags and movedEntities
-            uint8_t deltaType = 0;
-            if (reg.all_of<PendingDeleteComponent>(ent)) {
-                deltaType |= static_cast<uint8_t>(DeltaType::DELETE_ENTITY);
-            }
-            if (leftEntities.count(ent)) {
-                // Entity is leaving this chunk - old chunk sends CHUNK_CHANGE
-                deltaType |= static_cast<uint8_t>(DeltaType::CHUNK_CHANGE_ENTITY);
-            }
-            if (mask & DirtyComponent::CREATED_BIT) {
-                deltaType |= static_cast<uint8_t>(DeltaType::CREATE_ENTITY);
-            }
-            if (mask & 0x3F) {  // Has component changes (bits 0-5)
-                deltaType |= static_cast<uint8_t>(DeltaType::UPDATE_ENTITY);
-            }
-            
-            w.write(deltaType);
-            w.write(gid.id);  // uint32 GlobalEntityId
-            
-            if (deltaType & static_cast<uint8_t>(DeltaType::DELETE_ENTITY)) {
-                // DELETE: just GlobalEntityId, no additional data
-                ++entityCount;
-                continue;
-            }
-            
-            if (deltaType & static_cast<uint8_t>(DeltaType::CHUNK_CHANGE_ENTITY)) {
-                // CHUNK_CHANGE: include new chunk ID computed from position
-                const auto& dyn = reg.get<DynamicPositionComponent>(ent);
-                const ChunkId newChunkId = ChunkId::make(
-                    dyn.y >> CHUNK_SHIFT_Y,
-                    dyn.x >> CHUNK_SHIFT_X,
-                    dyn.z >> CHUNK_SHIFT_Z
-                );
-                w.write(newChunkId.packed);
-                // Note: Don't continue here - allow concatenation with CREATE/UPDATE data
-            }
-            
-            // CREATE and UPDATE: include EntityType and component data
-            w.write(static_cast<uint8_t>(etype));
-            
-            // Component mask: keep component bits 0-5, add CREATED_BIT for new entities
-            uint8_t componentMask = mask & 0x3F;
-            if (deltaType & static_cast<uint8_t>(DeltaType::CREATE_ENTITY)) {
-                componentMask |= DirtyComponent::CREATED_BIT;  // 1 << 6
-            }
-            w.write(componentMask);
-            
-            if (componentMask & POSITION_BIT)
-                reg.get<DynamicPositionComponent>(ent).serializeFields(w);
-            if (componentMask & SHEEP_BEHAVIOR_BIT)
-                reg.get<SheepBehaviorComponent>(ent).serializeFields(w);
+    
+    for (auto ent : entities) {
+        auto& dirty = reg.get<DirtyComponent>(ent);
+        const uint8_t mask = dirty.*flagsField;
+        if (!mask) continue;
+        
+        const bool isDeleted = reg.all_of<PendingDeleteComponent>(ent);
+        const bool isLeaving = leftEntities.count(ent) > 0;
+        
+        size_t bytesWritten = EntitySerializer::serializeDelta(
+            reg, ent, mask, isLeaving, isDeleted, w);
+        
+        if (bytesWritten > 0) {
             ++entityCount;
-
-            // Note: Dirty flags are cleared centrally in GameEngine::clearAllDirtyFlags()
-            // after all serialization is complete for the tick.
         }
+
+        // Note: Dirty flags are cleared centrally in GameEngine::clearAllDirtyFlags()
+        // after all serialization is complete for the tick.
     }
+    
+    off = w.offset();
     std::memcpy(staging.data() + entityCountOff, &entityCount, sizeof(int32_t));
     staging.resize(off);
 

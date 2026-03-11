@@ -104,9 +104,7 @@ TEST_CASE("DynamicPositionComponent serialization format", "[components]") {
     dyn.grounded = true;
     
     std::vector<uint8_t> buf;
-    buf.resize(25);
-    size_t offset = 0;
-    BufWriter writer(buf.data(), offset);
+    SafeBufWriter writer(buf);
     dyn.serializeFields(writer);
     
     // Little-endian format check
