@@ -82,7 +82,7 @@ public:
      *
      * @param sx/sy/sz Position in sub-voxels (1 voxel = SUBVOXEL_SIZE units).
      */
-    void teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz);
+    void teleportPlayer(PlayerId playerId, SubVoxelCoord sx, SubVoxelCoord sy, SubVoxelCoord sz);
 
     // ── Entity Factory Access ─────────────────────────────────────────────
 
@@ -268,7 +268,7 @@ private:
     /**
      * @brief Get the chunk containing the given world position.
      */
-    const Chunk* chunkAt(int32_t px, int32_t py, int32_t pz) noexcept;
+    const Chunk* chunkAt(SubVoxelCoord px, SubVoxelCoord py, SubVoxelCoord pz) noexcept;
 };
 
 } // namespace voxelmmo

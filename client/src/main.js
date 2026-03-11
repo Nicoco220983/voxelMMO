@@ -6,6 +6,8 @@ import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
 
+/** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
+
 // ── Renderer ──────────────────────────────────────────────────────────────
 const renderer = new THREE.WebGLRenderer({ antialias: true })
 renderer.setSize(window.innerWidth, window.innerHeight)

@@ -34,7 +34,7 @@ struct BaseEntity {
      */
     static entt::entity spawn(entt::registry& reg,
                               GlobalEntityId globalId,
-                              int32_t x, int32_t y, int32_t z) {
+                              SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z) {
         const entt::entity ent = reg.create();
 
         // Core wire identification - never changes

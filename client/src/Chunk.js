@@ -4,6 +4,8 @@ import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType,
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./types.js').ChunkId} ChunkId */
+/** @typedef {import('./types.js').ChunkCoord} ChunkCoord */
+/** @typedef {import('./types.js').VoxelCoord} VoxelCoord */
 
 // Re-export ChunkId helpers for backward compatibility
 export { chunkIdFromChunkPos, chunkIdFromVoxelPos, chunkIdFromSubVoxelPos } from './types.js'
@@ -45,7 +47,7 @@ const CHUNK_MATERIAL = new THREE.MeshBasicMaterial({ vertexColors: true })
 /**
  * Deterministic brightness jitter in [0, 1] from integer world coordinates.
  * Uses a fast integer hash so adjacent voxels look slightly different.
- * @param {number} wx @param {number} wy @param {number} wz
+ * @param {VoxelCoord} wx @param {VoxelCoord} wy @param {VoxelCoord} wz
  * @returns {number}
  */
 function voxelHash(wx, wy, wz) {
@@ -99,7 +101,7 @@ export class Chunk {
    * @param {number} x Local x ∈ [0, CHUNK_SIZE_X)
    * @param {number} y Local y ∈ [0, CHUNK_SIZE_Y)
    * @param {number} z Local z ∈ [0, CHUNK_SIZE_Z)
-   * @param {number} vtype VoxelType
+   * @param {VoxelCoord} vtype VoxelType
    */
   setVoxel(x, y, z, vtype) {
     this.#voxels[y * CHUNK_SIZE_X * CHUNK_SIZE_Z + x * CHUNK_SIZE_Z + z] = vtype
@@ -110,7 +112,7 @@ export class Chunk {
    * @param {number} x  Local x ∈ [0, CHUNK_SIZE_X)
    * @param {number} y  Local y ∈ [0, CHUNK_SIZE_Y)
    * @param {number} z  Local z ∈ [0, CHUNK_SIZE_Z)
-   * @returns {number} VoxelType byte (0 = AIR)
+   * @returns {VoxelCoord} VoxelType byte (0 = AIR)
    */
   getVoxel(x, y, z) {
     return this.#voxels[y * CHUNK_SIZE_X * CHUNK_SIZE_Z + x * CHUNK_SIZE_Z + z]

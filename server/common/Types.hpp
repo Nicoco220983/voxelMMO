@@ -5,6 +5,17 @@
 
 namespace voxelmmo {
 
+// ── Strong coordinate type aliases for documentation/clarity ────────────────
+
+/** @brief Sub-voxel coordinate (1 voxel = 256 sub-voxel units). */
+using SubVoxelCoord = int32_t;
+
+/** @brief Voxel coordinate (world-space in voxels). */
+using VoxelCoord = int32_t;
+
+/** @brief Chunk coordinate. */
+using ChunkCoord = int32_t;
+
 // ── Chunk voxel dimensions (must match VoxelIndex bit widths) ─────────────────
 inline constexpr uint8_t CHUNK_SIZE_Y = 32;   ///< uint5 range [0,31]
 inline constexpr uint8_t CHUNK_SIZE_X = 32;   ///< uint5 range [0,31]
@@ -32,7 +43,7 @@ struct ChunkId {
     int64_t packed{0};
 
     /** @brief Construct a ChunkId from its three signed components. */
-    static constexpr ChunkId make(int32_t chunkY, int32_t chunkX, int32_t chunkZ) noexcept {
+    static constexpr ChunkId make(ChunkCoord chunkY, ChunkCoord chunkX, ChunkCoord chunkZ) noexcept {
         ChunkId id;
         id.packed = (static_cast<int64_t>(chunkY  & 0x3F)        << 58)
                   | (static_cast<int64_t>(chunkX  & 0x1FFFFFFF)  << 29)
@@ -43,14 +54,14 @@ struct ChunkId {
     /** @brief Create a ChunkId from its three signed chunk coordinates.
      *  Matches client-side naming: chunkIdFromChunkPos()
      */
-    static constexpr ChunkId fromChunkPos(int32_t chunkX, int32_t chunkY, int32_t chunkZ) noexcept {
+    static constexpr ChunkId fromChunkPos(ChunkCoord chunkX, ChunkCoord chunkY, ChunkCoord chunkZ) noexcept {
         return make(chunkY, chunkX, chunkZ);
     }
 
     /** @brief ChunkId for the chunk that contains voxel coordinates (vx, vy, vz).
      *  Matches client-side naming: chunkIdFromVoxelPos()
      */
-    static constexpr ChunkId fromVoxelPos(int32_t voxelX, int32_t voxelY, int32_t voxelZ) noexcept {
+    static constexpr ChunkId fromVoxelPos(VoxelCoord voxelX, VoxelCoord voxelY, VoxelCoord voxelZ) noexcept {
         return make(
             voxelY >> (CHUNK_SHIFT_Y - SUBVOXEL_BITS),
             voxelX >> (CHUNK_SHIFT_X - SUBVOXEL_BITS),
@@ -61,7 +72,7 @@ struct ChunkId {
      *  Uses arithmetic right-shift for correct negative coordinate handling.
      *  Matches client-side naming: chunkIdFromSubVoxelPos()
      */
-    static constexpr ChunkId fromSubVoxelPos(int32_t subX, int32_t subY, int32_t subZ) noexcept {
+    static constexpr ChunkId fromSubVoxelPos(SubVoxelCoord subX, SubVoxelCoord subY, SubVoxelCoord subZ) noexcept {
         return make(
             subY >> CHUNK_SHIFT_Y,
             subX >> CHUNK_SHIFT_X,
@@ -69,19 +80,19 @@ struct ChunkId {
     }
 
     /** @brief Y component, signed 6-bit (range [-32, 31]). */
-    constexpr int32_t y() const noexcept {
+    constexpr ChunkCoord y() const noexcept {
         int32_t v = static_cast<int32_t>((packed >> 58) & 0x3F);
         return (v & 0x20) ? (v | 0xFFFFFFC0) : v;
     }
 
     /** @brief X component, signed 29-bit. */
-    constexpr int32_t x() const noexcept {
+    constexpr ChunkCoord x() const noexcept {
         int32_t v = static_cast<int32_t>((packed >> 29) & 0x1FFFFFFF);
         return (v & 0x10000000) ? (v | static_cast<int32_t>(0xE0000000)) : v;
     }
 
     /** @brief Z component, signed 29-bit. */
-    constexpr int32_t z() const noexcept {
+    constexpr ChunkCoord z() const noexcept {
         int32_t v = static_cast<int32_t>(packed & 0x1FFFFFFF);
         return (v & 0x10000000) ? (v | static_cast<int32_t>(0xE0000000)) : v;
     }
@@ -139,7 +150,7 @@ using PlayerId = uint32_t;
 using GatewayId = uint32_t;
 
 /** @brief Chunk coordinates unpacked from ChunkId. */
-struct ChunkPos { int32_t cx, cy, cz; };
+struct ChunkPos { ChunkCoord x, y, z; };
 
 /**
  * @brief Extract chunk coordinates from a packed ChunkId.

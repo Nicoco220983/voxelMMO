@@ -22,8 +22,8 @@ inline constexpr uint8_t POSITION_BIT = 1 << 0;
  * message header and set on the client from there.
  */
 struct DynamicPositionComponent {
-    int32_t x{0},  y{0},  z{0};   ///< World-space position (sub-voxels), always current.
-    int32_t vx{0}, vy{0}, vz{0};  ///< Velocity (sub-voxels per tick).
+    SubVoxelCoord x{0},  y{0},  z{0};   ///< World-space position (sub-voxels), always current.
+    SubVoxelCoord vx{0}, vy{0}, vz{0};  ///< Velocity (sub-voxels per tick).
     bool grounded{false};          ///< Physics output: true = entity rests on solid ground.
                                    ///< Client uses this to suppress quadratic gravity prediction.
                                    ///< GHOST entities always output true; FLYING always false.
@@ -47,8 +47,8 @@ struct DynamicPositionComponent {
      *               Pass false for routine per-tick position advances.
      */
     static void modify(entt::registry& reg, entt::entity ent,
-                       int32_t nx,  int32_t ny,  int32_t nz,
-                       int32_t nvx, int32_t nvy, int32_t nvz,
+                       SubVoxelCoord nx,  SubVoxelCoord ny,  SubVoxelCoord nz,
+                       SubVoxelCoord nvx, SubVoxelCoord nvy, SubVoxelCoord nvz,
                        bool    ngrounded, bool dirty) {
         auto& c = reg.get<DynamicPositionComponent>(ent);
         c = {nx, ny, nz, nvx, nvy, nvz, ngrounded, /*moved=*/true};

@@ -32,7 +32,7 @@ namespace voxelmmo::GhostPlayerEntity {
  */
 inline entt::entity spawn(entt::registry& reg,
                           GlobalEntityId globalId,
-                          int32_t x, int32_t y, int32_t z,
+                          SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z,
                           PlayerId playerId)
 {
     // Base components (GlobalEntityId, Dirty, ChunkMembership, PendingCreate)

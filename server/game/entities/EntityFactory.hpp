@@ -18,27 +18,27 @@ namespace voxelmmo {
  */
 struct EntitySpawnRequest {
     EntityType type;
-    int32_t x, y, z;           // Position in sub-voxels
+    SubVoxelCoord x, y, z;     // Position in sub-voxels
     PlayerId playerId{0};      // Only for player entities
     uint32_t startTick{0};     // Only for AI entities (e.g., sheep)
 
     // Constructor for non-player entities
-    static EntitySpawnRequest make(EntityType type, int32_t x, int32_t y, int32_t z) {
+    static EntitySpawnRequest make(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z) {
         return EntitySpawnRequest{type, x, y, z, 0, 0};
     }
 
     // Constructor for player entities
-    static EntitySpawnRequest makePlayer(EntityType type, int32_t x, int32_t y, int32_t z, PlayerId pid) {
+    static EntitySpawnRequest makePlayer(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z, PlayerId pid) {
         return EntitySpawnRequest{type, x, y, z, pid, 0};
     }
 
     // Constructor for AI entities (sheep, etc.)
-    static EntitySpawnRequest makeAI(EntityType type, int32_t x, int32_t y, int32_t z, uint32_t tick) {
+    static EntitySpawnRequest makeAI(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z, uint32_t tick) {
         return EntitySpawnRequest{type, x, y, z, 0, tick};
     }
 
 private:
-    EntitySpawnRequest(EntityType t, int32_t px, int32_t py, int32_t pz, PlayerId pid, uint32_t tick)
+    EntitySpawnRequest(EntityType t, SubVoxelCoord px, SubVoxelCoord py, SubVoxelCoord pz, PlayerId pid, uint32_t tick)
         : type(t), x(px), y(py), z(pz), playerId(pid), startTick(tick) {}
 };
 
@@ -94,7 +94,7 @@ public:
      * @param x,y,z Spawn position in sub-voxels
      * @return The queued entity will be created when createEntities() is called
      */
-    void spawn(EntityType type, int32_t x, int32_t y, int32_t z);
+    void spawn(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z);
 
     /**
      * @brief Queue a player entity for later creation.
@@ -103,7 +103,7 @@ public:
      * @param x,y,z Spawn position in sub-voxels
      * @param playerId Persistent player identifier
      */
-    void spawnPlayer(EntityType type, int32_t x, int32_t y, int32_t z, PlayerId playerId);
+    void spawnPlayer(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z, PlayerId playerId);
 
     /**
      * @brief Queue an AI entity for later creation.
@@ -112,7 +112,7 @@ public:
      * @param x,y,z Spawn position in sub-voxels
      * @param startTick Current tick (for AI state timing)
      */
-    void spawnAI(EntityType type, int32_t x, int32_t y, int32_t z, uint32_t startTick);
+    void spawnAI(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z, uint32_t startTick);
 
     /**
      * @brief Queue a generic spawn request.

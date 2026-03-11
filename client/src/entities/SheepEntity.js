@@ -4,6 +4,7 @@ import { EntityType, SHEEP_BEHAVIOR_BIT, SUBVOXEL_SIZE } from '../types.js'
 import * as THREE from 'three'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
+/** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
 
 /**
  * @class SheepBehaviorComponent
@@ -46,7 +47,7 @@ export class SheepEntity extends BaseEntity {
   animTime = 0
 
   /**
-   * @param {number} globalId  GlobalEntityId.
+   * @param {GlobalEntityId} globalId  GlobalEntityId.
    * @param {THREE.Scene} scene  Three.js scene to add mesh to.
    */
   constructor(globalId, scene) {

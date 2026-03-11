@@ -91,7 +91,7 @@ public:
      * @param tick                 Current server tick.
      */
     void generateChunks(ChunkRegistry& chunkRegistry,
-                        int32_t centerX, int32_t centerY, int32_t centerZ,
+                        SubVoxelCoord centerX, SubVoxelCoord centerY, SubVoxelCoord centerZ,
                         int32_t radius,
                         EntityFactory& entityFactory,
                         uint32_t tick);
@@ -107,7 +107,7 @@ public:
      * @param cz      Chunk Z coordinate.
      */
     void generate(std::vector<VoxelType>& voxels,
-                  int32_t chunkX, int32_t chunkY, int32_t chunkZ) const;
+                  ChunkCoord chunkX, ChunkCoord chunkY, ChunkCoord chunkZ) const;
 
     /**
      * @brief Return the surface world-Y voxel at voxel column (voxelX, voxelZ).
@@ -119,7 +119,7 @@ public:
      * @param voxelX  World X coordinate in voxels (not sub-voxels).
      * @param voxelZ  World Z coordinate in voxels (not sub-voxels).
      */
-    int32_t getSurfaceY(int voxelX, int voxelZ) const noexcept;
+    VoxelCoord getSurfaceY(VoxelCoord voxelX, VoxelCoord voxelZ) const noexcept;
 
     /**
      * @brief Queue entity spawn requests for a newly activated chunk.

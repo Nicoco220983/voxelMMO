@@ -1,6 +1,10 @@
 // @ts-check
 import * as THREE from 'three'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Z, getChunkPos } from './types.js'
+
+/** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
+/** @typedef {import('./types.js').VoxelCoord} VoxelCoord */
+/** @typedef {import('./types.js').ChunkCoord} ChunkCoord */
 import { NetworkProtocol, ServerMessageType } from './NetworkProtocol.js'
 import { Chunk } from './Chunk.js'
 import { ChunkRegistry } from './ChunkRegistry.js'
@@ -201,8 +205,8 @@ export class GameClient {
 
   /**
    * Dispose and unload chunks that are beyond maxRadius chunks from the player.
-   * @param {number} playerX
-   * @param {number} playerZ
+   * @param {VoxelCoord} playerX
+   * @param {VoxelCoord} playerZ
    * @param {number} [maxRadius=10]
    */
   pruneDistantChunks(playerX, playerZ, maxRadius = 10) {

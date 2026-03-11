@@ -4,6 +4,9 @@ import { POSITION_BIT } from '../types.js'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
 /** @typedef {import('../types.js').ChunkId} ChunkId */
+/** @typedef {import('../types.js').SubVoxelCoord} SubVoxelCoord */
+/** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
+/** @typedef {import('../types.js').EntityType} EntityType */
 
 /**
  * @class BaseEntity
@@ -23,10 +26,10 @@ import { POSITION_BIT } from '../types.js'
  *   are consumed by the outer loop before applyDelta() is called)
  */
 export class BaseEntity {
-  /** @type {number} GlobalEntityId (uint32) */
+  /** @type {GlobalEntityId} GlobalEntityId (uint32) */
   id
 
-  /** @type {number} EntityType (uint8) */
+  /** @type {EntityType} EntityType (uint8) */
   type
 
   /** @type {ChunkId|undefined} Current chunk ID (updated when entity moves) */
@@ -35,8 +38,8 @@ export class BaseEntity {
   motion = new DynamicPositionComponent()
 
   /**
-   * @param {number} id    GlobalEntityId.
-   * @param {number} type  EntityType.
+   * @param {GlobalEntityId} id    GlobalEntityId.
+   * @param {EntityType} type  EntityType.
    */
   constructor(id, type) {
     this.id   = id
@@ -68,7 +71,7 @@ export class BaseEntity {
    * Get current predicted world position (sub-voxel coordinates).
    * Updated by PhysicsPredictionSystem each tick. Use this for rendering.
    * Divide by SUBVOXEL_SIZE for Three.js world-space coordinates.
-   * @returns {{x: number, y: number, z: number}}
+   * @returns {{x: SubVoxelCoord, y: SubVoxelCoord, z: SubVoxelCoord}}
    */
   get currentPos() {
     return this.motion.getCurrentPos()
@@ -78,7 +81,7 @@ export class BaseEntity {
    * Get last confirmed server position (sub-voxel coordinates).
    * Use this when you need the authoritative server state.
    * Divide by SUBVOXEL_SIZE for Three.js world-space coordinates.
-   * @returns {{x: number, y: number, z: number}}
+   * @returns {{x: SubVoxelCoord, y: SubVoxelCoord, z: SubVoxelCoord}}
    */
   get receivedPos() {
     return this.motion.getReceivedPos()

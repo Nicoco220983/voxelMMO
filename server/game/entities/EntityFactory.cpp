@@ -9,15 +9,15 @@ void EntityFactory::registerSpawnImpl(EntityType type, SpawnImplFn fn) {
     spawnImpls_[type] = std::move(fn);
 }
 
-void EntityFactory::spawn(EntityType type, int32_t x, int32_t y, int32_t z) {
+void EntityFactory::spawn(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z) {
     pending_.push_back(EntitySpawnRequest::make(type, x, y, z));
 }
 
-void EntityFactory::spawnPlayer(EntityType type, int32_t x, int32_t y, int32_t z, PlayerId playerId) {
+void EntityFactory::spawnPlayer(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z, PlayerId playerId) {
     pending_.push_back(EntitySpawnRequest::makePlayer(type, x, y, z, playerId));
 }
 
-void EntityFactory::spawnAI(EntityType type, int32_t x, int32_t y, int32_t z, uint32_t startTick) {
+void EntityFactory::spawnAI(EntityType type, SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z, uint32_t startTick) {
     pending_.push_back(EntitySpawnRequest::makeAI(type, x, y, z, startTick));
 }
 

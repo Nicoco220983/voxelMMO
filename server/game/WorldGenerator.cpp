@@ -137,22 +137,22 @@ WorldGenerator::WorldGenerator(uint32_t seed, GeneratorType type, std::optional<
 
 
 void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
-                                    int32_t centerX, int32_t centerY, int32_t centerZ,
+                                    SubVoxelCoord centerX, SubVoxelCoord centerY, SubVoxelCoord centerZ,
                                     int32_t radius,
                                     EntityFactory& entityFactory,
                                     uint32_t tick) {
     // Convert center position to chunk coordinates
-    const int32_t centerCx = centerX >> CHUNK_SHIFT_X;
-    const int32_t centerCy = centerY >> CHUNK_SHIFT_Y;
-    const int32_t centerCz = centerZ >> CHUNK_SHIFT_Z;
+    const ChunkCoord centerCx = centerX >> CHUNK_SHIFT_X;
+    const ChunkCoord centerCy = centerY >> CHUNK_SHIFT_Y;
+    const ChunkCoord centerCz = centerZ >> CHUNK_SHIFT_Z;
     
     // Generate and activate chunks within radius of center
     for (int32_t dx = -radius; dx <= radius; ++dx) {
         for (int32_t dy = -radius; dy <= radius; ++dy) {
             for (int32_t dz = -radius; dz <= radius; ++dz) {
-                const int32_t cx = centerCx + dx;
-                const int32_t cy = centerCy + dy;
-                const int32_t cz = centerCz + dz;
+                const ChunkCoord cx = centerCx + dx;
+                const ChunkCoord cy = centerCy + dy;
+                const ChunkCoord cz = centerCz + dz;
                 const ChunkId chunkId = ChunkId::make(cy, cx, cz);
                 // Generate voxels, activate chunk, and generate entities
                 chunkRegistry.generate(*this, chunkId);
@@ -183,7 +183,7 @@ void WorldGenerator::computePlayerSpawnPos() {
     playerSpawnPos_[2] = 0;
 }
 
-int32_t WorldGenerator::getSurfaceY(int voxelX, int voxelZ) const noexcept {
+VoxelCoord WorldGenerator::getSurfaceY(VoxelCoord voxelX, VoxelCoord voxelZ) const noexcept {
     if (type_ == GeneratorType::TEST) {
         return 4;  // Test world: grass at worldY = 4
     }
@@ -254,7 +254,7 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
 }
 
 void WorldGenerator::generate(std::vector<VoxelType>& voxels,
-                               int32_t chunkX, int32_t chunkY, int32_t chunkZ) const
+                               ChunkCoord chunkX, ChunkCoord chunkY, ChunkCoord chunkZ) const
 {
     // ── TEST world generation ───────────────────────────────────────────────
     if (type_ == GeneratorType::TEST) {

@@ -99,7 +99,7 @@ void GameEngine::registerPlayer(GatewayId gwId, PlayerId playerId)
         it->second.players.insert(playerId);
 }
 
-void GameEngine::teleportPlayer(PlayerId playerId, int32_t sx, int32_t sy, int32_t sz) {
+void GameEngine::teleportPlayer(PlayerId playerId, SubVoxelCoord sx, SubVoxelCoord sy, SubVoxelCoord sz) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return;
@@ -182,7 +182,7 @@ void GameEngine::stepPhysics() {
 
 // ── Chunk lookup ──────────────────────────────────────────────────────────
 
-const Chunk* GameEngine::chunkAt(int32_t px, int32_t py, int32_t pz) noexcept {
+const Chunk* GameEngine::chunkAt(SubVoxelCoord px, SubVoxelCoord py, SubVoxelCoord pz) noexcept {
     return chunkRegistry.getChunk(ChunkId::fromSubVoxelPos(px, py, pz));
 }
 

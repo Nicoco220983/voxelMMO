@@ -39,7 +39,7 @@ inline constexpr int32_t SHEEP_WALK_SPEED = 38;  // ~0.15 voxels/tick
  */
 inline entt::entity spawn(entt::registry& reg,
                           GlobalEntityId globalId,
-                          int32_t x, int32_t y, int32_t z,
+                          SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z,
                           uint32_t startTick)
 {
     // Base components (GlobalEntityId, Dirty, ChunkMembership, PendingCreate)

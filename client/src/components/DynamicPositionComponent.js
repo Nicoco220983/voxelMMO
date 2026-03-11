@@ -2,6 +2,7 @@
 import { GRAVITY_DECREMENT } from '../types.js'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
+/** @typedef {import('../types.js').SubVoxelCoord} SubVoxelCoord */
 
 /**
  * @class DynamicPositionComponent
@@ -29,19 +30,19 @@ export class DynamicPositionComponent {
   // ── Received state (from server) ──────────────────────────────────────────
   /** @type {number} Reference tick when this state was received from server. */
   receivedTick = 0
-  /** @type {number} */ receivedX  = 0
-  /** @type {number} */ receivedY  = 0
-  /** @type {number} */ receivedZ  = 0
-  /** @type {number} */ receivedVx = 0
-  /** @type {number} */ receivedVy = 0
-  /** @type {number} */ receivedVz = 0
+  /** @type {SubVoxelCoord} */ receivedX  = 0
+  /** @type {SubVoxelCoord} */ receivedY  = 0
+  /** @type {SubVoxelCoord} */ receivedZ  = 0
+  /** @type {SubVoxelCoord} */ receivedVx = 0
+  /** @type {SubVoxelCoord} */ receivedVy = 0
+  /** @type {SubVoxelCoord} */ receivedVz = 0
   /** @type {boolean} When false, gravity applies. */
   receivedGrounded = false
 
   // ── Current predicted state (computed each tick) ──────────────────────────
-  /** @type {number} */ currentX = 0
-  /** @type {number} */ currentY = 0
-  /** @type {number} */ currentZ = 0
+  /** @type {SubVoxelCoord} */ currentX = 0
+  /** @type {SubVoxelCoord} */ currentY = 0
+  /** @type {SubVoxelCoord} */ currentZ = 0
 
   /**
    * Deserialize from reader: x,y,z(i32) · vx,vy,vz(i32) · grounded(u8).
@@ -110,7 +111,7 @@ export class DynamicPositionComponent {
   /**
    * Get current predicted position as of last updatePrediction() call.
    * Returns sub-voxel coordinates — divide by SUBVOXEL_SIZE for Three.js.
-   * @returns {{x: number, y: number, z: number}}
+   * @returns {{x: SubVoxelCoord, y: SubVoxelCoord, z: SubVoxelCoord}}
    */
   getCurrentPos() {
     return {
@@ -123,7 +124,7 @@ export class DynamicPositionComponent {
   /**
    * Get received position (last confirmed server state).
    * Returns sub-voxel coordinates.
-   * @returns {{x: number, y: number, z: number}}
+   * @returns {{x: SubVoxelCoord, y: SubVoxelCoord, z: SubVoxelCoord}}
    */
   getReceivedPos() {
     return {

@@ -22,7 +22,7 @@ import { lz4Decompress, BufReader } from './utils.js'
  * - When an entity moves chunks, it updates its chunkId; no new entity is created
  */
 export class EntityRegistry {
-  /** @type {Map<number, BaseEntity>} GlobalEntityId → entity */
+  /** @type {Map<GlobalEntityId, BaseEntity>} GlobalEntityId → entity */
   #entities = new Map()
 
   /** @type {THREE.Scene|null} Scene reference for creating entity meshes */
@@ -39,8 +39,8 @@ export class EntityRegistry {
   /**
    * Create an entity and register it in both global registry and chunk membership.
    * @param {ChunkRegistry} chunkRegistry
-   * @param {number} entityId
-   * @param {number} entityType
+   * @param {GlobalEntityId} entityId
+   * @param {EntityType} entityType
    * @param {ChunkId} chunkId
    * @returns {BaseEntity} The created entity
    * @private
@@ -65,7 +65,7 @@ export class EntityRegistry {
 
   /**
    * Get an entity by its global ID.
-   * @param {number} globalId
+   * @param {GlobalEntityId} globalId
    * @returns {BaseEntity|undefined}
    */
   get(globalId) {
@@ -74,7 +74,7 @@ export class EntityRegistry {
 
   /**
    * Check if an entity exists.
-   * @param {number} globalId
+   * @param {GlobalEntityId} globalId
    * @returns {boolean}
    */
   has(globalId) {
@@ -100,7 +100,7 @@ export class EntityRegistry {
    * Delete an entity and remove it from chunk membership.
    * Gets the chunk ID from entity.chunkId.
    * @param {ChunkRegistry} chunkRegistry
-   * @param {number} entityId
+   * @param {GlobalEntityId} entityId
    */
   deleteEntity(chunkRegistry, entityId) {
     const entity = this.#entities.get(entityId)

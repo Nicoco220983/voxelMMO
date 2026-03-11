@@ -4,6 +4,8 @@ import { EntityType, SUBVOXEL_SIZE } from '../types.js'
 import * as THREE from 'three'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
+/** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
+/** @typedef {import('../types.js').EntityType} EntityType */
 
 /**
  * @class PlayerEntity
@@ -22,8 +24,8 @@ export class PlayerEntity extends BaseEntity {
   playerId = 0
 
   /**
-   * @param {number} globalId  GlobalEntityId.
-   * @param {number} entityType  EntityType (PLAYER or GHOST_PLAYER).
+   * @param {GlobalEntityId} globalId  GlobalEntityId.
+   * @param {EntityType} entityType  EntityType (PLAYER or GHOST_PLAYER).
    * @param {THREE.Scene} scene  Three.js scene to add mesh to.
    */
   constructor(globalId, entityType, scene) {
@@ -34,7 +36,7 @@ export class PlayerEntity extends BaseEntity {
 
   /**
    * Create the player mesh hierarchy.
-   * @param {number} entityType
+   * @param {EntityType} entityType
    * @returns {THREE.Group}
    */
   #createMesh(entityType) {

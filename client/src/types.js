@@ -3,6 +3,21 @@
 // Import this file for its typedefs and ChunkId helper functions.
 
 /**
+ * Sub-voxel coordinate (1 voxel = 256 sub-voxel units).
+ * @typedef {number} SubVoxelCoord
+ */
+
+/**
+ * Voxel coordinate (world-space in voxels).
+ * @typedef {number} VoxelCoord
+ */
+
+/**
+ * Chunk coordinate.
+ * @typedef {number} ChunkCoord
+ */
+
+/**
  * Packed ChunkId as a BigInt: sint6(y) | sint29(x) | sint29(z) in 64 bits.
  * @typedef {bigint} ChunkId
  */
@@ -116,9 +131,9 @@ const SIGN_EXT_29 = 0xFFFFFFFFE0000000n
 
 /**
  * Create a ChunkId from its three signed chunk coordinates.
- * @param {number} cx - Chunk X, signed 29-bit
- * @param {number} cy - Chunk Y, signed 6-bit (range [-32, 31])
- * @param {number} cz - Chunk Z, signed 29-bit
+ * @param {ChunkCoord} cx - Chunk X, signed 29-bit
+ * @param {ChunkCoord} cy - Chunk Y, signed 6-bit (range [-32, 31])
+ * @param {ChunkCoord} cz - Chunk Z, signed 29-bit
  * @returns {ChunkId}
  */
 export function chunkIdFromChunkPos(cx, cy, cz) {
@@ -131,9 +146,9 @@ export function chunkIdFromChunkPos(cx, cy, cz) {
 /**
  * Compute ChunkId for the chunk containing world voxel coordinates (vx, vy, vz).
  * Uses arithmetic right-shift for correct negative coordinate handling.
- * @param {number} vx - World voxel X
- * @param {number} vy - World voxel Y
- * @param {number} vz - World voxel Z
+ * @param {VoxelCoord} vx - World voxel X
+ * @param {VoxelCoord} vy - World voxel Y
+ * @param {VoxelCoord} vz - World voxel Z
  * @returns {ChunkId}
  */
 export function chunkIdFromVoxelPos(vx, vy, vz) {
@@ -146,9 +161,9 @@ export function chunkIdFromVoxelPos(vx, vy, vz) {
 
 /**
  * Compute ChunkId for the chunk containing sub-voxel coordinates.
- * @param {number} sx - Sub-voxel X coordinate
- * @param {number} sy - Sub-voxel Y coordinate
- * @param {number} sz - Sub-voxel Z coordinate
+ * @param {SubVoxelCoord} sx - Sub-voxel X coordinate
+ * @param {SubVoxelCoord} sy - Sub-voxel Y coordinate
+ * @param {SubVoxelCoord} sz - Sub-voxel Z coordinate
  * @returns {ChunkId}
  */
 export function chunkIdFromSubVoxelPos(sx, sy, sz) {
@@ -162,7 +177,7 @@ export function chunkIdFromSubVoxelPos(sx, sy, sz) {
 /**
  * Extract chunk coordinates from a packed ChunkId.
  * @param {ChunkId} chunkId
- * @returns {{cx: number, cy: number, cz: number}}
+ * @returns {{cx: ChunkCoord, cy: ChunkCoord, cz: ChunkCoord}}
  */
 export function getChunkPos(chunkId) {
   const packed = BigInt.asIntN(64, chunkId)
@@ -197,9 +212,9 @@ export function chunkIdToString(chunkId) {
 /**
  * Create a VoxelIndex from its three unsigned voxel coordinates (0-31).
  * Layout: uint5(y) | uint5(x) | uint5(z) in 15 bits.
- * @param {number} vx - Voxel X, 0-31
- * @param {number} vy - Voxel Y, 0-31
- * @param {number} vz - Voxel Z, 0-31
+ * @param {number} vx - Local voxel X, 0-31
+ * @param {number} vy - Local voxel Y, 0-31
+ * @param {number} vz - Local voxel Z, 0-31
  * @returns {VoxelIndex}
  */
 export function voxelIndexFromPos(vx, vy, vz) {

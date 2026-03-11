@@ -156,9 +156,9 @@ inline WatchedChunksResult updateAndActivatePlayersWatchedChunks(
             if (entIt == playerEntities.end()) continue;
 
             const auto& dyn = registry.get<DynamicPositionComponent>(entIt->second);
-            const int32_t cx = dyn.x >> CHUNK_SHIFT_X;
-            const int32_t cy = dyn.y >> CHUNK_SHIFT_Y;
-            const int32_t cz = dyn.z >> CHUNK_SHIFT_Z;
+            const ChunkCoord cx = dyn.x >> CHUNK_SHIFT_X;
+            const ChunkCoord cy = dyn.y >> CHUNK_SHIFT_Y;
+            const ChunkCoord cz = dyn.z >> CHUNK_SHIFT_Z;
 
             for (int32_t dx = -watchRadius; dx <= watchRadius; ++dx) {
                 for (int32_t dy = -1; dy <= 1; ++dy) {
