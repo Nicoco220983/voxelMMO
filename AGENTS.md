@@ -31,6 +31,24 @@ A high performance online webgame massive multiplayer, on wide generated world.
   The caller (Chunk) writes the component-flags byte and decides which components to include.
 - **TEST world entity control**: `--test-entity-type <type>` is optional. If omitted, TEST mode spawns flat terrain with no entities (player-only). Use `--test-entity-type sheep` to spawn a test entity.
 
+# Coordinate Systems
+
+Three nested spaces (all use fixed-point integers, no floats in game state):
+
+| Space | Type | Unit | Range | Notes |
+|-------|------|------|-------|-------|
+| Sub-voxel | `int32_t` | 1/256 voxel | ±2B | Physics/position storage (`SUBVOXEL_SIZE=256`) |
+| Voxel | `int32_t` | 1 block | ±2B | World-space coordinates |
+| Chunk | `int32_t` | 32³ voxels | Y:[-32,31], X/Z:±268M | Chunk coordinate |
+
+**Chunk dimensions:** 32×32×32 voxels → `CHUNK_SHIFT_{Y,X,Z}=13` (log₂(32×256)).  
+Chunk coord = sub-voxel position >> 13 (arithmetic shift handles negatives).
+
+**ChunkId packing** (int64): `sint6(y) | sint29(x) | sint29(z)` — use `fromChunkPos()` / `chunkIdFromChunkPos()`.  
+**VoxelIndex packing** (uint16): `uint5(y) | uint5(x) | uint5(z)` — flat array index; use `voxelIndexFromPos()`.
+
+**Client rendering:** divide sub-voxel position by `SUBVOXEL_SIZE` (256) before passing to Three.js.
+
 # Key types
 
 | Type | Repr | Notes |
@@ -49,98 +67,52 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 # Code structure
 
 **server/common/**
-- `Types.hpp` — ChunkId (struct with static methods: `make()`, `fromChunkPos()`, `fromVoxelPos()`, `fromSubVoxelPos()`), VoxelIndex (uint16), VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; helper functions `getChunkPos()`, `voxelIndexFromPos()`, `getVoxelIndexPos()`; physics constants (`GRAVITY_DECREMENT`, `TERMINAL_VELOCITY`, `PLAYER_BBOX_HX/HY/HZ`)
-- `ChunkRegistry.hpp` — Central chunk registry owning the chunks map. Provides `getChunk()` (read-only) for physics/serialization, and `generate()/activate()/deactivate()` for chunk lifecycle management. All chunk access goes through the registry; systems should use the read-only `getChunk()` when possible.
-- `MessageTypes.hpp` — ServerMessageType (CHUNK_SNAPSHOT=0, CHUNK_SNAPSHOT_DELTA=2, CHUNK_TICK_DELTA=4, SELF_ENTITY=6), DeltaType, ClientMessageType (INPUT=0, JOIN=1), `InputButton` bitmask enum
-- `ChunkState.hpp` — unified buffer with entries (tracks tick/offset/length per message) + scratch; used by Chunk and GatewayEngine; `receiveMessage()` handles all message types with proper cleaning logic
-- `GatewayInfo.hpp` — per-gateway metadata (players, watchedChunks, lastStateTick) — located in `server/game/`
-- `BufWriter.hpp` — sequential write helper (`write<T>` via memcpy)
-- `NetworkProtocol.hpp` — serialization helpers (parseInput, parseJoin, buildSelfEntityMessage, appendToBatch). All messages use `[type(1)][size(2)]` header (3 bytes). Chunk state messages add `[chunk_id(8)][tick(4)]` = 15 byte header total. Messages are batched by direct concatenation (no length prefix).
+- `Types.hpp` — ChunkId, VoxelIndex, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; physics constants
+- `EntityType.hpp` — enum PLAYER=0, GHOST_PLAYER=1, SHEEP=2
+- `MessageTypes.hpp` — ServerMessageType, DeltaType, ClientMessageType, `InputButton` bitmask
+- `ChunkState.hpp` — unified buffer for snapshot/delta messages; used by Chunk and GatewayEngine
 - `VoxelTypes.hpp` — named voxel type constants (AIR=0, STONE=1, DIRT=2, GRASS=3)
+- `BufWriter.hpp` — sequential binary write helper
+- `NetworkProtocol.hpp` — serialization helpers; message format: `[type(1)][size(2)]` header, chunk messages add `[chunk_id(8)][tick(4)]` = 15 bytes
 
 **server/game/entities/**
-- `PlayerEntity.hpp` — `spawn()` factory for PLAYER (PhysicsMode::FULL, grounded=false)
-- `GhostPlayerEntity.hpp` — `spawn()` factory for GHOST_PLAYER (PhysicsMode::GHOST, grounded=true)
-- `SheepEntity.hpp` — `spawn()` factory for SHEEP (PhysicsMode::FULL, smaller bbox, no PlayerComponent)
-- `EntityFactory.hpp` — `playerFactories` map (`EntityType → PlayerSpawnFn`); pulled in by `GameEngine.hpp`
+- `{Player,GhostPlayer,Sheep}Entity.hpp` — spawn factories per entity type
+- `EntityFactory.hpp` — `playerFactories` map for player spawning
 
-**server/game/GameEngine.hpp/cpp**
-- `entt::registry registry` — single source of truth for all entity state
-- `ChunkRegistry chunkRegistry` — central chunk registry (replaces raw chunks map)
-- `map[GatewayId, GatewayInfo] gateways`, `map[PlayerId, entt::entity] playerEntities`
-- `registerPlayer()` — called on WebSocket connect; adds player to `gateways[gwId].players`. Player is "pending" until JOIN arrives (checked via `playerEntities`).
-- `addPlayer(playerId, type)` — spawns player entity; used internally (JOIN handler) and by tests
-- `removePlayer()` — cleans chunk membership via ChunkMembershipComponent, then destroys entity
-- `teleportPlayer()` — directly sets player position (for test setup / admin use)
-- `tick()` → `InputSystem::apply()` → `SheepAISystem::apply()` → `stepPhysics()` → `detectChunkCrossings()` → `updateEntitiesChunks()` → `rebuildGatewayWatchedChunks()` → `serializeChunks()` → chunk's `getDataForGateway()` decides what to send
-- `detectChunkCrossings()` — Phase A: detects entities crossing chunk boundaries, marks with `PendingChunkChangeComponent`
-- `updateEntitiesChunks()` — Phase B: processes pending creates/changes/deletions (entities destroyed after serialization)
-- `rebuildGatewayWatchedChunks()` — Phase C: rebuilds gateway watchedChunks, activates new chunks, sends snapshots
+**server/game/GameEngine.hpp/cpp** — main game loop; owns `registry`, `chunkRegistry`, `gateways[]`, `playerEntities[]`; tick flow: Input → AI → Physics → ChunkCrossings → UpdateChunks → RebuildWatched → Serialize
 
-**server/game/WorldGenerator.hpp/cpp**
-- Stateless procedural terrain generator using multi-frequency simplex noise
-- `generate(voxels, cx, cy, cz)` — fills voxel buffer for chunk
-- `getSurfaceY(voxelX, voxelZ)` — surface height at voxel column (matches generation logic)
-- `generateEntities(chunkId, registry, tick)` — spawns passive mobs (sheep) on surface grass
+**server/game/WorldGenerator.hpp/cpp** — simplex noise terrain generator; `generate()` fills voxels, `generateEntities()` spawns sheep on grass
 
-**server/game/Chunk.hpp/cpp**
-- `set<entt::entity> entities` — chunk membership; wire ID from GlobalEntityIdComponent
-- `bool activated` — true if chunk has been activated (entities spawned)
-- `buildSnapshot(reg, tick)` — writes to unified buffer at offset 0, clears previous entries
-- `buildSnapshotDelta` — clears previous deltas (keeps snapshot), appends new snapshot delta
-- `buildTickDelta` — appends to unified buffer
-- `getDataForGateway(lastTick, data, length)` — returns appropriate data for gateway's last received tick
+**server/game/Chunk.hpp/cpp** — chunk entity set + snapshot/delta builders; `getDataForGateway()` returns data for a gateway's last tick
 
-**server/game/ChunkRegistry.hpp**
-- Central registry owning `unordered_map<ChunkId, unique_ptr<Chunk>>`
-- `const Chunk* getChunk(ChunkId)` — read-only access for physics, serialization
-- `Chunk* getChunkMutable(ChunkId)` — non-const access for internal modifications
-- `Chunk* generate(WorldGenerator&, ChunkId, registry, tick)` — generates voxels, activates chunk (simplified: always activate on generate)
-- `Chunk* activate(WorldGenerator&, ChunkId, registry, tick)` — ensures chunk exists and is activated (spawns entities)
-- `bool deactivate(ChunkId, registry)` — removes non-player entities from chunk, sets activated=false
-- Used by GameEngine; systems receive `const ChunkRegistry&` for read-only access
+**server/game/ChunkRegistry.hpp** — owns `unordered_map<ChunkId, unique_ptr<Chunk>>`; provides `getChunk()` / `getChunkMutable()`, `generate()` / `activate()` / `deactivate()`
 
-**server/game/WorldChunk.hpp/cpp**
-- `voxels[65536]` — flat Y×X×Z voxel array
-- `voxelsSnapshotDeltas`, `voxelsTickDeltas` — changed-voxel lists, cleared after each delta send
+**server/game/WorldChunk.hpp/cpp** — `voxels[]` array + changed-voxel tracking for deltas
 
 **server/game/components/**
-- `GlobalEntityIdComponent` — `GlobalEntityId id`; assigned at spawn, never changes
-- `DirtyComponent` — `snapshotDirtyFlags`, `tickDirtyFlags`; component bits (0-5) + lifecycle bits `CREATED_BIT=1<<6`, `DELETED_BIT=1<<7`; `mark(bit)`, `markCreated()`, `markDeleted()`, `clearSnapshot()`, `clearTick()`
-- `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded, moved; `modify()`; `serializeFields(BufWriter&)`
-- `EntityTypeComponent` — `EntityType type`; emplaced on every entity at creation
-- `InputComponent` — `buttons` (uint8 bitmask), `yaw`, `pitch` (float radians); updated by handlePlayerInput(); read by InputSystem
-- `PlayerComponent` — `PlayerId playerId`; emplaced on player entities only
-- `ChunkMembershipComponent` — `currentChunkId` (assigned at spawn); managed by ChunkMembershipSystem
-- `PhysicsModeComponent` — `PhysicsMode mode` (GHOST/FLYING/FULL); server-only, not serialised
-- `BoundingBoxComponent` — AABB half-extents (hx, hy, hz) in sub-voxels; centered on position
-- `SheepBehaviorComponent` — AI state (IDLE/WALKING), end tick, target pos, yaw; `SHEEP_BEHAVIOR_BIT=1<<1`
-- `PendingCreateComponent` — `targetChunkId`; marks entity for creation in chunk (Phase B)
-- `PendingChunkChangeComponent` — `newChunkId`; marks entity moving to different chunk (Phase B)
-- `PendingDeleteComponent` — marks entity for deferred deletion after serialization (Phase B)
+- `GlobalEntityIdComponent` — stable uint32 ID assigned at spawn
+- `DirtyComponent` — `snapshot/tickDirtyFlags` + lifecycle bits (CREATED_BIT=1<<6, DELETED_BIT=1<<7)
+- `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded flag
+- `EntityTypeComponent`, `PlayerComponent`, `ChunkMembershipComponent`, `PhysicsModeComponent`, `BoundingBoxComponent`, `SheepBehaviorComponent`
+- `Pending{Create,ChunkChange,Delete}Component` — deferred chunk membership changes
 
 **server/game/systems/**
-- `InputSystem.hpp` — `apply(registry)`: translates InputComponent (buttons+yaw+pitch) → DynamicPositionComponent velocity per EntityType; called at top of `tick()` before physics
-- `PhysicsSystem.hpp` — `apply(registry, chunks)`: collision-aware physics sweeps (X/Y/Z) with voxel-context cache; handles GHOST (no collision), FLYING (collision, no gravity), FULL (collision + gravity)
-- `ChunkMembershipSystem.hpp` — `detectChunkCrossings()`, `updateEntitiesChunks()`, `rebuildGatewayWatchedChunks()`, `destroyPendingDeletions()`, `markForCreation()`, `markForDeletion()`: three-phase chunk membership management. Note: SELF_ENTITY is sent once at player creation, not on every chunk change (global entity ID is stable).
-- `SheepAISystem.hpp` — `apply(registry, tick)`: simple state machine (IDLE 2-5s → WALK 2s loop); sets velocity toward random target; runs before physics
+- `InputSystem.hpp` — converts InputComponent → velocity per EntityType
+- `PhysicsSystem.hpp` — collision-aware sweeps (X/Y/Z); handles GHOST/FLYING/FULL modes
+- `ChunkMembershipSystem.hpp` — three-phase chunk membership (detect crossings → update → rebuild watched)
+- `SheepAISystem.hpp` — state machine: IDLE → WALK loop
 
-**server/gateway/**
-- `GatewayEngine` — uWS server; player connect/disconnect/input callbacks; `receiveGameMessage()` routes to `ChunkState::receiveMessage()`
-- `receiveMessage()` handles snapshots (clear all), snapshot deltas (clear previous deltas), and tick deltas (append)
-- Manages per-chunk state cache (`chunkStates`) and per-player metadata (`players`)
+**server/gateway/GatewayEngine.hpp** — uWS WebSocket server; handles connect/disconnect/input; manages per-chunk state cache + player metadata
 
 **client/src/**
-- `types.js` — game constants (EntityType, VoxelType, SUBVOXEL_SIZE, physics constants …); ChunkId helpers: `chunkIdFromChunkPos()`, `chunkIdFromVoxelPos()`, `chunkIdFromSubVoxelPos()`, `getChunkPos()`; VoxelIndex helpers: `voxelIndexFromPos()`, `getVoxelIndexPos()`
-- `utils.js` — `lz4Decompress`, `BufReader` (sequential binary read)
-- `EntityRegistry.js` — **NEW** global entity registry; entities keyed by GlobalEntityId, track current chunkId; handles snapshot/delta entity parsing
-- `GameClient.js` — WebSocket; parses 15-byte chunk header; owns `EntityRegistry` + chunk map; `selfEntity` finds by globalId
-- `Chunk.js` — per-chunk voxel state only (entities moved to EntityRegistry); LZ4 decompression, Three.js mesh rebuild
-- `components/DynamicPositionComponent.js` — mirrors server; `getPos(tick)` for client-side interpolation
-- `entities/BaseEntity.js`, `PlayerEntity.js` — now includes `chunkId` property to track current chunk
-- `entities/SheepEntity.js` — procedural mesh (body + head + legs); leg swing animation when WALKING; face movement direction
-- `NetworkProtocol.js` — protocol enums (ServerMessageType, DeltaType, ClientMessageType, InputButton) and serialization helpers (serializeInput, serializeJoin, parseBatch, parseHeader, parseChunkHeader, parseSelfEntity). `parseBatch` uses embedded `[type][size]` headers to split concatenated messages.
-- `main.js` — Three.js scene, render loop, HUD; entity meshes keyed by GlobalEntityId only (not chunkId-entityId composite)
+- `types.js`, `utils.js` — constants, ChunkId/VoxelIndex helpers, `lz4Decompress`, `BufReader`
+- `EntityRegistry.js`, `Chunk.js`, `ChunkRegistry.js` — entity registry + chunk voxel storage
+- `GameClient.js` — WebSocket handler; owns `EntityRegistry` + chunk map
+- `components/DynamicPositionComponent.js` — client-side interpolation
+- `entities/{Base,Player,Sheep}Entity.js` — entity classes
+- `systems/{ChunkMembership,PhysicsPrediction}System.js` — client-side chunk tracking + interpolation
+- `NetworkProtocol.js` — serialization helpers, message parsing
+- `main.js` — Three.js scene, render loop, HUD
 
 **docs/**
 - `wire-format.md` — chunk message binary layout (keep in sync with Chunk.cpp)
