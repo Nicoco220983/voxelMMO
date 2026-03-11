@@ -84,9 +84,9 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 
 **server/game/WorldGenerator.hpp/cpp** — simplex noise terrain generator; `generate()` fills voxels, `generateEntities()` spawns sheep on grass
 
-**server/game/Chunk.hpp/cpp** — chunk entity set + snapshot/delta builders; uses `SafeBufWriter` for entity serialization
+**server/game/Chunk.hpp/cpp** — chunk entity set + snapshot/delta builders; uses `SafeBufWriter` for entity serialization. Tracks `enteredEntities` (new arrivals) and `leftEntities` (departures) for CHUNK_CHANGE notifications.
 
-**server/game/EntitySerializer.hpp/cpp** — entity serialization utilities; `serializeFull()` for snapshots, `serializeDelta()` for deltas
+**server/game/EntitySerializer.hpp/cpp** — entity serialization utilities; `serializeFull()` for snapshots (with `forDelta` flag for CREATE_ENTITY context), `serializeDelta()` for deltas
 
 **server/game/ChunkRegistry.hpp** — owns `unordered_map<ChunkId, unique_ptr<Chunk>>`; provides `getChunk()` / `getChunkMutable()`, `generate()` / `activate()` / `deactivate()`
 

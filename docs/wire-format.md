@@ -81,24 +81,24 @@ ComponentFlags uint8     (bitmask of present components)
 #### Entity delta record
 
 ```
-DeltaType      uint8   (bitmask: bit0=CREATE, bit1=UPDATE, bit2=DELETE, bit3=CHUNK_CHANGE)
+DeltaType      uint8   (enum: 0=CREATE, 1=UPDATE, 2=DELETE, 3=CHUNK_CHANGE)
 GlobalEntityId uint32  (stable across chunk moves and server lifetime)
-  if DeltaType has CREATE or UPDATE bit:
+  if DeltaType is CREATE or UPDATE:
     EntityType     uint8     (entity's game type)
     ComponentFlags uint8     (bitmask of dirty components, bits 0-5)
       if POSITION_BIT:       DynamicPositionComponent fields (see below)
       if SHEEP_BEHAVIOR_BIT: SheepBehaviorComponent fields
-  if DeltaType has CHUNK_CHANGE bit:
+  if DeltaType is CHUNK_CHANGE:
     NewChunkId     int64 LE (packed) - the chunk the entity moved to
-  if DeltaType has DELETE bit:
+  if DeltaType is DELETE:
     (no additional fields)
 ```
 
-**DeltaType semantics (bit flags):**
-- **CREATE_ENTITY (bit 0)**: Entity appears in this chunk for the first time.
-- **UPDATE_ENTITY (bit 1)**: Entity already known; only dirty components present.
-- **DELETE_ENTITY (bit 2)**: Entity removed from this chunk.
-- **CHUNK_CHANGE_ENTITY (bit 3)**: Entity moved to a different chunk (old chunk sends this).
+**DeltaType semantics (exclusive values):**
+- **CREATE_ENTITY (0)**: Entity appears in this chunk for the first time.
+- **UPDATE_ENTITY (1)**: Entity already known; only dirty components present.
+- **DELETE_ENTITY (2)**: Entity removed from this chunk.
+- **CHUNK_CHANGE_ENTITY (3)**: Entity moved to a different chunk (old chunk sends this).
 
 ## SELF_ENTITY (type 6)
 
