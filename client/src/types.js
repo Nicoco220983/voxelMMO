@@ -261,7 +261,5 @@ export function voxelIndexToString(voxelIndex) {
 /** @type {number} */ export const POSITION_BIT = 1 << 0
 /** @type {number} */ export const SHEEP_BEHAVIOR_BIT = 1 << 1
 
-// ── Entity lifecycle flags (must match server DirtyComponent.hpp) ──
-
-/** @type {number} Entity newly created (bit 6) */ export const CREATED_BIT = 1 << 6
-/** @type {number} Entity deleted (bit 7, reserved for future use) */ export const DELETED_BIT = 1 << 7
+// Note: Entity lifecycle is tracked via DeltaType (CREATE_ENTITY, UPDATE_ENTITY, DELETE_ENTITY, CHUNK_CHANGE_ENTITY)
+// in the message itself, not via component flags. See NetworkProtocol.js for DeltaType enum.

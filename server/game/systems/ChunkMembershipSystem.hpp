@@ -96,7 +96,7 @@ inline ChunkMembershipResult update(
             if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
                 oldChunk->leftEntities.insert(ent);
             }
-            // Mark entity with CREATED_BIT so new chunk serializes full state
+            // Mark entity with CREATE_ENTITY delta type so new chunk serializes full state
             if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
                 dirty->markCreated();
             }

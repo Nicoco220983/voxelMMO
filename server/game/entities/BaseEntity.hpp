@@ -14,7 +14,7 @@ namespace voxelmmo {
  * common components are properly initialized:
  * - GlobalEntityIdComponent: stable wire ID
  * - DirtyComponent: lifecycle and change tracking
- * - DirtyComponent::markCreated(): lifecycle tracking for network sync (CREATED_BIT)
+ * - DirtyComponent::markCreated(): lifecycle tracking for network sync (CREATE_ENTITY delta type)
  *
  * This centralizes entity creation and eliminates duplicate code in GameEngine
  * and WorldGenerator.
@@ -40,7 +40,7 @@ struct BaseEntity {
         // Core wire identification - never changes
         reg.emplace<GlobalEntityIdComponent>(ent, globalId);
 
-        // Dirty tracking for lifecycle (CREATED/DELETED) and component changes
+        // Dirty tracking for lifecycle (CREATE_ENTITY delta type) and component changes
         reg.emplace<DirtyComponent>(ent);
         // Mark entity as newly created for network sync
         reg.get<DirtyComponent>(ent).markCreated();

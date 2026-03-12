@@ -152,6 +152,7 @@ bool Chunk::buildDeltaImpl(
     entt::registry& reg,
     uint32_t tickCount,
     const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
+    DeltaType DirtyComponent::* deltaTypeField,
     uint8_t DirtyComponent::* flagsField,
     ServerMessageType rawType,
     ServerMessageType compressedType)
@@ -160,7 +161,8 @@ bool Chunk::buildDeltaImpl(
     if (voxelDeltas.empty()) {
         const bool anyDirty = std::any_of(entities.begin(), entities.end(),
             [&](entt::entity ent) {
-                return reg.get<DirtyComponent>(ent).*flagsField != 0;
+                auto& dirty = reg.get<DirtyComponent>(ent);
+                return dirty.*flagsField != 0 || dirty.*deltaTypeField != DeltaType::UPDATE_ENTITY;
             });
         // Also check for entities that left (CHUNK_CHANGE) or have pending operations
         const bool anyLeaving = !leftEntities.empty();
@@ -197,20 +199,21 @@ bool Chunk::buildDeltaImpl(
     auto processEntity = [&](entt::entity ent) {
         auto& dirty = reg.get<DirtyComponent>(ent);
         const uint8_t mask = dirty.*flagsField;
+        const DeltaType deltaType = dirty.*deltaTypeField;
         const bool isDeleted = reg.all_of<PendingDeleteComponent>(ent);
         const bool isLeaving = leftEntities.count(ent) > 0;
-        const bool isNewlyCreated = (mask & DirtyComponent::CREATED_BIT) != 0;
+        const bool isNewlyCreated = (deltaType == DeltaType::CREATE_ENTITY);
         
-        // Entities that entered this chunk (marked with CREATED_BIT) need full serialization
+        // Entities that entered this chunk (CREATE_ENTITY delta type) need full serialization
         // (not delta) because receiving clients may not have prior state for them.
         size_t bytesWritten = 0;
         if (isNewlyCreated) {
             // For entered/created entities, we still check if there's anything to send
             // (either they have dirty flags OR they're just entering/being created)
             bytesWritten = EntitySerializer::serializeFull(reg, ent, w, /*forDelta=*/true);
-        } else if (mask || isDeleted || isLeaving) {
+        } else if (mask || isDeleted || isLeaving || deltaType != DeltaType::UPDATE_ENTITY) {
             bytesWritten = EntitySerializer::serializeDelta(
-                reg, ent, mask, isLeaving, isDeleted, w);
+                reg, ent, dirty, isLeaving, isDeleted, w);
         }
         
         if (bytesWritten > 0) {
@@ -272,6 +275,7 @@ bool Chunk::buildSnapshotDelta(entt::registry& reg, uint32_t tickCount)
     
     return buildDeltaImpl(reg, tickCount,
         world.voxelsSnapshotDeltas,
+        &DirtyComponent::snapshotDeltaType,
         &DirtyComponent::snapshotDirtyFlags,
         ServerMessageType::CHUNK_SNAPSHOT_DELTA,
         ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED);
@@ -283,6 +287,7 @@ bool Chunk::buildTickDelta(entt::registry& reg, uint32_t tickCount)
 {
     return buildDeltaImpl(reg, tickCount,
         world.voxelsTickDeltas,
+        &DirtyComponent::tickDeltaType,
         &DirtyComponent::tickDirtyFlags,
         ServerMessageType::CHUNK_TICK_DELTA,
         ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED);

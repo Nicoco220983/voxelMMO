@@ -24,8 +24,8 @@ A high performance online webgame massive multiplayer, on wide generated world.
   - `CHUNK_SHIFT_Y/X/Z = 13/13/13` → chunk coord = position >> shift (works directly on sub-voxel values).
   - Client sends button bitmask + yaw/pitch; server `InputSystem` converts to velocity each tick.
   - Rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
-- **Dirty flags**: `DirtyComponent` carries `snapshotDirtyFlags` and `tickDirtyFlags` (1 bit per component).
-  `modify(dirty=true)` marks both; cleared after the matching delta is sent.
+- **Dirty tracking**: `DirtyComponent` carries `snapshotDirtyFlags` and `tickDirtyFlags` (1 bit per component)
+  plus `snapshotDeltaType` and `tickDeltaType` (CREATE_ENTITY vs UPDATE_ENTITY). Cleared after the matching delta is sent.
 - **GlobalEntityId** (uint32): assigned at spawn, stable across chunk moves and server lifetime. Used on wire.
 - **Serialisation ownership**: each component's `serializeFields(SafeBufWriter&)` writes its own bytes only.
   The caller (Chunk) writes the component-flags byte and decides which components to include.
@@ -94,7 +94,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 
 **server/game/components/**
 - `GlobalEntityIdComponent` — stable uint32 ID assigned at spawn
-- `DirtyComponent` — `snapshot/tickDirtyFlags` + lifecycle bits (CREATED_BIT=1<<6, DELETED_BIT=1<<7)
+- `DirtyComponent` — `snapshot/tickDirtyFlags` + `snapshot/tickDeltaType` (CREATE_ENTITY for new/spawned/moved, UPDATE_ENTITY default)
 - `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded flag; `serializeFields(SafeBufWriter&)`
 - `EntityTypeComponent`, `PlayerComponent`, `ChunkMembershipComponent`, `PhysicsModeComponent`, `BoundingBoxComponent`, `SheepBehaviorComponent`
 - `Pending{Create,ChunkChange,Delete}Component` — deferred chunk membership changes

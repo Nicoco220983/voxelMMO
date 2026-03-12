@@ -31,13 +31,11 @@ size_t EntitySerializer::serializeFull(
     w.write(gid.id);
     w.write(static_cast<uint8_t>(etype));
     
-    // Build flags: all applicable component bits + forced CREATED_BIT
+    // Build flags: all applicable component bits (no CREATED_BIT needed, delta type indicates creation)
     uint8_t flags = POSITION_BIT;
     if (etype == EntityType::SHEEP) {
         flags |= SHEEP_BEHAVIOR_BIT;
     }
-    // Force CREATED_BIT for full serialization consistency
-    flags |= DirtyComponent::CREATED_BIT;
     
     w.write(flags);
     
@@ -50,13 +48,15 @@ size_t EntitySerializer::serializeFull(
 size_t EntitySerializer::serializeDelta(
     entt::registry& reg,
     entt::entity ent,
-    uint8_t dirtyFlags,
+    const DirtyComponent& dirty,
     bool isLeavingChunk,
     bool isDeleted,
     SafeBufWriter& w)
 {
+    const uint8_t dirtyFlags = dirty.tickDirtyFlags;
+    
     // If no dirty flags and not deleted/leaving, nothing to serialize
-    if (dirtyFlags == 0 && !isDeleted && !isLeavingChunk) {
+    if (dirtyFlags == 0 && !isDeleted && !isLeavingChunk && dirty.tickDeltaType == DeltaType::UPDATE_ENTITY) {
         return 0;
     }
     
@@ -72,7 +72,7 @@ size_t EntitySerializer::serializeDelta(
         deltaType = DeltaType::DELETE_ENTITY;
     } else if (isLeavingChunk) {
         deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
-    } else if (dirtyFlags & DirtyComponent::CREATED_BIT) {
+    } else if (dirty.tickDeltaType == DeltaType::CREATE_ENTITY) {
         deltaType = DeltaType::CREATE_ENTITY;
     } else {
         deltaType = DeltaType::UPDATE_ENTITY;
@@ -101,11 +101,8 @@ size_t EntitySerializer::serializeDelta(
     // CREATE and UPDATE: include EntityType and component data
     w.write(static_cast<uint8_t>(etype));
     
-    // Component mask: keep component bits 0-5, preserve CREATED_BIT for new entities
+    // Component mask: keep component bits 0-5
     uint8_t componentMask = dirtyFlags & 0x3F;
-    if (dirtyFlags & DirtyComponent::CREATED_BIT) {
-        componentMask |= DirtyComponent::CREATED_BIT;
-    }
     w.write(componentMask);
     
     // Serialize components based on mask

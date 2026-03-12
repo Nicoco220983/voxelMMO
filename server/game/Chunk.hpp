@@ -150,6 +150,7 @@ private:
      * @brief Shared implementation for buildSnapshotDelta and buildTickDelta.
      *
      * @param voxelDeltas    The per-granularity changed-voxel list.
+     * @param deltaTypeField Pointer-to-member selecting snapshotDeltaType or tickDeltaType.
      * @param flagsField     Pointer-to-member selecting snapshotDirtyFlags or tickDirtyFlags.
      * @param rawType        Message type written into the header (uncompressed variant).
      * @param compressedType Message type to use if LZ4 compression is applied.
@@ -161,6 +162,7 @@ private:
         entt::registry& reg,
         uint32_t tickCount,
         const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
+        DeltaType DirtyComponent::* deltaTypeField,
         uint8_t DirtyComponent::* flagsField,
         ServerMessageType rawType,
         ServerMessageType compressedType);

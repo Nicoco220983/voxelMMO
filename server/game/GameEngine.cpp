@@ -282,9 +282,9 @@ void GameEngine::sendSelfEntityMessages() {
         auto msg = NetworkProtocol::buildSelfEntityMessage(globalId.id, tick);
         playerOutputCallback(player.playerId, msg.data(), msg.size());
 
-        // Clear CREATED_BIT so SELF_ENTITY is not sent again on next tick
+        // Clear delta type so SELF_ENTITY is not sent again on next tick
         // Other dirty flags are preserved for chunk serialization
-        dirty.snapshotDirtyFlags &= ~DirtyComponent::CREATED_BIT;
+        dirty.snapshotDeltaType = DeltaType::UPDATE_ENTITY;
     }
 }
 
@@ -319,7 +319,6 @@ void GameEngine::clearAllDirtyFlags() {
     // Clear chunk-level state
     for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
         chunkPtr->state.hasNewData = false;
-        chunkPtr->world.clearSnapshotDelta();
         chunkPtr->world.clearTickDelta();
     }
 
@@ -327,7 +326,6 @@ void GameEngine::clearAllDirtyFlags() {
     auto view = registry.view<DirtyComponent>();
     for (auto ent : view) {
         auto& dirty = view.get<DirtyComponent>(ent);
-        dirty.clearSnapshot();
         dirty.clearTick();
     }
 }

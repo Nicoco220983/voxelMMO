@@ -121,6 +121,8 @@ TEST_CASE("DirtyComponent default state is clean", "[components]") {
     CHECK_FALSE(dirty.isTickDirty());
     CHECK_FALSE(dirty.isCreated());
     CHECK_FALSE(dirty.hasComponentChanges());
+    CHECK(dirty.snapshotDeltaType == DeltaType::UPDATE_ENTITY);
+    CHECK(dirty.tickDeltaType == DeltaType::UPDATE_ENTITY);
 }
 
 TEST_CASE("DirtyComponent::mark sets both flags", "[components]") {
@@ -132,46 +134,54 @@ TEST_CASE("DirtyComponent::mark sets both flags", "[components]") {
     CHECK(dirty.hasComponentChanges());
 }
 
-TEST_CASE("DirtyComponent::markCreated sets CREATED_BIT", "[components]") {
+TEST_CASE("DirtyComponent::markCreated sets CREATE_ENTITY delta type", "[components]") {
     DirtyComponent dirty;
     dirty.markCreated();
     
     CHECK(dirty.isCreated());
+    CHECK(dirty.snapshotDeltaType == DeltaType::CREATE_ENTITY);
+    CHECK(dirty.tickDeltaType == DeltaType::CREATE_ENTITY);
     CHECK(dirty.isSnapshotDirty());
 }
 
-TEST_CASE("DirtyComponent CREATED_BIT is distinct from component bits", "[components]") {
+TEST_CASE("DirtyComponent CREATE_ENTITY delta type is distinct from component bits", "[components]") {
     DirtyComponent dirty;
     dirty.mark(POSITION_BIT);
     dirty.markCreated();
     
     CHECK(dirty.hasComponentChanges());  // Has component bit
-    CHECK(dirty.isCreated());             // Has lifecycle bit
+    CHECK(dirty.isCreated());             // Has CREATE_ENTITY delta type
 }
 
 TEST_CASE("DirtyComponent::clearSnapshot clears snapshot but not tick", "[components]") {
     DirtyComponent dirty;
     dirty.mark(POSITION_BIT);
+    dirty.markCreated();
     
     dirty.clearSnapshot();
     
     CHECK_FALSE(dirty.isSnapshotDirty());
+    CHECK(dirty.snapshotDeltaType == DeltaType::UPDATE_ENTITY);
     CHECK(dirty.isTickDirty());  // Preserved
+    CHECK(dirty.tickDeltaType == DeltaType::CREATE_ENTITY);  // Preserved
 }
 
 TEST_CASE("DirtyComponent::clearTick clears tick but not snapshot", "[components]") {
     DirtyComponent dirty;
     dirty.mark(POSITION_BIT);
+    dirty.markCreated();
     
     dirty.clearTick();
     
     CHECK(dirty.isSnapshotDirty());  // Preserved
+    CHECK(dirty.snapshotDeltaType == DeltaType::CREATE_ENTITY);  // Preserved
     CHECK_FALSE(dirty.isTickDirty());
+    CHECK(dirty.tickDeltaType == DeltaType::UPDATE_ENTITY);
 }
 
-TEST_CASE("DirtyComponent hasComponentChanges ignores lifecycle bits", "[components]") {
+TEST_CASE("DirtyComponent hasComponentChanges ignores delta type", "[components]") {
     DirtyComponent dirty;
-    dirty.markCreated();  // Lifecycle bit only
+    dirty.markCreated();  // Delta type only, no component bits
     
     CHECK_FALSE(dirty.hasComponentChanges());
 }
