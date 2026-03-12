@@ -265,10 +265,12 @@ private:
     void sendSelfEntityMessages();
 
     /**
-     * @brief Clear all dirty flags after serialization.
+     * @brief Clear chunk-level state after serialization.
      *
-     * Clears snapshot and tick dirty flags for all entities, and voxel deltas
-     * for all chunks. Called at the end of tick() after all serialization.
+     * Clears voxel tick deltas and hasNewData flags for all chunks.
+     * Entity dirty flags are cleared by Chunk::updateState() based on what
+     * was serialized (tick flags after tick delta, both after snapshot delta).
+     * Called at the end of tick() after all serialization.
      */
     void clearAllDirtyFlags();
 

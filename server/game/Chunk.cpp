@@ -299,17 +299,64 @@ bool Chunk::updateState(entt::registry& reg, uint32_t tickCount)
     // No serialization yet: build full snapshot
     if (state.isEmpty()) {
         buildSnapshot(reg, tickCount);
+        // Snapshot supersedes everything - clear all dirty flags for entities in this chunk
+        clearEntityDirtyFlags(reg, /*clearSnapshotFlags=*/true);
         return true;
     }
 
     // First call after snapshot, or every 20 calls: build snapshot delta
     const size_t deltaCount = state.getDeltaCount();
     if (deltaCount == 0 || deltaCount % 20 == 0) {
-        return buildSnapshotDelta(reg, tickCount);
+        bool built = buildSnapshotDelta(reg, tickCount);
+        if (built) {
+            // Snapshot delta includes all changes since last snapshot - clear all flags
+            clearEntityDirtyFlags(reg, /*clearSnapshotFlags=*/true);
+        }
+        return built;
     }
 
     // Otherwise: build tick delta
-    return buildTickDelta(reg, tickCount);
+    bool built = buildTickDelta(reg, tickCount);
+    if (built) {
+        // Tick delta only includes tick-level changes - clear only tick flags
+        clearEntityDirtyFlags(reg, /*clearSnapshotFlags=*/false);
+    }
+    return built;
+}
+
+// ── Entity dirty flag clearing ─────────────────────────────────────────────
+
+void Chunk::clearEntityDirtyFlags(entt::registry& reg, bool clearSnapshotFlags) const
+{
+    // Clear flags for all entities currently in this chunk
+    for (auto ent : entities) {
+        if (auto* dirty = reg.try_get<DirtyComponent>(ent)) {
+            dirty->clearTick();
+            if (clearSnapshotFlags) {
+                // Don't clear snapshotDeltaType if it's CREATE_ENTITY - 
+                // sendSelfEntityMessages() needs this to detect new players
+                // and will clear it after sending SELF_ENTITY
+                if (dirty->snapshotDeltaType != DeltaType::CREATE_ENTITY) {
+                    dirty->snapshotDeltaType = DeltaType::UPDATE_ENTITY;
+                }
+                dirty->snapshotDirtyFlags = 0;
+            }
+        }
+    }
+    
+    // Also clear flags for entities that left this chunk (they may still have pending deltas)
+    for (auto ent : leftEntities) {
+        if (auto* dirty = reg.try_get<DirtyComponent>(ent)) {
+            dirty->clearTick();
+            if (clearSnapshotFlags) {
+                // Don't clear snapshotDeltaType if it's CREATE_ENTITY
+                if (dirty->snapshotDeltaType != DeltaType::CREATE_ENTITY) {
+                    dirty->snapshotDeltaType = DeltaType::UPDATE_ENTITY;
+                }
+                dirty->snapshotDirtyFlags = 0;
+            }
+        }
+    }
 }
 
 // ── Gateway data query ─────────────────────────────────────────────────────

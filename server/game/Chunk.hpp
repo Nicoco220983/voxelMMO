@@ -127,6 +127,18 @@ public:
      */
     void getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const;
 
+    /**
+     * @brief Clear dirty flags for entities in this chunk based on what was serialized.
+     *
+     * After a tick delta: clears tickDirtyFlags and tickDeltaType
+     * After a snapshot delta: clears both tick AND snapshot flags (full reset)
+     *
+     * @param reg The ECS registry.
+     * @param clearSnapshotFlags If true, clear both tick and snapshot flags (snapshot delta case).
+     *                           If false, clear only tick flags (tick delta case).
+     */
+    void clearEntityDirtyFlags(entt::registry& reg, bool clearSnapshotFlags) const;
+
     /** @brief Byte length of the chunk message header (including entity_type + size prefix). */
     static constexpr size_t HEADER_SIZE = CHUNK_MESSAGE_HEADER_SIZE; // entity_type(1) + size(2) + ChunkId(8) + tick(4)
 

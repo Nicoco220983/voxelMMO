@@ -332,17 +332,11 @@ void GameEngine::processPendingPlayerCreations() {
 }
 
 void GameEngine::clearAllDirtyFlags() {
-    // Clear chunk-level state
+    // Clear chunk-level state only
+    // Entity dirty flags are cleared by Chunk::updateState() based on what was serialized
     for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
         chunkPtr->state.hasNewData = false;
         chunkPtr->world.clearTickDelta();
-    }
-
-    // Clear entity dirty flags for all entities in registry
-    auto view = registry.view<DirtyComponent>();
-    for (auto ent : view) {
-        auto& dirty = view.get<DirtyComponent>(ent);
-        dirty.clearTick();
     }
 }
 
