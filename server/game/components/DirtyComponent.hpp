@@ -14,7 +14,7 @@ namespace voxelmmo {
  * Delta types: Each entity record in a delta message has a DeltaType:
  *   - CREATE_ENTITY (0): entity newly spawned or moved from elsewhere
  *   - UPDATE_ENTITY (1): entity already known, only dirty components sent
- *   - DELETE_ENTITY (2): entity removed (tracked via PendingDeleteComponent)
+ *   - DELETE_ENTITY (2): entity being removed (set by markForDeletion())
  *   - CHUNK_CHANGE_ENTITY (3): entity moved to different chunk
  *
  * Granularity:
@@ -41,6 +41,15 @@ struct DirtyComponent {
 
     bool isCreated() const noexcept {
         return snapshotDeltaType == DeltaType::CREATE_ENTITY;
+    }
+
+    void markForDeletion() noexcept {
+        snapshotDeltaType = DeltaType::DELETE_ENTITY;
+        tickDeltaType = DeltaType::DELETE_ENTITY;
+    }
+
+    bool isDeleted() const noexcept {
+        return tickDeltaType == DeltaType::DELETE_ENTITY;
     }
 
     /** @brief Check if any component bits (excluding lifecycle) are dirty. */

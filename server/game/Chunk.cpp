@@ -1,7 +1,6 @@
 #include "game/Chunk.hpp"
 #include "game/EntitySerializer.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/components/PendingDeleteComponent.hpp"
 #include "common/SafeBufWriter.hpp"
 #include <lz4.h>
 #include <algorithm>
@@ -200,7 +199,7 @@ bool Chunk::buildDeltaImpl(
         auto& dirty = reg.get<DirtyComponent>(ent);
         const uint8_t mask = dirty.*flagsField;
         const DeltaType deltaType = dirty.*deltaTypeField;
-        const bool isDeleted = reg.all_of<PendingDeleteComponent>(ent);
+        const bool isDeleted = (deltaType == DeltaType::DELETE_ENTITY);
         const bool isLeaving = leftEntities.count(ent) > 0;
         const bool isNewlyCreated = (deltaType == DeltaType::CREATE_ENTITY);
         

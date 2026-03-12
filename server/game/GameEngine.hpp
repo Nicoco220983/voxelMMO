@@ -273,6 +273,18 @@ private:
     void clearAllDirtyFlags();
 
     /**
+     * @brief Set DELETE_ENTITY delta type on entities marked with PendingDeleteComponent.
+     *
+     * This is called after serialization is complete but before entities are destroyed.
+     * It ensures that any entities marked for deletion during this tick will have
+     * their DELETE_ENTITY delta serialized on the NEXT tick (when they are actually destroyed).
+     *
+     * Note: Entities that entered leftEntities during chunk membership update are
+     * handled via CHUNK_CHANGE_ENTITY, not DELETE_ENTITY.
+     */
+    void setDeleteDeltaOnPendingDeletions();
+
+    /**
      * @brief Process pending player creation requests.
      *
      * Creates player entities directly (without EntityFactory) from the

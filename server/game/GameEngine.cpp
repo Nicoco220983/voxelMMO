@@ -246,6 +246,10 @@ void GameEngine::tick() {
     auto membershipResult = ChunkMembershipSystem::update(
         gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
 
+    // Set DELETE_ENTITY delta type on entities marked for deletion
+    // This must happen before serialization so the DELETE delta is sent
+    setDeleteDeltaOnPendingDeletions();
+
     // Send state updates to clients (includes chunk snapshots with player entities)
     serializeChunks();
 
@@ -256,10 +260,22 @@ void GameEngine::tick() {
     // Clear all dirty flags after serialization
     clearAllDirtyFlags();
 
-    // Destroy any pending deletions from previous tick first
-    // (their DELETE deltas have already been serialized and sent)
+    // Destroy any pending deletions
+    // (their DELETE deltas have been serialized and sent above)
     auto pendingDeletionView = registry.view<PendingDeleteComponent>();
     registry.destroy(pendingDeletionView.begin(), pendingDeletionView.end());
+}
+
+// ── Pending Deletion Management ────────────────────────────────────────────
+
+void GameEngine::setDeleteDeltaOnPendingDeletions() {
+    // Find all entities marked with PendingDeleteComponent and set their delta type
+    // This ensures Chunk.cpp will serialize them with DELETE_ENTITY delta type
+    auto view = registry.view<PendingDeleteComponent, DirtyComponent>();
+    for (auto ent : view) {
+        auto& dirty = view.get<DirtyComponent>(ent);
+        dirty.markForDeletion();
+    }
 }
 
 // ── Self Entity Messages ──────────────────────────────────────────────────
