@@ -5,6 +5,7 @@
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
+#include "game/components/DirtyComponent.hpp"
 #include "common/Types.hpp"
 #include "game/GatewayInfo.hpp"
 
@@ -81,7 +82,6 @@ inline ChunkMembershipResult update(
         chunkPtr->presentPlayers.clear();
         chunkPtr->watchingPlayers.clear();
         chunkPtr->leftEntities.clear();
-        chunkPtr->enteredEntities.clear();
     }
 
     // Phase 2: Rebuild chunk.entities and presentPlayers from all living entities
@@ -96,9 +96,9 @@ inline ChunkMembershipResult update(
             if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
                 oldChunk->leftEntities.insert(ent);
             }
-            // Track in new chunk's enteredEntities for full serialization
-            if (Chunk* newChunk = chunkRegistry.getChunkMutable(newChunkId)) {
-                newChunk->enteredEntities.insert(ent);
+            // Mark entity with CREATED_BIT so new chunk serializes full state
+            if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
+                dirty->markCreated();
             }
             
             // Update membership

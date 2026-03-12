@@ -61,16 +61,6 @@ public:
      * to be added to their new chunk. After processing, this set is cleared.
      */
     std::set<entt::entity> leftEntities;
-    
-    /**
-     * @brief Set of entities that have entered this chunk this tick.
-     *
-     * These entities have just moved into this chunk from another chunk.
-     * They need to be serialized with serializeFull (not delta) because
-     * the receiving clients may not have any prior state for them.
-     * After processing, this set is cleared.
-     */
-    std::set<entt::entity> enteredEntities;
 
     /** @brief Serialised state cache (unified buffer with entries). */
     ChunkState state;

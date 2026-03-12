@@ -199,13 +199,12 @@ bool Chunk::buildDeltaImpl(
         const uint8_t mask = dirty.*flagsField;
         const bool isDeleted = reg.all_of<PendingDeleteComponent>(ent);
         const bool isLeaving = leftEntities.count(ent) > 0;
-        const bool isEntered = enteredEntities.count(ent) > 0;
         const bool isNewlyCreated = (mask & DirtyComponent::CREATED_BIT) != 0;
         
-        // Entities that entered this chunk or are newly created need full serialization
+        // Entities that entered this chunk (marked with CREATED_BIT) need full serialization
         // (not delta) because receiving clients may not have prior state for them.
         size_t bytesWritten = 0;
-        if (isEntered || isNewlyCreated) {
+        if (isNewlyCreated) {
             // For entered/created entities, we still check if there's anything to send
             // (either they have dirty flags OR they're just entering/being created)
             bytesWritten = EntitySerializer::serializeFull(reg, ent, w, /*forDelta=*/true);

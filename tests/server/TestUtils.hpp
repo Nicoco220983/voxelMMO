@@ -345,7 +345,6 @@ inline void updateEntityChunks(
         chunkPtr->entities.clear();
         chunkPtr->presentPlayers.clear();
         chunkPtr->leftEntities.clear();
-        chunkPtr->enteredEntities.clear();
     }
 
     // Rebuild from all living entities
@@ -358,8 +357,9 @@ inline void updateEntityChunks(
             if (Chunk* oldChunk = chunkRegistry.getChunkMutable(membership.currentChunkId)) {
                 oldChunk->leftEntities.insert(ent);
             }
-            if (Chunk* newChunk = chunkRegistry.getChunkMutable(newChunkId)) {
-                newChunk->enteredEntities.insert(ent);
+            // Mark entity with CREATED_BIT so new chunk serializes full state
+            if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
+                dirty->markCreated();
             }
             membership.currentChunkId = newChunkId;
         }
