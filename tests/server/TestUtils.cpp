@@ -60,14 +60,15 @@ void TestEnv::teleport(PlayerId pid, int32_t x, int32_t y, int32_t z) {
 }
 
 void TestEnv::setInput(PlayerId pid, uint8_t buttons, float yaw, float pitch) {
-    // Build INPUT message
-    uint8_t inputMsg[13];
+    // Build INPUT message (14 bytes)
+    uint8_t inputMsg[14];
     inputMsg[0] = static_cast<uint8_t>(ClientMessageType::INPUT);
-    inputMsg[1] = 13;  // size low
+    inputMsg[1] = 14;  // size low
     inputMsg[2] = 0;   // size high
-    inputMsg[3] = buttons;
-    std::memcpy(&inputMsg[4], &yaw, sizeof(float));
-    std::memcpy(&inputMsg[8], &pitch, sizeof(float));
+    inputMsg[3] = static_cast<uint8_t>(InputType::MOVE);  // default input type
+    inputMsg[4] = buttons;
+    std::memcpy(&inputMsg[5], &yaw, sizeof(float));
+    std::memcpy(&inputMsg[9], &pitch, sizeof(float));
     
     engine_.handlePlayerInput(pid, inputMsg, sizeof(inputMsg));
 }

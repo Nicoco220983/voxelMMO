@@ -2,7 +2,7 @@
 #include "game/components/InputComponent.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 #include <cmath>

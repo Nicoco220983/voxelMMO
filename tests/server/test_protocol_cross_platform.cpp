@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "common/NetworkProtocol.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/EntityType.hpp"
 #include "TestUtils.hpp"
 
@@ -27,6 +27,7 @@ TEST_CASE("Server parses all INPUT fixtures correctly", "[protocol][cross-platfo
         auto msg = NetworkProtocol::parseInput(data.data(), data.size());
         
         REQUIRE(msg.has_value());
+        CHECK(msg->inputType == InputType::MOVE);
         CHECK(msg->buttons == 0);
         CHECK(msg->yaw == 0.0f);
         CHECK(msg->pitch == 0.0f);
@@ -37,6 +38,7 @@ TEST_CASE("Server parses all INPUT fixtures correctly", "[protocol][cross-platfo
         auto msg = NetworkProtocol::parseInput(data.data(), data.size());
         
         REQUIRE(msg.has_value());
+        CHECK(msg->inputType == InputType::MOVE);
         CHECK(msg->buttons == static_cast<uint8_t>(InputButton::FORWARD));
         CHECK(msg->yaw == 0.0f);
         CHECK(msg->pitch == 0.0f);
@@ -47,6 +49,7 @@ TEST_CASE("Server parses all INPUT fixtures correctly", "[protocol][cross-platfo
         auto msg = NetworkProtocol::parseInput(data.data(), data.size());
         
         REQUIRE(msg.has_value());
+        CHECK(msg->inputType == InputType::MOVE);
         CHECK(msg->buttons == static_cast<uint8_t>(InputButton::JUMP));
     }
     
@@ -55,6 +58,7 @@ TEST_CASE("Server parses all INPUT fixtures correctly", "[protocol][cross-platfo
         auto msg = NetworkProtocol::parseInput(data.data(), data.size());
         
         REQUIRE(msg.has_value());
+        CHECK(msg->inputType == InputType::MOVE);
         CHECK(msg->buttons == 0x3F);  // All 6 button bits set
     }
     
@@ -63,6 +67,7 @@ TEST_CASE("Server parses all INPUT fixtures correctly", "[protocol][cross-platfo
         auto msg = NetworkProtocol::parseInput(data.data(), data.size());
         
         REQUIRE(msg.has_value());
+        CHECK(msg->inputType == InputType::MOVE);
         CHECK(msg->yaw == 1.0f);
         CHECK(msg->pitch == 2.0f);
     }
@@ -72,6 +77,7 @@ TEST_CASE("Server parses all INPUT fixtures correctly", "[protocol][cross-platfo
         auto msg = NetworkProtocol::parseInput(data.data(), data.size());
         
         REQUIRE(msg.has_value());
+        CHECK(msg->inputType == InputType::MOVE);
         CHECK(msg->buttons == (static_cast<uint8_t>(InputButton::FORWARD) | 
                                static_cast<uint8_t>(InputButton::LEFT)));
         CHECK(msg->yaw == Approx(3.14159f).margin(0.00001f));
@@ -161,7 +167,7 @@ TEST_CASE("All fixtures have correct message headers", "[protocol][cross-platfor
             INFO("Checking header for: " << fixture);
             REQUIRE(data.size() >= 3);
             CHECK(data[0] == static_cast<uint8_t>(ClientMessageType::INPUT));
-            CHECK(data[1] == 13);  // size low byte
+            CHECK(data[1] == 14);  // size low byte
             CHECK(data[2] == 0);   // size high byte
         }
     }
@@ -209,17 +215,23 @@ TEST_CASE("Fixtures use correct little-endian encoding", "[protocol][cross-platf
     SECTION("INPUT yaw/pitch are little-endian float32") {
         auto data = loadHexFixture("client_to_server/input/input_yaw_pitch.hex");
         
-        // yaw = 1.0f in little-endian: 0x00 0x00 0x80 0x3f
+        // inputType at offset 3: MOVE = 0
+        CHECK(data[3] == 0x00);
+        
+        // buttons at offset 4: 0
         CHECK(data[4] == 0x00);
+        
+        // yaw = 1.0f in little-endian: 0x00 0x00 0x80 0x3f
         CHECK(data[5] == 0x00);
-        CHECK(data[6] == 0x80);
-        CHECK(data[7] == 0x3f);
+        CHECK(data[6] == 0x00);
+        CHECK(data[7] == 0x80);
+        CHECK(data[8] == 0x3f);
         
         // pitch = 2.0f in little-endian: 0x00 0x00 0x00 0x40
-        CHECK(data[8] == 0x00);
         CHECK(data[9] == 0x00);
         CHECK(data[10] == 0x00);
-        CHECK(data[11] == 0x40);
+        CHECK(data[11] == 0x00);
+        CHECK(data[12] == 0x40);
     }
     
     SECTION("SELF_ENTITY entityId/tick are little-endian uint32") {

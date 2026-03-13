@@ -7,7 +7,7 @@
 #include "game/components/BoundingBoxComponent.hpp"
 #include "game/components/PhysicsModeComponent.hpp"
 #include "game/components/SheepBehaviorComponent.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
 

@@ -1,6 +1,6 @@
 #pragma once
 #include "common/EntityType.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/SafeBufWriter.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>

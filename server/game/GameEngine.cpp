@@ -5,7 +5,7 @@
 #include "game/components/SheepBehaviorComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DisconnectedPlayerComponent.hpp"

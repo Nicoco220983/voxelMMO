@@ -1,7 +1,7 @@
 #pragma once
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/EntityType.hpp"
 #include <entt/entt.hpp>
 #include <vector>

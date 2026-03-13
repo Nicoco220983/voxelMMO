@@ -1,5 +1,5 @@
 #include "gateway/GatewayEngine.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/NetworkProtocol.hpp"
 #include <iostream>
 #include <cstring>

@@ -18,7 +18,7 @@
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/NetworkProtocol.hpp"
 
 #include <unordered_map>

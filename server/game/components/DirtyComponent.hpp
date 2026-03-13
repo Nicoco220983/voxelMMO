@@ -1,6 +1,6 @@
 #pragma once
 #include <cstdint>
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 
 namespace voxelmmo {
 

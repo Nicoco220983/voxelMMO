@@ -30,15 +30,13 @@ export const DeltaType = Object.freeze({
   CHUNK_CHANGE_ENTITY: 3,  // Entity moved to different chunk
 })
 
-
-
 /**
  * First byte of every client → server binary WebSocket frame.
  * @readonly
  * @enum {number}
  */
 export const ClientMessageType = Object.freeze({
-  INPUT: 0,  // buttons uint8 + yaw float32 + pitch float32
+  INPUT: 0,  // tool uint8 + buttons uint8 + yaw float32 + pitch float32
   JOIN:  1,  // EntityType uint8
 })
 
@@ -54,6 +52,16 @@ export const InputButton = Object.freeze({
   RIGHT:    1 << 3,
   JUMP:     1 << 4,
   DESCEND:  1 << 5,
+})
+
+/**
+ * Input type - determines how the server interprets the input.
+ * @readonly
+ * @enum {number}
+ */
+export const InputType = Object.freeze({
+  MOVE: 0,  // Movement input (standard walking/flying controls)
+  // Future types: INTERACT, BUILD, DESTROY, etc.
 })
 
 /**
@@ -75,21 +83,23 @@ export class NetworkProtocol {
   // ── Client → Server (serialization) ────────────────────────────────────────
 
   /**
-   * Serialize an INPUT frame (13 bytes).
-   * Wire: type(1) + size(2) + buttons uint8(1) + yaw float32LE(4) + pitch float32LE(4).
+   * Serialize an INPUT frame (14 bytes).
+   * Wire: type(1) + size(2) + tool uint8(1) + buttons uint8(1) + yaw float32LE(4) + pitch float32LE(4).
+   * @param {number} tool     InputTool value (selected hotbar slot).
    * @param {number} buttons  InputButton bitmask.
    * @param {number} yaw      Yaw angle in radians.
    * @param {number} pitch    Pitch angle in radians.
    * @returns {ArrayBuffer}
    */
-  static serializeInput(buttons, yaw, pitch) {
-    const buf = new ArrayBuffer(13)
+  static serializeInput(tool, buttons, yaw, pitch) {
+    const buf = new ArrayBuffer(14)
     const v   = new DataView(buf)
     v.setUint8(0,   ClientMessageType.INPUT)
-    v.setUint16(1,  13, true)  // size
-    v.setUint8(3,   buttons)
-    v.setFloat32(4, yaw,   true)
-    v.setFloat32(8, pitch, true)
+    v.setUint16(1,  14, true)  // size
+    v.setUint8(3,   tool)
+    v.setUint8(4,   buttons)
+    v.setFloat32(5, yaw,   true)
+    v.setFloat32(9, pitch, true)
     return buf
   }
 

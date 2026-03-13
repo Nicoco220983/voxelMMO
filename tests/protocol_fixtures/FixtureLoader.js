@@ -93,30 +93,31 @@ export function loadHexFixture(relativePath) {
 /**
  * Load an INPUT message fixture and parse its contents.
  * @param {string} filename Just the filename (e.g., "input_forward.hex")
- * @returns {{ bytes: Uint8Array, buttons: number, yaw: number, pitch: number }}
+ * @returns {{ bytes: Uint8Array, inputType: number, buttons: number, yaw: number, pitch: number }}
  */
 export function loadInputFixture(filename) {
   const bytes = loadHexFixture(`client_to_server/input/${filename}`)
   
-  if (bytes.length !== 13) {
-    throw new Error(`INPUT fixture ${filename} should be 13 bytes, got ${bytes.length}`)
+  if (bytes.length !== 14) {
+    throw new Error(`INPUT fixture ${filename} should be 14 bytes, got ${bytes.length}`)
   }
   
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const msgType = view.getUint8(0)
   const size = view.getUint16(1, true)
-  const buttons = view.getUint8(3)
-  const yaw = view.getFloat32(4, true)
-  const pitch = view.getFloat32(8, true)
+  const inputType = view.getUint8(3)
+  const buttons = view.getUint8(4)
+  const yaw = view.getFloat32(5, true)
+  const pitch = view.getFloat32(9, true)
   
   if (msgType !== 0) {
     throw new Error(`INPUT fixture ${filename} should have type=0, got ${msgType}`)
   }
-  if (size !== 13) {
-    throw new Error(`INPUT fixture ${filename} should have size=13, got ${size}`)
+  if (size !== 14) {
+    throw new Error(`INPUT fixture ${filename} should have size=14, got ${size}`)
   }
   
-  return { bytes, buttons, yaw, pitch }
+  return { bytes, inputType, buttons, yaw, pitch }
 }
 
 /**

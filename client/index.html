@@ -18,6 +18,47 @@
       pointer-events: none;
       text-shadow: 1px 1px 2px #000;
     }
+    #hotbar {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 8px;
+      pointer-events: none;
+      user-select: none;
+    }
+    .hotbar-slot {
+      width: 50px;
+      height: 50px;
+      background: rgba(0, 0, 0, 0.6);
+      border: 2px solid rgba(255, 255, 255, 0.3);
+      border-radius: 4px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      transition: all 0.1s ease;
+    }
+    .hotbar-slot.selected {
+      background: rgba(255, 255, 255, 0.15);
+      border-color: rgba(255, 255, 255, 0.9);
+      box-shadow: 0 0 8px rgba(255, 255, 255, 0.3);
+      transform: scale(1.05);
+    }
+    .hotbar-number {
+      position: absolute;
+      top: 2px;
+      left: 4px;
+      font-family: monospace;
+      font-size: 10px;
+      color: rgba(255, 255, 255, 0.6);
+    }
+    .hotbar-icon {
+      font-size: 24px;
+      line-height: 1;
+    }
   </style>
 </head>
 <body>

@@ -1,6 +1,6 @@
 // @ts-check
 import { describe, it, expect } from 'vitest'
-import { NetworkProtocol, ClientMessageType, ServerMessageType, InputButton } from '../../client/src/NetworkProtocol.js'
+import { NetworkProtocol, ClientMessageType, ServerMessageType, InputButton, InputType } from '../../client/src/NetworkProtocol.js'
 import { EntityType } from '../../client/src/types.js'
 import { 
   loadHexFixture, 
@@ -16,7 +16,7 @@ import {
 describe('NetworkProtocol.serializeInput matches fixtures', () => {
   it('serializes zero input matching input_zero.hex', () => {
     const expected = loadHexFixture('client_to_server/input/input_zero.hex')
-    const actual = new Uint8Array(NetworkProtocol.serializeInput(0, 0, 0))
+    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputType.MOVE, 0, 0, 0))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -24,7 +24,7 @@ describe('NetworkProtocol.serializeInput matches fixtures', () => {
 
   it('serializes forward button matching input_forward.hex', () => {
     const expected = loadHexFixture('client_to_server/input/input_forward.hex')
-    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputButton.FORWARD, 0, 0))
+    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputType.MOVE, InputButton.FORWARD, 0, 0))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -32,7 +32,7 @@ describe('NetworkProtocol.serializeInput matches fixtures', () => {
 
   it('serializes jump button matching input_jump.hex', () => {
     const expected = loadHexFixture('client_to_server/input/input_jump.hex')
-    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputButton.JUMP, 0, 0))
+    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputType.MOVE, InputButton.JUMP, 0, 0))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -43,7 +43,7 @@ describe('NetworkProtocol.serializeInput matches fixtures', () => {
     const allButtons = InputButton.FORWARD | InputButton.BACKWARD | 
                        InputButton.LEFT | InputButton.RIGHT | 
                        InputButton.JUMP | InputButton.DESCEND
-    const actual = new Uint8Array(NetworkProtocol.serializeInput(allButtons, 0, 0))
+    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputType.MOVE, allButtons, 0, 0))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -51,7 +51,7 @@ describe('NetworkProtocol.serializeInput matches fixtures', () => {
 
   it('serializes yaw/pitch matching input_yaw_pitch.hex', () => {
     const expected = loadHexFixture('client_to_server/input/input_yaw_pitch.hex')
-    const actual = new Uint8Array(NetworkProtocol.serializeInput(0, 1.0, 2.0))
+    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputType.MOVE, 0, 1.0, 2.0))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -60,7 +60,7 @@ describe('NetworkProtocol.serializeInput matches fixtures', () => {
   it('serializes complex input matching input_complex.hex', () => {
     const expected = loadHexFixture('client_to_server/input/input_complex.hex')
     const buttons = InputButton.FORWARD | InputButton.LEFT
-    const actual = new Uint8Array(NetworkProtocol.serializeInput(buttons, 3.14159, -0.5))
+    const actual = new Uint8Array(NetworkProtocol.serializeInput(InputType.MOVE, buttons, 3.14159, -0.5))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -138,7 +138,8 @@ describe('FixtureLoader', () => {
   it('loadInputFixture parses input_forward correctly', () => {
     const result = loadInputFixture('input_forward.hex')
     
-    expect(result.bytes.length).toBe(13)
+    expect(result.bytes.length).toBe(14)
+    expect(result.inputType).toBe(InputType.MOVE)
     expect(result.buttons).toBe(InputButton.FORWARD)
     expect(result.yaw).toBe(0)
     expect(result.pitch).toBe(0)
@@ -147,7 +148,8 @@ describe('FixtureLoader', () => {
   it('loadInputFixture parses input_complex correctly', () => {
     const result = loadInputFixture('input_complex.hex')
     
-    expect(result.bytes.length).toBe(13)
+    expect(result.bytes.length).toBe(14)
+    expect(result.inputType).toBe(InputType.MOVE)
     expect(result.buttons).toBe(InputButton.FORWARD | InputButton.LEFT)
     expect(result.yaw).toBeCloseTo(3.14159, 5)
     expect(result.pitch).toBe(-0.5)
@@ -209,6 +211,7 @@ describe('Cross-platform serialization round-trip', () => {
   it('client INPUT serialization matches server fixture parsing', () => {
     // Client creates a message
     const clientMsg = NetworkProtocol.serializeInput(
+      InputType.MOVE,
       InputButton.FORWARD | InputButton.JUMP, 
       Math.PI / 2, 
       -0.25
@@ -217,10 +220,11 @@ describe('Cross-platform serialization round-trip', () => {
     // Verify it would match what server expects (structure check)
     const view = new DataView(clientMsg)
     expect(view.getUint8(0)).toBe(ClientMessageType.INPUT)
-    expect(view.getUint16(1, true)).toBe(13)
-    expect(view.getUint8(3)).toBe(InputButton.FORWARD | InputButton.JUMP)
-    expect(view.getFloat32(4, true)).toBeCloseTo(Math.PI / 2, 5)
-    expect(view.getFloat32(8, true)).toBeCloseTo(-0.25, 5)
+    expect(view.getUint16(1, true)).toBe(14)
+    expect(view.getUint8(3)).toBe(InputType.MOVE)
+    expect(view.getUint8(4)).toBe(InputButton.FORWARD | InputButton.JUMP)
+    expect(view.getFloat32(5, true)).toBeCloseTo(Math.PI / 2, 5)
+    expect(view.getFloat32(9, true)).toBeCloseTo(-0.25, 5)
   })
 
   it('server SELF_ENTITY fixture matches client parsing', () => {

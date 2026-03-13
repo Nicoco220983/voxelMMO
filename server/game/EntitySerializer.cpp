@@ -5,7 +5,7 @@
 #include "game/components/EntityTypeComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "common/EntityType.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 
 namespace voxelmmo {
 

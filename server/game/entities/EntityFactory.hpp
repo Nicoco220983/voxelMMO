@@ -1,5 +1,5 @@
 #pragma once
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/EntityType.hpp"
 #include "common/Types.hpp"
 #include "game/ChunkRegistry.hpp"

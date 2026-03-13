@@ -1,7 +1,7 @@
 #pragma once
 #include "WorldChunk.hpp"
 #include "common/Types.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include <entt/entt.hpp>

@@ -1,7 +1,7 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/catch_approx.hpp>
 #include "common/NetworkProtocol.hpp"
-#include "common/MessageTypes.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "common/EntityType.hpp"
 #include "TestUtils.hpp"
 
@@ -11,12 +11,13 @@ using namespace voxelmmo;
 
 // ── parseInput Tests ─────────────────────────────────────────────────────────
 
-TEST_CASE("parseInput extracts buttons, yaw, pitch correctly", "[network]") {
+TEST_CASE("parseInput extracts inputType, buttons, yaw, pitch correctly", "[network]") {
     auto data = loadHexFixture("client_to_server/input/input_all_buttons.hex");
     
     auto msg = NetworkProtocol::parseInput(data.data(), data.size());
     
     REQUIRE(msg.has_value());
+    CHECK(msg->inputType == InputType::MOVE);
     CHECK(msg->buttons == 0x3F);  // All buttons: 0x01|0x02|0x04|0x08|0x10|0x20
     CHECK(msg->yaw == 0.0f);
     CHECK(msg->pitch == 0.0f);
@@ -28,6 +29,7 @@ TEST_CASE("parseInput handles forward button from fixture", "[network]") {
     auto msg = NetworkProtocol::parseInput(data.data(), data.size());
     
     REQUIRE(msg.has_value());
+    CHECK(msg->inputType == InputType::MOVE);
     CHECK(msg->buttons == static_cast<uint8_t>(InputButton::FORWARD));
     CHECK(msg->yaw == 0.0f);
     CHECK(msg->pitch == 0.0f);
@@ -39,6 +41,7 @@ TEST_CASE("parseInput handles jump button from fixture", "[network]") {
     auto msg = NetworkProtocol::parseInput(data.data(), data.size());
     
     REQUIRE(msg.has_value());
+    CHECK(msg->inputType == InputType::MOVE);
     CHECK(msg->buttons == static_cast<uint8_t>(InputButton::JUMP));
 }
 
@@ -48,6 +51,7 @@ TEST_CASE("parseInput handles complex yaw/pitch from fixture", "[network]") {
     auto msg = NetworkProtocol::parseInput(data.data(), data.size());
     
     REQUIRE(msg.has_value());
+    CHECK(msg->inputType == InputType::MOVE);
     CHECK(msg->buttons == (static_cast<uint8_t>(InputButton::FORWARD) | 
                            static_cast<uint8_t>(InputButton::LEFT)));
     CHECK(msg->yaw == Approx(3.14159f).margin(0.00001f));
@@ -60,13 +64,14 @@ TEST_CASE("parseInput handles zeroed input from fixture", "[network]") {
     auto msg = NetworkProtocol::parseInput(data.data(), data.size());
     
     REQUIRE(msg.has_value());
+    CHECK(msg->inputType == InputType::MOVE);
     CHECK(msg->buttons == 0);
     CHECK(msg->yaw == 0.0f);
     CHECK(msg->pitch == 0.0f);
 }
 
 TEST_CASE("parseInput returns nullopt for short buffer", "[network]") {
-    uint8_t data[5] = {0, 5, 0, 0, 0};  // Too short
+    uint8_t data[6] = {0, 6, 0, 0, 0, 0};  // Too short (need 14)
     auto msg = NetworkProtocol::parseInput(data, sizeof(data));
     REQUIRE_FALSE(msg.has_value());
 }
@@ -225,11 +230,12 @@ TEST_CASE("appendToBatch vector overload works", "[network]") {
 TEST_CASE("loadHexFixture loads input fixtures correctly", "[network][fixtures]") {
     auto data = loadHexFixture("client_to_server/input/input_forward.hex");
     
-    REQUIRE(data.size() == 13);
+    REQUIRE(data.size() == 14);
     CHECK(data[0] == 0);   // type = INPUT
-    CHECK(data[1] == 13);  // size low
+    CHECK(data[1] == 14);  // size low
     CHECK(data[2] == 0);   // size high
-    CHECK(data[3] == 1);   // buttons = FORWARD
+    CHECK(data[3] == 0);   // inputType = MOVE
+    CHECK(data[4] == 1);   // buttons = FORWARD
 }
 
 TEST_CASE("loadHexFixture loads join fixtures correctly", "[network][fixtures]") {

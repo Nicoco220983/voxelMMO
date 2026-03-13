@@ -1,10 +1,11 @@
 // @ts-check
 import * as THREE     from 'three'
 import { GameClient } from './GameClient.js'
-import { NetworkProtocol, InputButton } from './NetworkProtocol.js'
+import { NetworkProtocol, InputButton, InputType } from './NetworkProtocol.js'
 import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
+import { Hotbar } from './ui/Hotbar.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -63,10 +64,19 @@ function getLocalPlayer() {
   return client.selfEntity
 }
 
+// ── Hotbar ─────────────────────────────────────────────────────────────────
+const hotbar = new Hotbar()
+
 // ── Keyboard state ────────────────────────────────────────────────────────
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
 
 window.addEventListener('keydown', (e) => {
+  // Hotbar selection (1-0 keys)
+  if (hotbar.handleKeyDown(e)) {
+    e.preventDefault()
+    return
+  }
+
   switch (e.code) {
     case 'KeyW': case 'ArrowUp':                      keys.w     = true;  e.preventDefault(); break
     case 'KeyA': case 'ArrowLeft':                    keys.a     = true;  e.preventDefault(); break
@@ -106,6 +116,20 @@ document.addEventListener('mousemove', (e) => {
 /** @type {number} */ let lastButtons = -1  // force first send (NaN-like)
 /** @type {number} */ let lastYaw     = NaN
 /** @type {number} */ let lastPitch   = NaN
+/** @type {number} */ let lastInputType = -1
+
+/**
+ * Map hotbar slot index (0-9) to InputType value.
+ * For now, all slots default to MOVE (standard movement).
+ * Future: slot selection will determine action mode.
+ * @param {number} slotIndex
+ * @returns {number} InputType value
+ */
+function slotToInputType(slotIndex) {
+  // For now, all inputs are MOVE type
+  // Future logic: different slots may trigger different input types
+  return InputType.MOVE
+}
 
 /** Compute button bitmask from current key state. @returns {number} */
 function computeButtons() {
@@ -121,9 +145,10 @@ function computeButtons() {
 
 /** Send INPUT frame only when state changed. */
 function sendInputIfChanged(buttons, yawVal, pitchVal) {
-  if (buttons === lastButtons && yawVal === lastYaw && pitchVal === lastPitch) return
-  client.sendInput(NetworkProtocol.serializeInput(buttons, yawVal, pitchVal))
-  lastButtons = buttons; lastYaw = yawVal; lastPitch = pitchVal
+  const inputType = slotToInputType(hotbar.selectedIndex)
+  if (buttons === lastButtons && yawVal === lastYaw && pitchVal === lastPitch && inputType === lastInputType) return
+  client.sendInput(NetworkProtocol.serializeInput(inputType, buttons, yawVal, pitchVal))
+  lastButtons = buttons; lastYaw = yawVal; lastPitch = pitchVal; lastInputType = inputType
 }
 
 // ── HUD ───────────────────────────────────────────────────────────────────
