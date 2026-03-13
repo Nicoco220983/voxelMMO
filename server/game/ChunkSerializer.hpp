@@ -40,6 +40,9 @@ public:
     /** Reusable scratch buffer for LZ4 compression. */
     std::vector<uint8_t> scratch;
 
+    /** Reusable staging buffer for delta message construction. */
+    std::vector<uint8_t> staging;
+
     ChunkSerializer();
     ~ChunkSerializer() = default;
 
@@ -88,6 +91,9 @@ private:
 
     /** Ensure scratch has at least minSize capacity. */
     void ensureScratch(size_t minSize);
+
+    /** Ensure staging has at least minSize capacity. */
+    void ensureStaging(size_t minSize);
 };
 
 } // namespace voxelmmo
