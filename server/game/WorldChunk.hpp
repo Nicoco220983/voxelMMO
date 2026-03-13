@@ -23,11 +23,8 @@ public:
      *         Use voxelIndexFromPos(x, y, z) to compute the index. */
     std::vector<VoxelType> voxels;
 
-    /** @brief Accumulated voxel changes since the last snapshot was sent. */
-    std::vector<std::pair<VoxelIndex, VoxelType>> voxelsSnapshotDeltas;
-
     /** @brief Voxel changes in the current tick only. */
-    std::vector<std::pair<VoxelIndex, VoxelType>> voxelsTickDeltas;
+    std::vector<std::pair<VoxelIndex, VoxelType>> voxelsDeltas;
 
     WorldChunk();
 
@@ -55,22 +52,13 @@ public:
     size_t serializeSnapshot(uint8_t* buf) const;
 
     /**
-     * @brief Write the snapshot voxel delta into buf.
+     * @brief Write the voxel delta into buf.
      * @return Number of bytes written.
      */
-    size_t serializeSnapshotDelta(uint8_t* buf) const;
+    size_t serializeDelta(uint8_t* buf) const;
 
-    /**
-     * @brief Write the tick voxel delta into buf.
-     * @return Number of bytes written.
-     */
-    size_t serializeTickDelta(uint8_t* buf) const;
-
-    /** @brief Clear snapshot delta accumulator (call after a snapshot delta is dispatched). */
-    void clearSnapshotDelta();
-
-    /** @brief Clear tick delta accumulator (call at the end of every tick). */
-    void clearTickDelta();
+    /** @brief Clear delta accumulator (call at the end of every tick). */
+    void clearDelta();
 
 };
 

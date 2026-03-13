@@ -18,25 +18,23 @@ namespace voxelmmo {
  *   - CHUNK_CHANGE_ENTITY (3): entity moved to different chunk
  *
  * Granularity:
- *   - snapshotDeltaType / snapshotDirtyFlags: persists until snapshot delta is sent (every N ticks)
- *   - tickDeltaType / tickDirtyFlags: cleared after every tick delta
+ *   - snapshotDeltaType: persists until snapshot delta is sent (every N ticks), used for SELF_ENTITY detection
+ *   - deltaType / dirtyFlags: cleared after every tick delta
  */
 struct DirtyComponent {
-    uint8_t snapshotDirtyFlags{0};
-    uint8_t tickDirtyFlags{0};
+    uint8_t dirtyFlags{0};
     DeltaType snapshotDeltaType{DeltaType::UPDATE_ENTITY};
-    DeltaType tickDeltaType{DeltaType::UPDATE_ENTITY};
+    DeltaType deltaType{DeltaType::UPDATE_ENTITY};
 
-    /** @brief Mark a component dirty at both snapshot and tick granularity. */
+    /** @brief Mark a component dirty. */
     void mark(uint8_t bit) noexcept {
-        snapshotDirtyFlags |= bit;
-        tickDirtyFlags     |= bit;
+        dirtyFlags |= bit;
     }
 
     // Delta type helpers
     void markCreated() noexcept {
         snapshotDeltaType = DeltaType::CREATE_ENTITY;
-        tickDeltaType = DeltaType::CREATE_ENTITY;
+        deltaType = DeltaType::CREATE_ENTITY;
     }
 
     bool isCreated() const noexcept {
@@ -44,33 +42,25 @@ struct DirtyComponent {
     }
 
     void markForDeletion() noexcept {
-        snapshotDeltaType = DeltaType::DELETE_ENTITY;
-        tickDeltaType = DeltaType::DELETE_ENTITY;
+        deltaType = DeltaType::DELETE_ENTITY;
     }
 
     bool isDeleted() const noexcept {
-        return tickDeltaType == DeltaType::DELETE_ENTITY;
+        return deltaType == DeltaType::DELETE_ENTITY;
     }
 
     /** @brief Check if any component bits (excluding lifecycle) are dirty. */
     bool hasComponentChanges() const noexcept {
-        return (snapshotDirtyFlags & 0x3F) != 0;  // Bits 0-5
+        return (dirtyFlags & 0x3F) != 0;  // Bits 0-5
     }
 
-    /** @brief Clear snapshot dirty flags (call after sending a snapshot delta). */
-    void clearSnapshot() noexcept {
-        snapshotDirtyFlags = 0;
-        snapshotDeltaType = DeltaType::UPDATE_ENTITY;
+    /** @brief Clear dirty flags (call at the end of every tick). */
+    void clear() noexcept {
+        dirtyFlags = 0;
+        deltaType = DeltaType::UPDATE_ENTITY;
     }
 
-    /** @brief Clear tick dirty flags (call at the end of every tick). */
-    void clearTick() noexcept {
-        tickDirtyFlags = 0;
-        tickDeltaType = DeltaType::UPDATE_ENTITY;
-    }
-
-    bool isSnapshotDirty() const noexcept { return snapshotDirtyFlags != 0 || snapshotDeltaType != DeltaType::UPDATE_ENTITY; }
-    bool isTickDirty()     const noexcept { return tickDirtyFlags != 0 || tickDeltaType != DeltaType::UPDATE_ENTITY; }
+    bool isDirty() const noexcept { return dirtyFlags != 0 || deltaType != DeltaType::UPDATE_ENTITY; }
 };
 
 } // namespace voxelmmo

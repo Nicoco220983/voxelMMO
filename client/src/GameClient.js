@@ -283,12 +283,16 @@ export class GameClient {
             ({ voxelCount, entityCount } = this.#applySnapshot(view, chunkId, messageTick))
             break
           case ServerMessageType.CHUNK_SNAPSHOT_DELTA:
-          case ServerMessageType.CHUNK_TICK_DELTA:
-            ({ voxelCount, entityCount } = this.#applyVoxelDelta(view, false, chunkId, messageTick))
+            ({ voxelCount, entityCount } = this.#applySnapshotDelta(view, false, chunkId, messageTick))
             break
           case ServerMessageType.CHUNK_SNAPSHOT_DELTA_COMPRESSED:
+            ({ voxelCount, entityCount } = this.#applySnapshotDelta(view, true, chunkId, messageTick))
+            break
+          case ServerMessageType.CHUNK_TICK_DELTA:
+            ({ voxelCount, entityCount } = this.#applyTickDelta(view, false, chunkId, messageTick))
+            break
           case ServerMessageType.CHUNK_TICK_DELTA_COMPRESSED:
-            ({ voxelCount, entityCount } = this.#applyVoxelDelta(view, true, chunkId, messageTick))
+            ({ voxelCount, entityCount } = this.#applyTickDelta(view, true, chunkId, messageTick))
             break
           default:
             console.error('[GameClient] Unknown chunk message type:', type)
@@ -331,14 +335,13 @@ export class GameClient {
   }
 
   /**
-   * Apply a delta message (snapshot delta or tick delta).
+   * Decompress message payload if needed and parse voxel deltas.
    * @param {DataView} view
    * @param {boolean} compressed
    * @param {ChunkId} chunkId
-   * @param {number} messageTick
-   * @returns {{voxelCount: number, entityCount: number}}
+   * @returns {{chunk: Chunk, pView: DataView, pOff: number, voxelCount: number}}
    */
-  #applyVoxelDelta(view, compressed, chunkId, messageTick) {
+  #parseVoxelDeltas(view, compressed, chunkId) {
     const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
     let payload, pOff = 0
 
@@ -346,14 +349,12 @@ export class GameClient {
       const uncompSize = view.getInt32(15, true)
       payload = lz4Decompress(raw.subarray(19), uncompSize)
     } else {
-      payload = raw
-      pOff    = 15  // skip header: type(1) + size(2) + chunkId(8) + tick(4)
+      payload = raw.subarray(15)  // skip header: type(1) + size(2) + chunkId(8) + tick(4)
     }
 
     const pView = new DataView(payload.buffer, payload.byteOffset, payload.byteLength)
     const voxelCount = pView.getInt32(pOff, true); pOff += 4
 
-    // Apply voxel deltas
     const chunk = this.#getOrCreateChunk(chunkId)
     for (let i = 0; i < voxelCount; i++) {
       const vidPacked = pView.getUint16(pOff, true); pOff += 2
@@ -364,10 +365,59 @@ export class GameClient {
       chunk.setVoxel(vx, vy, vz, vtype)
     }
 
-    // Entity section (present in real server deltas; guard against test-only messages)
+    return { chunk, pView, pOff, voxelCount }
+  }
+
+  /**
+   * Apply a snapshot delta message (sends full entities like a snapshot).
+   * @param {DataView} view
+   * @param {boolean} compressed
+   * @param {ChunkId} chunkId
+   * @param {number} messageTick
+   * @returns {{voxelCount: number, entityCount: number}}
+   */
+  #applySnapshotDelta(view, compressed, chunkId, messageTick) {
+    const { chunk, pView, pOff: entityOff, voxelCount } = this.#parseVoxelDeltas(view, compressed, chunkId)
+
+    // Entity section: full entities (like snapshot), not deltas
+    // The entity section format matches snapshots:
+    //   [entity_section_stored_size(4)] [entity_data]
+    // where entity_data starts with entity_count(4) if uncompressed,
+    // or [uncomp_size(4)][lz4_data] if compressed
     let entityCount = 0
-    if (pOff + 4 <= pView.byteLength) {
-      const reader = new BufReader(pView, pOff)
+    if (entityOff + 4 <= pView.byteLength) {
+      // Read entity_section_stored_size (size of entity_data that follows)
+      const ess = pView.getInt32(entityOff, true)
+      const payloadOff = entityOff + 4
+      if (ess > 0 && payloadOff + ess <= pView.byteLength) {
+        // Get flags from message header (position 15) - indicates if entity section is compressed
+        const flags = view.getUint8(15)
+        // Extract payload bytes from the decompressed view
+        const payload = new Uint8Array(pView.buffer, pView.byteOffset, pView.byteLength)
+        entityCount = this.#entityRegistry.applySnapshotDeltaEntities(
+          this.#chunkRegistry, chunkId, payload, payloadOff, ess, flags, messageTick)
+      }
+    }
+
+    chunk.dirty = true
+    return { voxelCount, entityCount }
+  }
+
+  /**
+   * Apply a tick delta message (delta entities with delta types).
+   * @param {DataView} view
+   * @param {boolean} compressed
+   * @param {ChunkId} chunkId
+   * @param {number} messageTick
+   * @returns {{voxelCount: number, entityCount: number}}
+   */
+  #applyTickDelta(view, compressed, chunkId, messageTick) {
+    const { chunk, pView, pOff: entityOff, voxelCount } = this.#parseVoxelDeltas(view, compressed, chunkId)
+
+    // Entity section: delta entities with delta types
+    let entityCount = 0
+    if (entityOff + 4 <= pView.byteLength) {
+      const reader = new BufReader(pView, entityOff)
       entityCount = this.#entityRegistry.applyDeltaEntities(this.#chunkRegistry, chunkId, reader, messageTick)
     }
 

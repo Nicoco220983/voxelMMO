@@ -181,6 +181,20 @@ export class EntityRegistry {
 
     const entView = new DataView(entityData.buffer, entityData.byteOffset, entityData.byteLength)
     const reader = new BufReader(entView)
+    return this.#applySnapshotEntitiesFromReader(chunkRegistry, chunkId, reader, messageTick)
+  }
+
+  /**
+   * Internal method to apply snapshot entities from a BufReader.
+   * Used by both snapshot messages and snapshot delta messages.
+   * @param {ChunkRegistry} chunkRegistry - The chunk registry
+   * @param {ChunkId} chunkId - The chunk ID
+   * @param {BufReader} reader - Reader positioned at entity count
+   * @param {number} messageTick Server tick from message header
+   * @returns {number} Number of entities parsed
+   * @private
+   */
+  #applySnapshotEntitiesFromReader(chunkRegistry, chunkId, reader, messageTick) {
     const count = reader.readInt32()
 
     for (let i = 0; i < count; i++) {
@@ -192,6 +206,50 @@ export class EntityRegistry {
       entity.applyComponents(reader, componentFlags, messageTick)
     }
     return count
+  }
+
+  /**
+   * Parse and apply entity records from a snapshot delta message.
+   * Snapshot deltas now send full entities like regular snapshots.
+   * @param {ChunkRegistry} chunkRegistry - The chunk registry
+   * @param {ChunkId} chunkId - The chunk ID
+   * @param {Uint8Array} payload - The decompressed payload bytes
+   * @param {number} offset - Byte offset to start of entity data (after entity_section_stored_size)
+   * @param {number} entitySectionSize - Size of entity data in bytes (ess field value)
+   * @param {number} flags - Flags byte from message header (0x01 = entity section is compressed)
+   * @param {number} messageTick Server tick from message header
+   * @returns {number} Number of entities parsed
+   */
+  applySnapshotDeltaEntities(chunkRegistry, chunkId, payload, offset, entitySectionSize, flags, messageTick) {
+    const chunk = chunkRegistry.getOrCreate(chunkId)
+    const chunkEntities = chunk.entities
+    
+    // Remove existing entities that were in this chunk
+    for (const globalId of chunkEntities) {
+      const entity = this.#entities.get(globalId)
+      if (entity) this.#entities.delete(globalId)
+    }
+    chunkEntities.clear()
+
+    if (entitySectionSize < 4) {
+      return 0
+    }
+
+    let entityData
+    
+    if (flags & 0x01) {
+      // Compressed: int32 uncompressed_size + LZ4 data
+      const uncompSize = new DataView(payload.buffer, payload.byteOffset + offset, 4).getInt32(0, true)
+      const compressedStart = offset + 4  // skip uncompSize
+      entityData = lz4Decompress(payload.subarray(compressedStart, offset + entitySectionSize), uncompSize)
+    } else {
+      // Uncompressed: entity data directly (starts with entity_count int32)
+      entityData = payload.subarray(offset, offset + entitySectionSize)
+    }
+
+    const entView = new DataView(entityData.buffer, entityData.byteOffset, entityData.byteLength)
+    const reader = new BufReader(entView)
+    return this.#applySnapshotEntitiesFromReader(chunkRegistry, chunkId, reader, messageTick)
   }
 
   /**

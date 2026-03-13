@@ -63,7 +63,29 @@ ComponentFlags uint8     (bitmask of present components)
   if SHEEP_BEHAVIOR_BIT: SheepBehaviorComponent fields
 ```
 
-### CHUNK_SNAPSHOT_DELTA / CHUNK_TICK_DELTA (types 2-5, optionally _COMPRESSED)
+### CHUNK_SNAPSHOT_DELTA (types 2-3, optionally _COMPRESSED)
+
+Sent periodically (every 20 ticks) after initial snapshot. Contains voxel deltas but **full entities** (not deltas).
+
+```
+[3-byte universal header]
+[12-byte chunk header: ChunkId(8) + tick(4)]
+uint8   flags           (bit 0 = entity section is LZ4-compressed)
+int32   voxel_count
+repeat: VoxelIndex uint16 (uint5 y | uint5 x | uint5 z) · VoxelType uint8
+int32   entity_section_stored_size
+  if flags & 1:
+    int32   entity_uncompressed_size
+    bytes   LZ4(entity_data)
+  else:
+    bytes   entity_data   → int32 count + entity records (same format as SNAPSHOT)
+```
+
+**Entity record format:** Same as CHUNK_SNAPSHOT (full entity state, no DeltaType prefix).
+
+### CHUNK_TICK_DELTA (types 4-5, optionally _COMPRESSED)
+
+Sent every tick between snapshot deltas. Contains voxel deltas and **entity deltas**.
 
 ```
 [3-byte universal header]
@@ -78,7 +100,7 @@ ComponentFlags uint8     (bitmask of present components)
     repeat: entity delta record
 ```
 
-#### Entity delta record
+#### Entity delta record (TICK_DELTA only)
 
 ```
 DeltaType      uint8   (enum: 0=CREATE, 1=UPDATE, 2=DELETE, 3=CHUNK_CHANGE)

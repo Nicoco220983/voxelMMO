@@ -216,18 +216,15 @@ static uint8_t serializeEntitiesSnapshot(const Chunk& chunk, entt::registry& reg
 // ── Entity Delta ───────────────────────────────────────────────────────────
 
 /**
- * @brief Serialize entity deltas to a buffer.
+ * @brief Serialize entity deltas to a buffer (for tick deltas only).
+ * Snapshot deltas now send full entities like snapshots.
  * @param chunk The chunk containing the entities.
  * @param reg The ECS registry.
- * @param deltaTypeField Pointer-to-member for delta type (snapshot or tick).
- * @param flagsField Pointer-to-member for dirty flags (snapshot or tick).
  * @param buf Buffer to write to.
  * @param offset Starting offset in buffer.
  * @return New offset after writing entity deltas.
  */
 static size_t serializeEntitiesDelta(const Chunk& chunk, entt::registry& reg,
-                                      DeltaType DirtyComponent::* deltaTypeField,
-                                      uint8_t DirtyComponent::* flagsField,
                                       std::vector<uint8_t>& buf, size_t offset) {
     const size_t entityCountOff = offset;
     offset += sizeof(int32_t);
@@ -237,8 +234,8 @@ static size_t serializeEntitiesDelta(const Chunk& chunk, entt::registry& reg,
     
     auto processEntity = [&](entt::entity ent) {
         auto& dirty = reg.get<DirtyComponent>(ent);
-        const uint8_t mask = dirty.*flagsField;
-        const DeltaType deltaType = dirty.*deltaTypeField;
+        const uint8_t mask = dirty.dirtyFlags;
+        const DeltaType deltaType = dirty.deltaType;
         const bool isDeleted = (deltaType == DeltaType::DELETE_ENTITY);
         const bool isLeaving = chunk.leftEntities.count(ent) > 0;
         const bool isNewlyCreated = (deltaType == DeltaType::CREATE_ENTITY);
@@ -305,27 +302,24 @@ static size_t buildSnapshot(const Chunk& chunk, entt::registry& reg, uint32_t ti
     return outBuf.size() - msgStartOffset;
 }
 
-// ── Delta (shared implementation) ─────────────────────────────────────────
+// ── Tick Delta (delta implementation) ─────────────────────────────────────
 
-static size_t buildDeltaImpl(
+static size_t buildTickDelta(
     const Chunk& chunk,
     entt::registry& reg,
     uint32_t tickCount,
-    const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
-    DeltaType DirtyComponent::* deltaTypeField,
-    uint8_t DirtyComponent::* flagsField,
-    ServerMessageType rawType,
-    ServerMessageType compressedType,
     std::vector<uint8_t>& outBuf,
     std::vector<uint8_t>& scratch,
     std::vector<uint8_t>& staging) {
+    
+    const auto& voxelDeltas = chunk.world.voxelsDeltas;
     
     // Early exit: nothing to send
     if (voxelDeltas.empty()) {
         const bool anyDirty = std::any_of(chunk.entities.begin(), chunk.entities.end(),
             [&](entt::entity ent) {
                 auto& dirty = reg.get<DirtyComponent>(ent);
-                return dirty.*flagsField != 0 || dirty.*deltaTypeField != DeltaType::UPDATE_ENTITY;
+                return dirty.dirtyFlags != 0 || dirty.deltaType != DeltaType::UPDATE_ENTITY;
             });
         const bool anyLeaving = !chunk.leftEntities.empty();
         if (!anyDirty && !anyLeaving) return 0;
@@ -339,17 +333,17 @@ static size_t buildDeltaImpl(
         + sizeof(int32_t) + chunk.entities.size() * 64;
     staging.resize(maxSize);
     
-    size_t off = writeHeader(staging.data(), rawType, chunk.id, tickCount);
+    size_t off = writeHeader(staging.data(), ServerMessageType::CHUNK_TICK_DELTA, chunk.id, tickCount);
     
     // Serialize voxel deltas
     off = serializeVoxelsDelta(voxelDeltas, staging, off);
     
     // Serialize entity deltas
-    off = serializeEntitiesDelta(chunk, reg, deltaTypeField, flagsField, staging, off);
+    off = serializeEntitiesDelta(chunk, reg, staging, off);
     staging.resize(off);
     
     // Compress if beneficial
-    maybeCompressDelta(staging, compressedType, scratch);
+    maybeCompressDelta(staging, ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED, scratch);
     
     // Fill in the size field
     const uint16_t msgSize = static_cast<uint16_t>(staging.size());
@@ -364,32 +358,36 @@ static size_t buildDeltaImpl(
 
 // ── Snapshot delta ────────────────────────────────────────────────────────
 
+/**
+ * @brief Build a snapshot delta message that sends full entities (like a snapshot).
+ * This is used for periodic full-state syncs (every N ticks after initial snapshot).
+ */
 static size_t buildSnapshotDelta(const Chunk& chunk, entt::registry& reg, uint32_t tickCount,
                                   std::vector<uint8_t>& outBuf,
                                   std::vector<uint8_t>& scratch,
                                   std::vector<uint8_t>& staging) {
-    return buildDeltaImpl(chunk, reg, tickCount,
-        chunk.world.voxelsSnapshotDeltas,
-        &DirtyComponent::snapshotDeltaType,
-        &DirtyComponent::snapshotDirtyFlags,
-        ServerMessageType::CHUNK_SNAPSHOT_DELTA,
-        ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED,
-        outBuf, scratch, staging);
-}
-
-// ── Tick delta ────────────────────────────────────────────────────────────
-
-static size_t buildTickDelta(const Chunk& chunk, entt::registry& reg, uint32_t tickCount,
-                              std::vector<uint8_t>& outBuf,
-                              std::vector<uint8_t>& scratch,
-                              std::vector<uint8_t>& staging) {
-    return buildDeltaImpl(chunk, reg, tickCount,
-        chunk.world.voxelsTickDeltas,
-        &DirtyComponent::tickDeltaType,
-        &DirtyComponent::tickDirtyFlags,
-        ServerMessageType::CHUNK_TICK_DELTA,
-        ServerMessageType::CHUNK_TICK_DELTA_COMPRESSED,
-        outBuf, scratch, staging);
+    const size_t msgStartOffset = outBuf.size();
+    
+    // Header (15 bytes) + flags byte
+    const size_t headerOffset = outBuf.size();
+    outBuf.resize(headerOffset + HEADER_SIZE + 1);
+    writeHeader(outBuf.data() + headerOffset, ServerMessageType::CHUNK_SNAPSHOT_DELTA_COMPRESSED, chunk.id, tickCount);
+    
+    // Serialize voxels (full snapshot, not delta)
+    serializeVoxelsSnapshot(chunk, outBuf);
+    
+    // Serialize entities (full entities, not deltas - returns flags)
+    uint8_t flags = serializeEntitiesSnapshot(chunk, reg, outBuf, scratch);
+    
+    // Write flags byte
+    outBuf[headerOffset + HEADER_SIZE] = flags;
+    
+    // Fill in the size field
+    const uint16_t msgSize = static_cast<uint16_t>(outBuf.size() - headerOffset);
+    outBuf[headerOffset + 1] = static_cast<uint8_t>(msgSize & 0xFF);
+    outBuf[headerOffset + 2] = static_cast<uint8_t>((msgSize >> 8) & 0xFF);
+    
+    return outBuf.size() - msgStartOffset;
 }
 
 // ── Entity dirty flag clearing ─────────────────────────────────────────────
@@ -397,14 +395,13 @@ static size_t buildTickDelta(const Chunk& chunk, entt::registry& reg, uint32_t t
 static void clearEntityDirtyFlags(const Chunk& chunk, entt::registry& reg, bool clearSnapshotFlags) {
     auto clearFlags = [&](entt::entity ent) {
         if (auto* dirty = reg.try_get<DirtyComponent>(ent)) {
-            dirty->clearTick();
+            dirty->clear();
             if (clearSnapshotFlags) {
                 // Don't clear snapshotDeltaType if it's CREATE_ENTITY - 
                 // sendSelfEntityMessages() needs this to detect new players
                 if (dirty->snapshotDeltaType != DeltaType::CREATE_ENTITY) {
                     dirty->snapshotDeltaType = DeltaType::UPDATE_ENTITY;
                 }
-                dirty->snapshotDirtyFlags = 0;
             }
         }
     };

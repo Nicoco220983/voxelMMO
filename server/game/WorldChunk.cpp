@@ -11,16 +11,14 @@ void WorldChunk::setVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ, Vox
     const VoxelIndex idx = voxelIndexFromPos(voxelX, voxelY, voxelZ);
     voxels[idx] = type;
     // TODO: check that idx is not already present in deltas
-    voxelsSnapshotDeltas.emplace_back(idx, type);
-    voxelsTickDeltas.emplace_back(idx, type);
+    voxelsDeltas.emplace_back(idx, type);
 }
 
 void WorldChunk::modifyVoxels(const std::vector<std::pair<VoxelIndex, VoxelType>>& mods) {
     for (const auto& [idx, vtype] : mods) {
         voxels[idx] = vtype;
         // TODO: check that idx is not already present
-        voxelsSnapshotDeltas.emplace_back(idx, vtype);
-        voxelsTickDeltas.emplace_back(idx, vtype);
+        voxelsDeltas.emplace_back(idx, vtype);
     }
 }
 
@@ -50,15 +48,10 @@ static size_t serializeDeltaImpl(
     return off;
 }
 
-size_t WorldChunk::serializeSnapshotDelta(uint8_t* buf) const {
-    return serializeDeltaImpl(voxelsSnapshotDeltas, buf);
+size_t WorldChunk::serializeDelta(uint8_t* buf) const {
+    return serializeDeltaImpl(voxelsDeltas, buf);
 }
 
-size_t WorldChunk::serializeTickDelta(uint8_t* buf) const {
-    return serializeDeltaImpl(voxelsTickDeltas, buf);
-}
-
-void WorldChunk::clearSnapshotDelta() { voxelsSnapshotDeltas.clear(); }
-void WorldChunk::clearTickDelta()     { voxelsTickDeltas.clear();     }
+void WorldChunk::clearDelta() { voxelsDeltas.clear(); }
 
 } // namespace voxelmmo

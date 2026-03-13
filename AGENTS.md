@@ -24,11 +24,10 @@ A high performance online webgame massive multiplayer, on wide generated world.
   - `CHUNK_SHIFT_Y/X/Z = 13/13/13` → chunk coord = position >> shift (works directly on sub-voxel values).
   - Client sends button bitmask + yaw/pitch; server `InputSystem` converts to velocity each tick.
   - Rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
-- **Dirty tracking**: `DirtyComponent` carries `snapshotDirtyFlags` and `tickDirtyFlags` (1 bit per component)
-  plus `snapshotDeltaType` and `tickDeltaType` (CREATE_ENTITY vs UPDATE_ENTITY). Cleared by Chunk::updateState():
-  - After tick delta: clears tick flags only (snapshot flags preserved for next snapshot delta)
-  - After snapshot delta or full snapshot: clears both tick and snapshot flags
-  - Note: CREATE_ENTITY delta type is NOT cleared by chunk (sendSelfEntityMessages() clears it after sending SELF_ENTITY)
+- **Dirty tracking**: `DirtyComponent` carries `dirtyFlags` (1 bit per component), `deltaType` (CREATE_ENTITY vs UPDATE_ENTITY),
+  and `snapshotDeltaType` (for SELF_ENTITY detection). Cleared after each tick:
+  - `dirtyFlags` and `deltaType` cleared after every tick delta
+  - `snapshotDeltaType` preserved until snapshot delta (for SELF_ENTITY detection)
 - **GlobalEntityId** (uint32): assigned at spawn, stable across chunk moves and server lifetime. Used on wire.
 - **Serialisation ownership**: each component's `serializeFields(SafeBufWriter&)` writes its own bytes only.
   The caller (Chunk) writes the component-flags byte and decides which components to include.
@@ -89,7 +88,9 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 **server/game/WorldGenerator.hpp/cpp** — simplex noise terrain generator; `generate()` fills voxels, `generateEntities()` spawns sheep on grass
 
 **server/game/Chunk.hpp/cpp** — chunk entity set; builds snapshot/delta messages into external buffers (ChunkSerializer). Tracks `enteredEntities` (new arrivals) and `leftEntities` (departures) for CHUNK_CHANGE notifications.
-- `buildSnapshot/buildSnapshotDelta/buildTickDelta` — serialize chunk data to external buffers
+- `buildSnapshot` — serialize full chunk state (voxels + all entities)
+- `buildSnapshotDelta` — serialize voxel deltas + full entities (like snapshot)
+- `buildTickDelta` — serialize voxel deltas + entity deltas
 - `clearEntityDirtyFlags` — clear dirty flags after serialization
 
 **server/game/ChunkSerializer.hpp/cpp** — serialization orchestration; owns per-tick buffers and tracks per-chunk serialization state.
@@ -102,11 +103,11 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 
 **server/game/ChunkRegistry.hpp** — owns `unordered_map<ChunkId, unique_ptr<Chunk>>`; provides `getChunk()` / `getChunkMutable()`, `generate()` / `activate()` / `deactivate()`
 
-**server/game/WorldChunk.hpp/cpp** — `voxels[]` array + changed-voxel tracking for deltas
+**server/game/WorldChunk.hpp/cpp** — `voxels[]` array + `voxelsDeltas` for per-tick voxel changes
 
 **server/game/components/**
 - `GlobalEntityIdComponent` — stable uint32 ID assigned at spawn
-- `DirtyComponent` — `snapshot/tickDirtyFlags` + `snapshot/tickDeltaType` (CREATE_ENTITY for new/spawned/moved, UPDATE_ENTITY default)
+- `DirtyComponent` — `dirtyFlags` (component change bits) + `deltaType` (CREATE_ENTITY/UPDATE_ENTITY/DELETE_ENTITY) + `snapshotDeltaType` (for SELF_ENTITY detection)
 - `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded flag; `serializeFields(SafeBufWriter&)`
 - `EntityTypeComponent`, `PlayerComponent`, `ChunkMembershipComponent`, `PhysicsModeComponent`, `BoundingBoxComponent`, `SheepBehaviorComponent`
 - `Pending{Create,ChunkChange,Delete}Component` — deferred chunk membership changes

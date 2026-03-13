@@ -53,10 +53,10 @@ size_t EntitySerializer::serializeDelta(
     bool isDeleted,
     SafeBufWriter& w)
 {
-    const uint8_t dirtyFlags = dirty.tickDirtyFlags;
+    const uint8_t dirtyFlags = dirty.dirtyFlags;
     
     // If no dirty flags and not deleted/leaving, nothing to serialize
-    if (dirtyFlags == 0 && !isDeleted && !isLeavingChunk && dirty.tickDeltaType == DeltaType::UPDATE_ENTITY) {
+    if (dirtyFlags == 0 && !isDeleted && !isLeavingChunk && dirty.deltaType == DeltaType::UPDATE_ENTITY) {
         return 0;
     }
     
@@ -72,7 +72,7 @@ size_t EntitySerializer::serializeDelta(
         deltaType = DeltaType::DELETE_ENTITY;
     } else if (isLeavingChunk) {
         deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
-    } else if (dirty.tickDeltaType == DeltaType::CREATE_ENTITY) {
+    } else if (dirty.deltaType == DeltaType::CREATE_ENTITY) {
         deltaType = DeltaType::CREATE_ENTITY;
     } else {
         deltaType = DeltaType::UPDATE_ENTITY;

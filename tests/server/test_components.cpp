@@ -59,8 +59,7 @@ TEST_CASE("DynamicPositionComponent::modify marks dirty when requested", "[compo
     );
     
     auto& dirty = reg.get<DirtyComponent>(ent);
-    CHECK(dirty.isSnapshotDirty());
-    CHECK(dirty.isTickDirty());
+    CHECK(dirty.isDirty());
 }
 
 TEST_CASE("DynamicPositionComponent::modify does not mark dirty when dirty=false", "[components]") {
@@ -74,8 +73,7 @@ TEST_CASE("DynamicPositionComponent::modify does not mark dirty when dirty=false
     );
     
     auto& dirty = reg.get<DirtyComponent>(ent);
-    CHECK_FALSE(dirty.isSnapshotDirty());
-    CHECK_FALSE(dirty.isTickDirty());
+    CHECK_FALSE(dirty.isDirty());
 }
 
 TEST_CASE("DynamicPositionComponent::modify sets moved flag", "[components]") {
@@ -117,20 +115,18 @@ TEST_CASE("DynamicPositionComponent serialization format", "[components]") {
 TEST_CASE("DirtyComponent default state is clean", "[components]") {
     DirtyComponent dirty;
     
-    CHECK_FALSE(dirty.isSnapshotDirty());
-    CHECK_FALSE(dirty.isTickDirty());
+    CHECK_FALSE(dirty.isDirty());
     CHECK_FALSE(dirty.isCreated());
     CHECK_FALSE(dirty.hasComponentChanges());
     CHECK(dirty.snapshotDeltaType == DeltaType::UPDATE_ENTITY);
-    CHECK(dirty.tickDeltaType == DeltaType::UPDATE_ENTITY);
+    CHECK(dirty.deltaType == DeltaType::UPDATE_ENTITY);
 }
 
-TEST_CASE("DirtyComponent::mark sets both flags", "[components]") {
+TEST_CASE("DirtyComponent::mark sets dirty flag", "[components]") {
     DirtyComponent dirty;
     dirty.mark(POSITION_BIT);
     
-    CHECK(dirty.isSnapshotDirty());
-    CHECK(dirty.isTickDirty());
+    CHECK(dirty.isDirty());
     CHECK(dirty.hasComponentChanges());
 }
 
@@ -140,8 +136,8 @@ TEST_CASE("DirtyComponent::markCreated sets CREATE_ENTITY delta type", "[compone
     
     CHECK(dirty.isCreated());
     CHECK(dirty.snapshotDeltaType == DeltaType::CREATE_ENTITY);
-    CHECK(dirty.tickDeltaType == DeltaType::CREATE_ENTITY);
-    CHECK(dirty.isSnapshotDirty());
+    CHECK(dirty.deltaType == DeltaType::CREATE_ENTITY);
+    CHECK(dirty.isDirty());
 }
 
 TEST_CASE("DirtyComponent CREATE_ENTITY delta type is distinct from component bits", "[components]") {
@@ -153,30 +149,17 @@ TEST_CASE("DirtyComponent CREATE_ENTITY delta type is distinct from component bi
     CHECK(dirty.isCreated());             // Has CREATE_ENTITY delta type
 }
 
-TEST_CASE("DirtyComponent::clearSnapshot clears snapshot but not tick", "[components]") {
+TEST_CASE("DirtyComponent::clear clears dirty flags", "[components]") {
     DirtyComponent dirty;
     dirty.mark(POSITION_BIT);
     dirty.markCreated();
     
-    dirty.clearSnapshot();
+    dirty.clear();
     
-    CHECK_FALSE(dirty.isSnapshotDirty());
-    CHECK(dirty.snapshotDeltaType == DeltaType::UPDATE_ENTITY);
-    CHECK(dirty.isTickDirty());  // Preserved
-    CHECK(dirty.tickDeltaType == DeltaType::CREATE_ENTITY);  // Preserved
-}
-
-TEST_CASE("DirtyComponent::clearTick clears tick but not snapshot", "[components]") {
-    DirtyComponent dirty;
-    dirty.mark(POSITION_BIT);
-    dirty.markCreated();
-    
-    dirty.clearTick();
-    
-    CHECK(dirty.isSnapshotDirty());  // Preserved
-    CHECK(dirty.snapshotDeltaType == DeltaType::CREATE_ENTITY);  // Preserved
-    CHECK_FALSE(dirty.isTickDirty());
-    CHECK(dirty.tickDeltaType == DeltaType::UPDATE_ENTITY);
+    CHECK_FALSE(dirty.isDirty());
+    CHECK(dirty.deltaType == DeltaType::UPDATE_ENTITY);
+    // snapshotDeltaType is preserved for SELF_ENTITY detection
+    CHECK(dirty.snapshotDeltaType == DeltaType::CREATE_ENTITY);
 }
 
 TEST_CASE("DirtyComponent hasComponentChanges ignores delta type", "[components]") {

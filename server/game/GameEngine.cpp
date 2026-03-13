@@ -282,9 +282,9 @@ void GameEngine::processPendingPlayerCreations() {
 }
 
 void GameEngine::clearAllDirtyFlags() {
-    // Clear voxel tick deltas for all chunks
+    // Clear voxel deltas for all chunks
     for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        chunkPtr->world.clearTickDelta();
+        chunkPtr->world.clearDelta();
     }
     
     // Note: Entity dirty flags are cleared by ChunkSerializer::serializeAllChunks()

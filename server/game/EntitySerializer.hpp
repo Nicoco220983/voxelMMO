@@ -45,7 +45,7 @@ struct EntitySerializer {
      * Determines delta type from dirty component state:
      *   - DELETE_ENTITY: isDeleted=true
      *   - CHUNK_CHANGE_ENTITY: isLeavingChunk=true
-     *   - CREATE_ENTITY: dirty.tickDeltaType == CREATE_ENTITY
+     *   - CREATE_ENTITY: dirty.deltaType == CREATE_ENTITY
      *   - UPDATE_ENTITY: otherwise
      *
      * @param reg           Entity registry.
