@@ -2,6 +2,8 @@
 
 > Keep this file up to date with every protocol change.
 > It is read by AI agents: keep it concise and accurate.
+>
+> Implementation: `server/game/ChunkSerializer.cpp` (server), `client/src/NetworkProtocol.js` (client)
 
 ## Universal message header (all messages)
 
@@ -159,15 +161,16 @@ To parse: read type (1 byte), read size (2 bytes LE), read `size-3` payload byte
 
 All frames use the universal header `[type][size]`.
 
-### INPUT (type = 0x00) — 13 bytes total
+### INPUT (type = 0x00) — 14 bytes total
 
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | uint8 | type = 0x00 (EntityType for INPUT messages) |
-| 1 | uint16 LE | size = 13 |
-| 3 | uint8 | InputButton bitmask |
-| 4 | float32 LE | yaw (radians) |
-| 8 | float32 LE | pitch (radians) |
+| 1 | uint16 LE | size = 14 |
+| 3 | uint8 | InputType (0 = MOVE) |
+| 4 | uint8 | InputButton bitmask |
+| 5 | float32 LE | yaw (radians) |
+| 9 | float32 LE | pitch (radians) |
 
 #### InputButton bitmask
 
@@ -189,6 +192,20 @@ All frames use the universal header `[type][size]`.
 | 3 | uint8 | EntityType (0=PLAYER, 1=GHOST_PLAYER) |
 
 Must be the first message after WebSocket connection.
+
+### VOXEL_DELETION (type = 0x02) — 17 bytes total
+
+Sent when player clicks to delete a voxel.
+
+| Offset | Size | Field |
+|--------|------|-------|
+| 0 | uint8 | type = 0x02 |
+| 1 | uint16 LE | size = 17 |
+| 3 | int32 LE | voxel X (world coordinates) |
+| 7 | int32 LE | voxel Y |
+| 11 | int32 LE | voxel Z |
+
+Server validates the request and broadcasts voxel changes to all clients in the affected chunk.
 
 ## Game EntityType values (for spawn/join)
 
