@@ -3,6 +3,7 @@
 #include "game/ChunkRegistry.hpp"
 #include "game/EntitySerializer.hpp"
 #include "game/components/DirtyComponent.hpp"
+#include "game/components/EntityTypeComponent.hpp"
 #include "common/SafeBufWriter.hpp"
 #include <entt/entt.hpp>
 #include <lz4.h>
@@ -233,20 +234,10 @@ static size_t serializeEntitiesDelta(const Chunk& chunk, entt::registry& reg,
     int32_t entityCount = 0;
     
     auto processEntity = [&](entt::entity ent) {
-        auto& dirty = reg.get<DirtyComponent>(ent);
-        const uint8_t mask = dirty.dirtyFlags;
-        const DeltaType deltaType = dirty.deltaType;
-        const bool isDeleted = (deltaType == DeltaType::DELETE_ENTITY);
         const bool isLeaving = chunk.leftEntities.count(ent) > 0;
-        const bool isNewlyCreated = (deltaType == DeltaType::CREATE_ENTITY);
         
-        size_t bytesWritten = 0;
-        if (isNewlyCreated) {
-            bytesWritten = EntitySerializer::serializeFull(reg, ent, w, /*forDelta=*/true);
-        } else if (mask || isDeleted || isLeaving || deltaType != DeltaType::UPDATE_ENTITY) {
-            bytesWritten = EntitySerializer::serializeDelta(
-                reg, ent, dirty, isLeaving, isDeleted, w);
-        }
+        size_t bytesWritten = EntitySerializer::serializeDelta(
+            reg, ent, isLeaving, w);
         
         if (bytesWritten > 0) {
             ++entityCount;

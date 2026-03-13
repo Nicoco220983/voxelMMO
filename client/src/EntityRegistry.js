@@ -203,7 +203,7 @@ export class EntityRegistry {
       const componentFlags = reader.readUint8()
 
       const entity = this.#createEntity(chunkRegistry, id, type, chunkId)
-      entity.applyComponents(reader, componentFlags, messageTick)
+      entity.deserializeComponents(reader, componentFlags, messageTick)
     }
     return count
   }
@@ -304,7 +304,7 @@ export class EntityRegistry {
         } else {
           console.debug('[EntityRegistry] Updating entity:', { entityId, entityType })
         }
-        entity.applyComponents(reader, componentMask, messageTick)
+        entity.deserializeComponents(reader, componentMask, messageTick)
         
         // Note: Chunk boundary detection is now handled by ChunkMembershipSystem
         // which runs every tick in GameClient.updateEntities()

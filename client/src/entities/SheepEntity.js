@@ -129,8 +129,8 @@ export class SheepEntity extends BaseEntity {
    * @param {number} flags
    * @param {number} messageTick
    */
-  applyComponents(reader, flags, messageTick) {
-    super.applyComponents(reader, flags, messageTick)
+  deserializeComponents(reader, flags, messageTick) {
+    super.deserializeComponents(reader, flags, messageTick)
     if (flags & SHEEP_BEHAVIOR_BIT) {
       this.behavior.deserialize(reader)
     }

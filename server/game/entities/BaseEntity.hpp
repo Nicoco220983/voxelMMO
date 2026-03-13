@@ -2,7 +2,11 @@
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
+#include "game/components/DynamicPositionComponent.hpp"
+#include "common/EntityType.hpp"
 #include "common/Types.hpp"
+#include "common/MessageTypes.hpp"
+#include "common/SafeBufWriter.hpp"
 #include <entt/entt.hpp>
 
 namespace voxelmmo {

@@ -1,10 +1,9 @@
 #include "game/EntitySerializer.hpp"
+#include "game/EntityTypeSerializers.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
-#include "game/components/SheepBehaviorComponent.hpp"
-#include "game/components/PendingDeleteComponent.hpp"
 #include "common/EntityType.hpp"
 #include "common/MessageTypes.hpp"
 
@@ -18,29 +17,17 @@ size_t EntitySerializer::serializeFull(
 {
     const size_t startOffset = w.offset();
     
-    const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
-    const auto& etypeComp = reg.get<EntityTypeComponent>(ent);
-    const auto etype = etypeComp.type;
+    // Get entity type and look up the appropriate serializer
+    const auto etype = reg.get<EntityTypeComponent>(ent).type;
+    const auto& serializer = getEntitySerializer(etype);
     
-    // For delta contexts, write CREATE_ENTITY delta type first
+    // Write delta type prefix for delta contexts (CHUNK_TICK_DELTA CREATE_ENTITY)
     if (forDelta) {
         w.write(static_cast<uint8_t>(DeltaType::CREATE_ENTITY));
     }
     
-    // Write GlobalEntityId and EntityType
-    w.write(gid.id);
-    w.write(static_cast<uint8_t>(etype));
-    
-    // Build flags: all applicable component bits (no CREATED_BIT needed, delta type indicates creation)
-    uint8_t flags = POSITION_BIT;
-    if (etype == EntityType::SHEEP) {
-        flags |= SHEEP_BEHAVIOR_BIT;
-    }
-    
-    w.write(flags);
-    
-    // Serialize components
-    serializeComponents(reg, ent, flags, w);
+    // Serialize entity state (no delta type prefix - that's handled above)
+    serializer.serializeFull(reg, ent, w);
     
     return w.offset() - startOffset;
 }
@@ -48,84 +35,51 @@ size_t EntitySerializer::serializeFull(
 size_t EntitySerializer::serializeDelta(
     entt::registry& reg,
     entt::entity ent,
-    const DirtyComponent& dirty,
     bool isLeavingChunk,
-    bool isDeleted,
     SafeBufWriter& w)
 {
-    const uint8_t dirtyFlags = dirty.dirtyFlags;
-    
-    // If no dirty flags and not deleted/leaving, nothing to serialize
-    if (dirtyFlags == 0 && !isDeleted && !isLeavingChunk && dirty.deltaType == DeltaType::UPDATE_ENTITY) {
-        return 0;
-    }
-    
     const size_t startOffset = w.offset();
     
-    const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
-    const auto etype = reg.get<EntityTypeComponent>(ent).type;
+    const auto& dirty = reg.get<DirtyComponent>(ent);
     
-    // Determine delta type (single value, not a bitmask).
-    // Priority: DELETE > CHUNK_CHANGE > CREATE > UPDATE
-    DeltaType deltaType;
+    // Handle special delta types that don't need entity-type-specific logic
+    const bool isDeleted = (dirty.deltaType == DeltaType::DELETE_ENTITY);
     if (isDeleted) {
-        deltaType = DeltaType::DELETE_ENTITY;
-    } else if (isLeavingChunk) {
-        deltaType = DeltaType::CHUNK_CHANGE_ENTITY;
-    } else if (dirty.deltaType == DeltaType::CREATE_ENTITY) {
-        deltaType = DeltaType::CREATE_ENTITY;
-    } else {
-        deltaType = DeltaType::UPDATE_ENTITY;
-    }
-    
-    w.write(static_cast<uint8_t>(deltaType));
-    w.write(gid.id);
-    
-    // DELETE: just GlobalEntityId, no additional data
-    if (deltaType == DeltaType::DELETE_ENTITY) {
+        const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
+        w.write(static_cast<uint8_t>(DeltaType::DELETE_ENTITY));
+        w.write(gid.id);
         return w.offset() - startOffset;
     }
     
-    // CHUNK_CHANGE: include new chunk ID computed from position, then done
-    if (deltaType == DeltaType::CHUNK_CHANGE_ENTITY) {
+    if (isLeavingChunk) {
+        const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
         const auto& dyn = reg.get<DynamicPositionComponent>(ent);
         const ChunkId newChunkId = ChunkId::make(
             dyn.y >> CHUNK_SHIFT_Y,
             dyn.x >> CHUNK_SHIFT_X,
             dyn.z >> CHUNK_SHIFT_Z
         );
+        w.write(static_cast<uint8_t>(DeltaType::CHUNK_CHANGE_ENTITY));
+        w.write(gid.id);
         w.write(newChunkId.packed);
         return w.offset() - startOffset;
     }
     
-    // CREATE and UPDATE: include EntityType and component data
-    w.write(static_cast<uint8_t>(etype));
+    // For CREATE_ENTITY and UPDATE_ENTITY, use entity-type-specific serializer
+    const auto etype = reg.get<EntityTypeComponent>(ent).type;
+    const auto& serializer = getEntitySerializer(etype);
     
-    // Component mask: keep component bits 0-5
-    uint8_t componentMask = dirtyFlags & 0x3F;
-    w.write(componentMask);
-    
-    // Serialize components based on mask
-    serializeComponents(reg, ent, componentMask, w);
+    if (dirty.deltaType == DeltaType::CREATE_ENTITY) {
+        // Newly created entity: write delta type + full state
+        w.write(static_cast<uint8_t>(DeltaType::CREATE_ENTITY));
+        serializer.serializeFull(reg, ent, w);
+    } else if (dirty.dirtyFlags != 0) {
+        // Updated entity: write delta type + delta state
+        w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
+        serializer.serializeUpdate(reg, ent, dirty, w);
+    }
     
     return w.offset() - startOffset;
-}
-
-void EntitySerializer::serializeComponents(
-    entt::registry& reg,
-    entt::entity ent,
-    uint8_t componentMask,
-    SafeBufWriter& w)
-{
-    if (componentMask & POSITION_BIT) {
-        const auto& dyn = reg.get<DynamicPositionComponent>(ent);
-        dyn.serializeFields(w);
-    }
-    
-    if (componentMask & SHEEP_BEHAVIOR_BIT) {
-        const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
-        behavior.serializeFields(w);
-    }
 }
 
 } // namespace voxelmmo

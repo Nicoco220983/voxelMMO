@@ -42,44 +42,22 @@ struct EntitySerializer {
     /**
      * @brief Serialize entity delta based on dirty flags.
      *
-     * Determines delta type from dirty component state:
-     *   - DELETE_ENTITY: isDeleted=true
+     * Determines delta type from DirtyComponent:
+     *   - DELETE_ENTITY: dirty.deltaType == DELETE_ENTITY
      *   - CHUNK_CHANGE_ENTITY: isLeavingChunk=true
      *   - CREATE_ENTITY: dirty.deltaType == CREATE_ENTITY
      *   - UPDATE_ENTITY: otherwise
      *
      * @param reg           Entity registry.
      * @param ent           Entity handle.
-     * @param dirty         DirtyComponent (passed by const ref to access delta type).
      * @param isLeavingChunk Entity is leaving this chunk (CHUNK_CHANGE).
-     * @param isDeleted     Entity is deleted (DELETE_ENTITY).
      * @param w             Buffer writer.
      * @return Bytes written (0 if nothing to serialize).
      */
     static size_t serializeDelta(
         entt::registry& reg,
         entt::entity ent,
-        const DirtyComponent& dirty,
         bool isLeavingChunk,
-        bool isDeleted,
-        SafeBufWriter& w);
-
-    /**
-     * @brief Serialize component data based on component mask.
-     *
-     * Writes component fields in order:
-     *   - POSITION_BIT: x,y,z,vx,vy,vz,grounded (DynamicPositionComponent)
-     *   - SHEEP_BEHAVIOR_BIT: state,timer (SheepBehaviorComponent)
-     *
-     * @param reg           Entity registry.
-     * @param ent           Entity handle.
-     * @param componentMask Bitmask of components to serialize.
-     * @param w             Buffer writer.
-     */
-    static void serializeComponents(
-        entt::registry& reg,
-        entt::entity ent,
-        uint8_t componentMask,
         SafeBufWriter& w);
 };
 

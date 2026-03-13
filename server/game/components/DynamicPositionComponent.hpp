@@ -54,6 +54,27 @@ struct DynamicPositionComponent {
         c = {nx, ny, nz, nvx, nvy, nvz, ngrounded, /*moved=*/true};
         if (dirty) reg.get<DirtyComponent>(ent).mark(POSITION_BIT);
     }
+
+    /**
+     * @brief Serialize DynamicPositionComponent if POSITION_BIT is set in flags.
+     *
+     * This is a helper for entity-type-specific serializers.
+     *
+     * @param reg   Entity registry.
+     * @param ent   Entity handle.
+     * @param flags Component mask.
+     * @param w     Buffer writer.
+     */
+    static void serialize(
+        entt::registry& reg,
+        entt::entity ent,
+        uint8_t flags,
+        SafeBufWriter& w) {
+        if (flags & POSITION_BIT) {
+            const auto& dyn = reg.get<DynamicPositionComponent>(ent);
+            dyn.serializeFields(w);
+        }
+    }
 };
 
 } // namespace voxelmmo

@@ -52,7 +52,7 @@ export class BaseEntity {
    * @param {number}    flags        ComponentFlags byte.
    * @param {number}    messageTick  Server tick from the chunk message header.
    */
-  applyComponents(reader, flags, messageTick) {
+  deserializeComponents(reader, flags, messageTick) {
     if (flags & POSITION_BIT) this.motion.deserialize(reader, messageTick)
   }
 
@@ -64,7 +64,7 @@ export class BaseEntity {
    * @param {number}    messageTick  Server tick from the chunk message header.
    */
   applyDelta(reader, messageTick) {
-    this.applyComponents(reader, reader.readUint8(), messageTick)
+    this.deserializeComponents(reader, reader.readUint8(), messageTick)
   }
 
   /**
@@ -99,7 +99,7 @@ export class BaseEntity {
     const type  = reader.readUint8()
     const flags = reader.readUint8()
     const entity = new BaseEntity(id, type)
-    entity.applyComponents(reader, flags, messageTick)
+    entity.deserializeComponents(reader, flags, messageTick)
     return entity
   }
 }

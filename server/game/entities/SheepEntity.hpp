@@ -1,7 +1,9 @@
 #pragma once
 #include "BaseEntity.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
+#include "game/components/DirtyComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
+#include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/BoundingBoxComponent.hpp"
 #include "game/components/PhysicsModeComponent.hpp"
 #include "game/components/SheepBehaviorComponent.hpp"
@@ -11,6 +13,7 @@
 
 namespace voxelmmo {
 struct EntitySpawnRequest;
+struct DirtyComponent;
 }
 
 namespace voxelmmo::SheepEntity {
@@ -68,5 +71,75 @@ inline entt::entity spawn(entt::registry& reg,
 entt::entity spawnImpl(entt::registry& reg,
                        GlobalEntityId globalId,
                        const EntitySpawnRequest& req);
+
+/**
+ * @brief Serialize a full sheep entity (no delta type prefix).
+ *
+ * Format: [global_id(4)] [entity_type(1)=SHEEP] [component_mask(1)] [position_data...] [behavior_data...]
+ *
+ * Sheep entities include POSITION_BIT and SHEEP_BEHAVIOR_BIT in the component mask.
+ *
+ * @param reg Entity registry.
+ * @param ent Entity handle.
+ * @param w   Buffer writer.
+ * @return Bytes written.
+ */
+inline size_t serializeFull(entt::registry& reg, entt::entity ent, SafeBufWriter& w) {
+    const size_t startOffset = w.offset();
+
+    // Sheep has POSITION_BIT and SHEEP_BEHAVIOR_BIT
+    constexpr uint8_t flags = POSITION_BIT | SHEEP_BEHAVIOR_BIT;
+
+    const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
+    w.write(gid.id);
+    w.write(static_cast<uint8_t>(EntityType::SHEEP));
+    w.write(flags);
+    DynamicPositionComponent::serialize(reg, ent, flags, w);
+
+    // Serialize sheep behavior component
+    const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
+    behavior.serializeFields(w);
+
+    return w.offset() - startOffset;
+}
+
+/**
+ * @brief Serialize sheep entity update (no delta type prefix).
+ *
+ * Writes components based on dirty flags (POSITION_BIT and/or SHEEP_BEHAVIOR_BIT).
+ *
+ * Format: [global_id(4)] [entity_type(1)=SHEEP] [component_mask(1)] [position_data... if POSITION_BIT] [behavior_data... if SHEEP_BEHAVIOR_BIT]
+ *
+ * @param reg   Entity registry.
+ * @param ent   Entity handle.
+ * @param dirty DirtyComponent containing dirty flags.
+ * @param w     Buffer writer.
+ * @return Bytes written (0 if nothing dirty).
+ */
+inline size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyComponent& dirty, SafeBufWriter& w) {
+    // Sheep tracks both position and behavior
+    const uint8_t flags = dirty.dirtyFlags & (POSITION_BIT | SHEEP_BEHAVIOR_BIT);
+
+    // Nothing to serialize if no tracked components are dirty
+    if (flags == 0) {
+        return 0;
+    }
+
+    const size_t startOffset = w.offset();
+
+    const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
+    w.write(gid.id);
+    w.write(static_cast<uint8_t>(EntityType::SHEEP));
+    w.write(flags);
+    DynamicPositionComponent::serialize(reg, ent, flags, w);
+
+    // Serialize sheep behavior component if dirty
+    if (flags & SHEEP_BEHAVIOR_BIT) {
+        const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
+        behavior.serializeFields(w);
+    }
+
+    return w.offset() - startOffset;
+}
 
 } // namespace voxelmmo::SheepEntity
