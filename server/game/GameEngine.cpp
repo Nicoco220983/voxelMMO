@@ -86,7 +86,6 @@ void GameEngine::unregisterGateway(GatewayId gwId) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = gateways.find(gwId);
     if (it == gateways.end()) return;
-    //for (PlayerId pid : it->second.players) removePlayer(pid);
     gateways.erase(it);
 }
 
@@ -135,70 +134,21 @@ bool GameEngine::cancelPlayerDisconnection(PlayerId playerId) {
     return DisconnectedPlayerSystem::cancelDisconnection(registry, it->second);
 }
 
-// void GameEngine::removePlayer(PlayerId playerId) {
-//     std::lock_guard<std::recursive_mutex> lock(mtx_);
-    
-//     // Remove from all gateway player sets (in case player was pending)
-//     for (auto& [gid, info] : gateways) {
-//         info.players.erase(playerId);
-//     }
-    
-//     auto it = playerEntities.find(playerId);
-//     if (it == playerEntities.end()) return;
-//     const entt::entity ent = it->second;
-
-//     // Remove from watching radius immediately (so they stop receiving updates)
-//     if (auto* dyn = registry.try_get<DynamicPositionComponent>(ent)) {
-//         const int32_t ocx = dyn->x >> CHUNK_SHIFT_X;
-//         const int32_t ocy = dyn->y >> CHUNK_SHIFT_Y;
-//         const int32_t ocz = dyn->z >> CHUNK_SHIFT_Z;
-//         for (int32_t dx = -ACTIVATION_RADIUS; dx <= ACTIVATION_RADIUS; ++dx)
-//         for (int32_t dy = -1; dy <= 1; ++dy)
-//         for (int32_t dz = -ACTIVATION_RADIUS; dz <= ACTIVATION_RADIUS; ++dz) {
-//             const ChunkId cid = ChunkId::make(ocy + dy, ocx + dx, ocz + dz);
-//             if (Chunk* chunk = chunkRegistry.getChunkMutable(cid))
-//                 chunk->watchingPlayers.erase(playerId);
-//         }
-//     }
-
-//     // Mark for deferred deletion - ChunkMembershipSystem will handle cleanup and destroy
-//     ChunkMembershipSystem::markForDeletion(registry, ent);
-//     playerEntities.erase(it);
-// }
-
 // ── Serialisation helpers ─────────────────────────────────────────────────
 
 void GameEngine::serializeChunks() {
-    // Build/update each chunk's state once (future: parallelisable over chunks)
     const uint32_t tick = static_cast<uint32_t>(tickCount);
-    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        chunkPtr->updateState(registry, tick);
-    }
-
-    // Dispatch one batch per gateway
-    for (auto& [gwId, gwInfo] : gateways) {
-        batchBuf.clear();
-        for (const ChunkId& cid : gwInfo.watchedChunks) {
-            Chunk* chunk = chunkRegistry.getChunkMutable(cid);
-            if (!chunk) continue;
-            
-            const uint32_t lastTick = gwInfo.lastStateTick[cid];
-            
-            // Ask the chunk what data to send for this gateway
-            const uint8_t* data = nullptr;
-            size_t length = 0;
-            chunk->getDataToSend(lastTick, data, length);
-            
-            if (length > 0 && data != nullptr) {
-                NetworkProtocol::appendToBatch(batchBuf, data, length);
-            }
-
-            gwInfo.lastStateTick[cid] = tick;
+    
+    // Clear and serialize all chunks into the concatenated buffer
+    serializer_.clear();
+    serializer_.serializeAllChunks(registry, chunkRegistry, tick);
+    
+    // Broadcast to all gateways (all gateways receive the same data)
+    if (serializer_.hasChunkData() && outputCallback) {
+        for (auto& [gwId, gwInfo] : gateways) {
+            outputCallback(gwId, serializer_.getChunkData(), serializer_.getChunkDataSize());
         }
-        if (!batchBuf.empty() && outputCallback)
-            outputCallback(gwId, batchBuf.data(), batchBuf.size());
     }
-
 }
 
 // ── Physics ───────────────────────────────────────────────────────────────
@@ -332,12 +282,13 @@ void GameEngine::processPendingPlayerCreations() {
 }
 
 void GameEngine::clearAllDirtyFlags() {
-    // Clear chunk-level state only
-    // Entity dirty flags are cleared by Chunk::updateState() based on what was serialized
+    // Clear voxel tick deltas for all chunks
     for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        chunkPtr->state.hasNewData = false;
         chunkPtr->world.clearTickDelta();
     }
+    
+    // Note: Entity dirty flags are cleared by ChunkSerializer::serializeAllChunks()
+    // which calls Chunk::clearEntityDirtyFlags() based on what was serialized.
 }
 
 } // namespace voxelmmo

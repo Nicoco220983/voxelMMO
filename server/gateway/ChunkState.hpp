@@ -7,7 +7,7 @@
 namespace voxelmmo {
 
 /**
- * @brief Serialised state cache for one chunk.
+ * @brief Serialised state cache for one chunk (gateway-side only).
  *
  * Stores a unified buffer containing:
  *   [snapshot][snapshot_delta_1][tick_delta_1][tick_delta_2]...
@@ -16,17 +16,6 @@ namespace voxelmmo {
  *   - tick: server tick when this message was built
  *   - offset: byte offset in the unified buffer where message starts
  *   - length: byte length of this message
- *
- * Used symmetrically on both sides of the pipeline:
- *
- *   Game-engine side (Chunk::state):
- *     - Unified buffer built by Chunk::buildSnapshot() and build*Delta().
- *     - hasNewData: set when any message is appended, cleared by dispatch loop.
- *     - scratch: reusable staging buffer for compression.
- *
- *   Gateway side (StateManager):
- *     - Unified buffer populated by receiveSnapshot() and receiveDelta().
- *     - scratch is unused.
  *
  * Query logic given a recipient's lastReceivedTick T:
  *   if T == 0 or no entries exist with tick <= T:
@@ -76,9 +65,6 @@ struct ChunkState {
      * Cleared by the serialize dispatch loop after batching.
      */
     bool hasNewData{false};
-
-    /** Reusable scratch buffer (game-engine side only). */
-    std::vector<uint8_t> scratch;
 
     // ── Query helpers ─────────────────────────────────────────────────────────
 

@@ -1,6 +1,6 @@
 #pragma once
 #include "common/Types.hpp"
-#include "common/ChunkState.hpp"
+#include "gateway/ChunkState.hpp"
 #include "gateway/PlayerInfo.hpp"
 #include <uwebsockets/App.h>
 #include <unordered_map>
@@ -38,9 +38,12 @@ public:
     /**
      * @brief Deliver one tick's batch of serialised messages from the game engine.
      *
-     * Batch wire format: direct concatenation of messages. Each message has a
-     * [type(1)][size(2)] header (3 bytes) where size includes the header itself.
+     * Batch wire format: concatenated chunk messages [msg1][msg2]...
+     * Each message has a [type(1)][size(2)] header (3 bytes) where size includes the header itself.
      * Safe to call from any thread; defers to the uWS event loop internally.
+     *
+     * The gateway splits the concatenated buffer into individual messages
+     * and routes each to the appropriate ChunkState bucket.
      *
      * @param data  Batch bytes (caller owns; copied immediately).
      * @param size  Total batch byte count.
@@ -95,7 +98,7 @@ public:
      * Calls receiveMessage() which handles all message types appropriately:
      * - Snapshots: clear all existing data
      * - Snapshot deltas: clear previous deltas (keep snapshot), append delta  
-     * - Tick deltas: just append to buffer
+     * - Tick deltas: just append to existing buffer
      *
      * The message type is read from byte[0]; the ChunkId from bytes [3:10].
      *

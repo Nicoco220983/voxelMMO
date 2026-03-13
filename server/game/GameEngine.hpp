@@ -1,6 +1,7 @@
 #pragma once
 #include "ChunkRegistry.hpp"
 #include "WorldGenerator.hpp"
+#include "ChunkSerializer.hpp"
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
 
@@ -25,19 +26,17 @@
 
 namespace voxelmmo {
 
-
-
 /**
  * @brief Authoritative game server.
  *
  * Owns the ECS registry, all live Chunk objects, and the main game loop.
- * Serialised chunk messages are delivered via a callback so the transport
- * layer (same-process queue, Unix socket, or TCP) stays decoupled.
+ * Serialises watched chunks per-gateway, with snapshot/delta based on what
+ * each gateway has already received.
  *
  * Typical call sequence per tick:
  *   1. Receive player inputs → modify ECS components via Component::modify().
  *   2. tick() → stepPhysics → checkPlayersChunks → serializeChunks.
- *      Each chunk's updateState() decides snapshot/snapshot-delta/tick-delta.
+ *      For each gateway: serialize only watched chunks, dispatch to that gateway.
  *   On new player join:
  *   3. JOIN message → pending queue → create in tick() → chunk activation.
  */
@@ -119,7 +118,7 @@ public:
 
     // ── Main loop ─────────────────────────────────────────────────────────
 
-    /** @brief Advance one game tick (physics → chunk checks → tick-delta serialisation). */
+    /** @brief Advance one game tick (physics → chunk checks → serialisation). */
     void tick();
 
     /**
@@ -141,7 +140,8 @@ public:
      * @brief Callback invoked once per tick per gateway with a full batch of
      * serialised messages ready to be forwarded to clients.
      *
-     * Batch wire format: repeated [ uint32 msgLen (LE) | msgLen bytes ]
+     * Batch wire format: concatenated chunk messages [msg1][msg2]...
+     * Each message has a [type(1)][size(2)] header.
      * The data pointer is valid only for the duration of the call.
      *
      * Signature: (GatewayId, data*, size)
@@ -185,6 +185,9 @@ public:
     /** @brief Access the player entities map (for testing only). */
     const std::unordered_map<PlayerId, entt::entity>& getPlayerEntities() const { return playerEntities; }
 
+    /** @brief Get current tick count (for testing only). */
+    int32_t getTickCount() const { return tickCount; }
+
     // ── Configuration ─────────────────────────────────────────────────────
 
     /** Number of chunk radii around a player position to activate (load). */
@@ -223,11 +226,11 @@ private:
     /** @brief Entity factory for deferred entity creation. */
     EntityFactory entityFactory;
 
-    /** @brief Reused batch buffer — cleared and refilled every serialize call. */
-    std::vector<uint8_t> batchBuf;
+    /** @brief Chunk serializer - handles serialization of all chunks. */
+    ChunkSerializer serializer_;
     
     /** @brief Entities marked for deletion that will be destroyed after serialization. */
-    std::vector<entt::entity> pendingDeletions;
+    std::vector<entt::entity> pendingDeletions_;
     
     /**
      * @brief Pending player creation request (enqueued at JOIN, processed in tick).
@@ -247,11 +250,12 @@ private:
     static uint32_t generateRandomSeed();
 
     /**
-     * @brief Serialise all chunks by calling updateState() on each.
+     * @brief Serialise all chunks and broadcast to all gateways.
      *
-     * Each chunk's updateState() will decide whether to build a snapshot,
-     * snapshot delta, or tick delta based on its current state.
-     * Then dispatches new deltas to all watching gateways.
+     * All active chunks are serialized into a single concatenated buffer.
+     * The same buffer is broadcast to all connected gateways.
+     * Each chunk gets snapshot (first time) or delta (subsequent) based on
+     * global serialization state tracked by ChunkSerializer.
      */
     void serializeChunks();
 
@@ -267,9 +271,8 @@ private:
     /**
      * @brief Clear chunk-level state after serialization.
      *
-     * Clears voxel tick deltas and hasNewData flags for all chunks.
-     * Entity dirty flags are cleared by Chunk::updateState() based on what
-     * was serialized (tick flags after tick delta, both after snapshot delta).
+     * Clears voxel tick deltas for all chunks.
+     * Entity dirty flags are cleared by ChunkSerializer during serialization.
      * Called at the end of tick() after all serialization.
      */
     void clearAllDirtyFlags();

@@ -2,7 +2,6 @@
 #include "WorldChunk.hpp"
 #include "common/Types.hpp"
 #include "common/MessageTypes.hpp"
-#include "common/ChunkState.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include <entt/entt.hpp>
@@ -25,14 +24,10 @@ namespace voxelmmo {
 /**
  * @brief Owns all simulation state for one chunk tile.
  *
- * Serialisation is driven by the three build*() methods which write into
- * ChunkState::buffer (a unified buffer containing snapshot + deltas).
- * Each method appends to or replaces the buffer content.
- *
- * Buffer ownership / thread-safety:
- *   Each Chunk owns its ChunkState (unified buffer + entries + scratch). Because the
- *   game loop will eventually serialise chunks in parallel, no buffer is
- *   shared across Chunk instances – each thread works on its own Chunk.
+ * Serialization is driven by the three build*() methods which write into
+ * external buffers provided by the caller (GameEngine's ChunkSerializer).
+ * This allows GameEngine to concatenate all chunk messages into a single
+ * buffer for efficient dispatch to gateways.
  */
 class Chunk {
 public:
@@ -62,70 +57,58 @@ public:
      */
     std::set<entt::entity> leftEntities;
 
-    /** @brief Serialised state cache (unified buffer with entries). */
-    ChunkState state;
-
     /** @brief True if the chunk has been activated (entities spawned). */
     bool activated = false;
 
     explicit Chunk(ChunkId chunkId);
 
     /**
-     * @brief Build a full snapshot and store it in state.buffer at offset 0.
+     * @brief Build a full snapshot and append it to outBuf.
      *
-     * Voxels are LZ4-compressed directly from world.voxels (zero copy for
-     * the voxel section). Entities are serialised raw into state.scratch,
-     * then copied or LZ4-compressed into the buffer depending on size.
+     * Voxels are LZ4-compressed directly from world.voxels.
+     * Entities are serialized into the provided buffer.
      * Clears any existing deltas (the snapshot supersedes all previous deltas).
      *
-     * @return const-ref to state.buffer (contains only the snapshot).
+     * @param reg The ECS registry.
+     * @param tickCount Current server tick.
+     * @param outBuf Output buffer to append the serialized message to.
+     * @param scratch Reusable scratch buffer for LZ4 compression.
+     * @return Number of bytes written to outBuf (0 on error).
      */
-    const std::vector<uint8_t>& buildSnapshot(entt::registry& reg, uint32_t tickCount);
+    size_t buildSnapshot(entt::registry& reg, uint32_t tickCount,
+                         std::vector<uint8_t>& outBuf,
+                         std::vector<uint8_t>& scratch);
 
     /**
-     * @brief Build a snapshot delta and append it to state.buffer.
+     * @brief Build a snapshot delta and append it to outBuf.
      *
      * Payload is built into a local staging buffer, optionally LZ4-compressed
-     * via state.scratch, then appended to the unified buffer.
-     * Sets state.hasNewData = true iff anything was appended.
+     * via scratch, then appended to outBuf.
      *
-     * @return true if a delta was appended; false if nothing changed.
+     * @param reg The ECS registry.
+     * @param tickCount Current server tick.
+     * @param outBuf Output buffer to append the serialized message to.
+     * @param scratch Reusable scratch buffer for LZ4 compression.
+     * @return Number of bytes written to outBuf (0 if nothing changed).
      */
-    bool buildSnapshotDelta(entt::registry& reg, uint32_t tickCount);
+    size_t buildSnapshotDelta(entt::registry& reg, uint32_t tickCount,
+                              std::vector<uint8_t>& outBuf,
+                              std::vector<uint8_t>& scratch);
 
     /**
-     * @brief Build a tick delta and append it to state.buffer.
+     * @brief Build a tick delta and append it to outBuf.
      *
      * Same strategy as buildSnapshotDelta.
      *
-     * @return true if a delta was appended; false if nothing changed.
+     * @param reg The ECS registry.
+     * @param tickCount Current server tick.
+     * @param outBuf Output buffer to append the serialized message to.
+     * @param scratch Reusable scratch buffer for LZ4 compression.
+     * @return Number of bytes written to outBuf (0 if nothing changed).
      */
-    bool buildTickDelta(entt::registry& reg, uint32_t tickCount);
-
-    /**
-     * @brief Update chunk state based on current conditions.
-     *
-     * Logic:
-     * - If no serialization exists yet (state.buffer empty),
-     *   calls buildSnapshot.
-     * - Else if first call after snapshot OR every 20 calls, calls buildSnapshotDelta.
-     * - Otherwise, calls buildTickDelta.
-     *
-     * @return true if any state was built/appended; false otherwise.
-     */
-    bool updateState(entt::registry& reg, uint32_t tickCount);
-
-    /**
-     * @brief Get data to send to a gateway based on their last received tick.
-     *
-     * Convenience wrapper around state.getDataToSend().
-     * Also returns the latest tick for updating the gateway's tracking.
-     *
-     * @param lastReceivedTick The tick the gateway last acknowledged.
-     * @param outData Pointer to data to send (nullptr if nothing to send).
-     * @param outLength Length of data to send (0 if nothing to send).
-     */
-    void getDataToSend(uint32_t lastReceivedTick, const uint8_t*& outData, size_t& outLength) const;
+    size_t buildTickDelta(entt::registry& reg, uint32_t tickCount,
+                          std::vector<uint8_t>& outBuf,
+                          std::vector<uint8_t>& scratch);
 
     /**
      * @brief Clear dirty flags for entities in this chunk based on what was serialized.
@@ -152,11 +135,12 @@ private:
 
     /**
      * @brief If buf's payload exceeds LZ4_COMPRESSION_THRESHOLD, copy the
-     *        payload to state.scratch, LZ4-compress it back into buf
+     *        payload to scratch, LZ4-compress it back into buf
      *        (replacing the payload), prepend the uncompressed-size int32,
      *        and update the type byte to the *_COMPRESSED variant.
      */
-    void maybeCompressDelta(std::vector<uint8_t>& buf, ServerMessageType compressedType);
+    void maybeCompressDelta(std::vector<uint8_t>& buf, ServerMessageType compressedType,
+                            std::vector<uint8_t>& scratch);
 
     /**
      * @brief Shared implementation for buildSnapshotDelta and buildTickDelta.
@@ -168,16 +152,18 @@ private:
      * @param compressedType Message type to use if LZ4 compression is applied.
      *
      * Note: Dirty flags are NOT cleared by this function. They are cleared centrally
-     * by GameEngine::clearAllDirtyFlags() after all serialization is complete.
+     * by GameEngine after all serialization is complete.
      */
-    bool buildDeltaImpl(
+    size_t buildDeltaImpl(
         entt::registry& reg,
         uint32_t tickCount,
         const std::vector<std::pair<VoxelIndex, VoxelType>>& voxelDeltas,
         DeltaType DirtyComponent::* deltaTypeField,
         uint8_t DirtyComponent::* flagsField,
         ServerMessageType rawType,
-        ServerMessageType compressedType);
+        ServerMessageType compressedType,
+        std::vector<uint8_t>& outBuf,
+        std::vector<uint8_t>& scratch);
 };
 
 } // namespace voxelmmo

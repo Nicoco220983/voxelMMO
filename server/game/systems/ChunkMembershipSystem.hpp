@@ -117,10 +117,10 @@ inline ChunkMembershipResult update(
         }
     });
 
-    // Phase 3: Rebuild watchingPlayers and gateway watchedChunks from player positions
+    // Phase 3: Rebuild watchingPlayers and activate chunks near players
+    // Note: All chunks are now broadcast to all gateways, so we don't track per-gateway watched chunks.
+    // We still activate chunks near players and track watchingPlayers for other purposes.
     for (auto& [gwId, gwInfo] : gateways) {
-        gwInfo.watchedChunks.clear();
-
         for (PlayerId pid : gwInfo.players) {
             auto entIt = playerEntities.find(pid);
             if (entIt == playerEntities.end()) continue;
@@ -132,7 +132,6 @@ inline ChunkMembershipResult update(
                 for (int32_t dy = -1; dy <= 1; ++dy) {
                     for (int32_t dz = -watchRadius; dz <= watchRadius; ++dz) {
                         const ChunkId cid = ChunkId::make(cpos.y + dy, cpos.x + dx, cpos.z + dz);
-                        gwInfo.watchedChunks.insert(cid);
 
                         // Ensure activation-radius chunks exist
                         if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {

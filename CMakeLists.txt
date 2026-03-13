@@ -14,6 +14,7 @@ find_package(unofficial-uwebsockets    CONFIG REQUIRED)
 add_executable(voxelmmo
     server/main.cpp
     server/game/GameEngine.cpp
+    server/game/ChunkSerializer.cpp
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
@@ -56,6 +57,7 @@ add_executable(voxelmmo_tests
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/Chunk.cpp
+    server/game/ChunkSerializer.cpp
     server/game/ChunkRegistry.cpp
     server/game/GameEngine.cpp
     server/game/EntitySerializer.cpp
