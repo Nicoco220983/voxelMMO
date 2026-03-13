@@ -36,8 +36,8 @@ export const DeltaType = Object.freeze({
  * @enum {number}
  */
 export const ClientMessageType = Object.freeze({
-  INPUT: 0,  // tool uint8 + buttons uint8 + yaw float32 + pitch float32
-  JOIN:  1,  // EntityType uint8
+  INPUT: 0,  // inputType uint8 + payload (variable size)
+  JOIN:  1,  // EntityType uint8 = 5 bytes
 })
 
 /**
@@ -60,8 +60,8 @@ export const InputButton = Object.freeze({
  * @enum {number}
  */
 export const InputType = Object.freeze({
-  MOVE: 0,  // Movement input (standard walking/flying controls)
-  // Future types: INTERACT, BUILD, DESTROY, etc.
+  MOVE: 0,          // Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
+  VOXEL_DESTROY: 1, // Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
 })
 
 /**
@@ -83,23 +83,64 @@ export class NetworkProtocol {
   // ── Client → Server (serialization) ────────────────────────────────────────
 
   /**
-   * Serialize an INPUT frame (14 bytes).
-   * Wire: type(1) + size(2) + tool uint8(1) + buttons uint8(1) + yaw float32LE(4) + pitch float32LE(4).
-   * @param {number} tool     InputTool value (selected hotbar slot).
+   * Serialize an INPUT frame.
+   * Dispatches to the appropriate serializer based on inputType.
+   * 
+   * For MOVE:      serializeInputMove(buttons, yaw, pitch)
+   * For VOXEL_DESTROY: serializeInputVoxelDestroy(vx, vy, vz)
+   * 
+   * @param {number} inputType  InputType value.
+   * @param {...*} args         Arguments depending on inputType.
+   * @returns {ArrayBuffer}
+   */
+  static serializeInput(inputType, ...args) {
+    switch (inputType) {
+      case InputType.MOVE:
+        return this.serializeInputMove(args[0], args[1], args[2])
+      case InputType.VOXEL_DESTROY:
+        return this.serializeInputVoxelDestroy(args[0], args[1], args[2])
+      default:
+        throw new Error(`Unknown inputType: ${inputType}`)
+    }
+  }
+
+  /**
+   * Serialize a MOVE input frame (14 bytes).
+   * Wire: type(1) + size(2) + inputType(1) + buttons(1) + yaw float32LE(4) + pitch float32LE(4).
    * @param {number} buttons  InputButton bitmask.
    * @param {number} yaw      Yaw angle in radians.
    * @param {number} pitch    Pitch angle in radians.
    * @returns {ArrayBuffer}
    */
-  static serializeInput(tool, buttons, yaw, pitch) {
+  static serializeInputMove(buttons, yaw, pitch) {
     const buf = new ArrayBuffer(14)
     const v   = new DataView(buf)
     v.setUint8(0,   ClientMessageType.INPUT)
     v.setUint16(1,  14, true)  // size
-    v.setUint8(3,   tool)
+    v.setUint8(3,   InputType.MOVE)
     v.setUint8(4,   buttons)
     v.setFloat32(5, yaw,   true)
     v.setFloat32(9, pitch, true)
+    return buf
+  }
+
+  /**
+   * Serialize a VOXEL_DESTROY input frame (16 bytes).
+   * Wire: type(1) + size(2) + inputType(1) + vx int32LE(4) + vy int32LE(4) + vz int32LE(4).
+   * @param {number} vx  World voxel X coordinate.
+   * @param {number} vy  World voxel Y coordinate.
+   * @param {number} vz  World voxel Z coordinate.
+   * @returns {ArrayBuffer}
+   */
+  static serializeInputVoxelDestroy(vx, vy, vz) {
+    const buf = new ArrayBuffer(16)
+    const v   = new DataView(buf)
+    v.setUint8(0,   ClientMessageType.INPUT)
+    v.setUint16(1,  16, true)  // size
+    v.setUint8(3,   InputType.VOXEL_DESTROY)
+    v.setInt32(4,   vx, true)
+    v.setInt32(8,   vy, true)
+    v.setInt32(12,  vz, true)
     return buf
   }
 

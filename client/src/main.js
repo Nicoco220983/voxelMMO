@@ -6,6 +6,7 @@ import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
 import { Hotbar } from './ui/Hotbar.js'
+import { VoxelHighlightSystem } from './systems/VoxelHighlightSystem.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -67,6 +68,9 @@ function getLocalPlayer() {
 // ── Hotbar ─────────────────────────────────────────────────────────────────
 const hotbar = new Hotbar()
 
+// ── Voxel Highlight System ────────────────────────────────────────────────
+const voxelHighlight = new VoxelHighlightSystem(scene)
+
 // ── Keyboard state ────────────────────────────────────────────────────────
 const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
 
@@ -102,6 +106,22 @@ window.addEventListener('keyup', (e) => {
 // ── Pointer lock (mouse look) ─────────────────────────────────────────────
 renderer.domElement.addEventListener('click', () => {
   renderer.domElement.requestPointerLock()
+})
+
+// ── Mouse click handling for voxel destruction ────────────────────────────
+window.addEventListener('mousedown', (e) => {
+  // Only handle left-click (button 0)
+  if (e.button !== 0) return
+
+  // Only active when "Destroy Voxel" tool is selected (slot 2)
+  if (hotbar.selectedIndex !== 2) return
+
+  // Must have a highlighted voxel
+  const targetVoxel = voxelHighlight.getHighlightedVoxel()
+  if (!targetVoxel) return
+
+  // Send destroy request to server
+  client.sendVoxelDestroy(targetVoxel.x, targetVoxel.y, targetVoxel.z)
 })
 
 document.addEventListener('mousemove', (e) => {
@@ -147,7 +167,7 @@ function computeButtons() {
 function sendInputIfChanged(buttons, yawVal, pitchVal) {
   const inputType = slotToInputType(hotbar.selectedIndex)
   if (buttons === lastButtons && yawVal === lastYaw && pitchVal === lastPitch && inputType === lastInputType) return
-  client.sendInput(NetworkProtocol.serializeInput(inputType, buttons, yawVal, pitchVal))
+  client.sendInput(NetworkProtocol.serializeInputMove(buttons, yawVal, pitchVal))
   lastButtons = buttons; lastYaw = yawVal; lastPitch = pitchVal; lastInputType = inputType
 }
 
@@ -197,6 +217,10 @@ function animate() {
 
   client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   client.rebuildDirtyChunks()
+  
+  // Update voxel highlight for "Destroy Voxel" tool
+  voxelHighlight.update(camera, client.chunkRegistry, hotbar.selectedIndex)
+  
   renderer.render(scene, camera)
 
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE

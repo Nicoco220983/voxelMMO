@@ -66,6 +66,14 @@ export class GameClient {
   }
 
   /**
+   * Get the chunk registry for accessing voxel data.
+   * @returns {ChunkRegistry}
+   */
+  get chunkRegistry() {
+    return this.#chunkRegistry
+  }
+
+  /**
    * @param {string}      url    Full WebSocket URL, e.g. "ws://localhost:8080".
    * @param {THREE.Scene} scene  The Three.js scene to add/remove chunk meshes into.
    */
@@ -138,6 +146,18 @@ export class GameClient {
    */
   sendJoin(entityType) {
     this.#socket?.send(NetworkProtocol.serializeJoin(entityType))
+  }
+
+  /**
+   * Send a VOXEL_DESTROY input to the server.
+   * @param {number} vx  World voxel X coordinate.
+   * @param {number} vy  World voxel Y coordinate.
+   * @param {number} vz  World voxel Z coordinate.
+   */
+  sendVoxelDestroy(vx, vy, vz) {
+    if (this.#socket?.readyState === WebSocket.OPEN) {
+      this.#socket.send(NetworkProtocol.serializeInputVoxelDestroy(vx, vy, vz))
+    }
   }
 
   /** Close the WebSocket connection. */

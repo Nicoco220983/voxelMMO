@@ -6,6 +6,7 @@
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
 #include "common/NetworkProtocol.hpp"
+#include "common/VoxelTypes.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DisconnectedPlayerComponent.hpp"
@@ -53,12 +54,23 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
     case ClientMessageType::INPUT: {
         auto msg = NetworkProtocol::parseInput(data, size);
         if (!msg) return;
-        auto it = playerEntities.find(playerId);
-        if (it == playerEntities.end()) return;
-        auto& inp  = registry.get<InputComponent>(it->second);
-        inp.buttons = msg->buttons;
-        inp.yaw     = msg->yaw;
-        inp.pitch   = msg->pitch;
+        
+        switch (msg->inputType) {
+            case InputType::MOVE: {
+                auto it = playerEntities.find(playerId);
+                if (it == playerEntities.end()) return;
+                auto& inp  = registry.get<InputComponent>(it->second);
+                inp.buttons = msg->buttons;
+                inp.yaw     = msg->yaw;
+                inp.pitch   = msg->pitch;
+                break;
+            }
+            case InputType::VOXEL_DESTROY: {
+                // Enqueue voxel deletion request for processing in tick()
+                pendingVoxelDeletions_.push_back({msg->vx, msg->vy, msg->vz});
+                break;
+            }
+        }
         break;
     }
 
@@ -181,6 +193,9 @@ void GameEngine::tick() {
     // Process pending player creation requests
     processPendingPlayerCreations();
 
+    // Process pending voxel deletions
+    processPendingVoxelDeletions();
+
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
     stepPhysics();
@@ -279,6 +294,28 @@ void GameEngine::processPendingPlayerCreations() {
         chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
     }
     pendingPlayerCreations_.clear();
+}
+
+void GameEngine::processPendingVoxelDeletions() {
+    for (const auto& del : pendingVoxelDeletions_) {
+        // Find the chunk containing this voxel
+        const ChunkId chunkId = ChunkId::fromVoxelPos(del.vx, del.vy, del.vz);
+        Chunk* chunk = chunkRegistry.getChunkMutable(chunkId);
+        
+        if (!chunk) continue;  // Chunk not loaded, skip
+        
+        // Convert world voxel coordinates to local chunk coordinates
+        const auto cx = (del.vx >> CHUNK_SHIFT_X);
+        const auto cy = (del.vy >> CHUNK_SHIFT_Y);
+        const auto cz = (del.vz >> CHUNK_SHIFT_Z);
+        const uint32_t localX = static_cast<uint32_t>(del.vx - (cx << CHUNK_SHIFT_X));
+        const uint32_t localY = static_cast<uint32_t>(del.vy - (cy << CHUNK_SHIFT_Y));
+        const uint32_t localZ = static_cast<uint32_t>(del.vz - (cz << CHUNK_SHIFT_Z));
+        
+        // Set voxel to AIR (this also records the delta)
+        chunk->world.setVoxel(localX, localY, localZ, VoxelTypes::AIR);
+    }
+    pendingVoxelDeletions_.clear();
 }
 
 void GameEngine::clearAllDirtyFlags() {

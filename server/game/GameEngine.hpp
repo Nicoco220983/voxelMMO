@@ -243,6 +243,18 @@ private:
     /** @brief Queue of pending player entity creation requests. */
     std::vector<PendingPlayerCreation> pendingPlayerCreations_;
     
+    /**
+     * @brief Pending voxel deletion request (enqueued on VOXEL_DESTROY message).
+     */
+    struct PendingVoxelDeletion {
+        int32_t vx;
+        int32_t vy;
+        int32_t vz;
+    };
+    
+    /** @brief Queue of pending voxel deletion requests. */
+    std::vector<PendingVoxelDeletion> pendingVoxelDeletions_;
+    
     /** @brief Stateless procedural terrain generator for world generation. */
     WorldGenerator worldGenerator;
 
@@ -297,6 +309,14 @@ private:
      * createPendingEntities().
      */
     void processPendingPlayerCreations();
+
+    /**
+     * @brief Process pending voxel deletion requests.
+     *
+     * Deletes voxels from the world by setting them to AIR.
+     * Called in tick() before serialization so changes are sent to clients.
+     */
+    void processPendingVoxelDeletions();
 
     /**
      * @brief Step physics simulation for all entities.

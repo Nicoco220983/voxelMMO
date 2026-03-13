@@ -44,7 +44,7 @@ enum class DeltaType : uint8_t {
 
 /** @brief First byte of every client → server binary WebSocket frame. */
 enum class ClientMessageType : uint8_t {
-    INPUT = 0,  ///< inputType uint8 + buttons uint8 + yaw float32 + pitch float32 — 10 bytes payload (total 14 with header)
+    INPUT = 0,  ///< inputType uint8 + payload (variable size based on input type)
     JOIN  = 1,  ///< EntityType uint8 — 1 byte payload (total 5 with header)
 };
 
@@ -60,8 +60,8 @@ enum class InputButton : uint8_t {
 
 /** @brief Input type - determines how the server interprets the input. */
 enum class InputType : uint8_t {
-    MOVE = 0,  ///< Movement input (standard walking/flying controls)
-    // Future types: INTERACT, BUILD, DESTROY, etc.
+    MOVE = 0,          ///< Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
+    VOXEL_DESTROY = 1, ///< Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
 };
 
 /**
@@ -87,10 +87,15 @@ inline constexpr size_t CHUNK_MESSAGE_HEADER_SIZE = MESSAGE_HEADER_SIZE + CHUNK_
 
 /** Parsed payload of a ClientMessageType::INPUT frame. */
 struct InputMessage {
-    InputType inputType;  ///< Type of input (determines interpretation)
-    uint8_t   buttons;  ///< InputButton bitmask
-    float     yaw;      ///< radians
-    float     pitch;    ///< radians
+    InputType inputType;  ///< Type of input (determines which fields are valid)
+    // MOVE type fields:
+    uint8_t   buttons;  ///< InputButton bitmask (valid if inputType == MOVE)
+    float     yaw;      ///< radians (valid if inputType == MOVE)
+    float     pitch;    ///< radians (valid if inputType == MOVE)
+    // VOXEL_DESTROY type fields:
+    int32_t   vx;       ///< World voxel X (valid if inputType == VOXEL_DESTROY)
+    int32_t   vy;       ///< World voxel Y (valid if inputType == VOXEL_DESTROY)
+    int32_t   vz;       ///< World voxel Z (valid if inputType == VOXEL_DESTROY)
 };
 
 /** Parsed payload of a ClientMessageType::JOIN frame. */
@@ -102,16 +107,36 @@ struct JoinMessage {
 
 /**
  * @brief Parse an INPUT frame.
- * Wire: type(1) + size(2) + tool uint8(1) + buttons uint8(1) + yaw float32LE(4) + pitch float32LE(4) = 14 bytes.
- * @return Parsed struct, or std::nullopt if @p size < 14.
+ * Wire format varies by inputType:
+ *   MOVE:          type(1) + size(2) + inputType(1) + buttons(1) + yaw float32LE(4) + pitch float32LE(4) = 14 bytes
+ *   VOXEL_DESTROY: type(1) + size(2) + inputType(1) + vx int32LE(4) + vy int32LE(4) + vz int32LE(4) = 16 bytes
+ * @return Parsed struct, or std::nullopt if size is insufficient for the inputType.
  */
 inline std::optional<InputMessage> parseInput(const uint8_t* data, size_t size) {
-    if (size < 14) return std::nullopt;
+    if (size < 4) return std::nullopt;  // Need at least header + inputType
+    
     InputMessage m;
     m.inputType = static_cast<InputType>(data[3]);
-    m.buttons = data[4];
-    std::memcpy(&m.yaw,   data + 5, sizeof(float));
-    std::memcpy(&m.pitch, data + 9, sizeof(float));
+    
+    switch (m.inputType) {
+        case InputType::MOVE:
+            if (size < 14) return std::nullopt;
+            m.buttons = data[4];
+            std::memcpy(&m.yaw,   data + 5, sizeof(float));
+            std::memcpy(&m.pitch, data + 9, sizeof(float));
+            break;
+            
+        case InputType::VOXEL_DESTROY:
+            if (size < 16) return std::nullopt;
+            std::memcpy(&m.vx, data + 4, sizeof(int32_t));
+            std::memcpy(&m.vy, data + 8, sizeof(int32_t));
+            std::memcpy(&m.vz, data + 12, sizeof(int32_t));
+            break;
+            
+        default:
+            return std::nullopt;  // Unknown input type
+    }
+    
     return m;
 }
 
