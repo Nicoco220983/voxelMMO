@@ -160,6 +160,19 @@ export class GameClient {
     }
   }
 
+  /**
+   * Send a VOXEL_CREATE input to the server.
+   * @param {number} vx  World voxel X coordinate.
+   * @param {number} vy  World voxel Y coordinate.
+   * @param {number} vz  World voxel Z coordinate.
+   * @param {number} voxelType  Voxel type to create.
+   */
+  sendVoxelCreate(vx, vy, vz, voxelType) {
+    if (this.#socket?.readyState === WebSocket.OPEN) {
+      this.#socket.send(NetworkProtocol.serializeInputVoxelCreate(vx, vy, vz, voxelType))
+    }
+  }
+
   /** Close the WebSocket connection. */
   disconnect() {
     this.#socket?.close()

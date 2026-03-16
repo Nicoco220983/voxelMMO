@@ -62,6 +62,7 @@ enum class InputButton : uint8_t {
 enum class InputType : uint8_t {
     MOVE = 0,          ///< Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
     VOXEL_DESTROY = 1, ///< Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
+    VOXEL_CREATE = 2,  ///< Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
 };
 
 /**
@@ -96,6 +97,8 @@ struct InputMessage {
     int32_t   vx;       ///< World voxel X (valid if inputType == VOXEL_DESTROY)
     int32_t   vy;       ///< World voxel Y (valid if inputType == VOXEL_DESTROY)
     int32_t   vz;       ///< World voxel Z (valid if inputType == VOXEL_DESTROY)
+    // VOXEL_CREATE type fields:
+    VoxelType voxelType; ///< Voxel type to create (valid if inputType == VOXEL_CREATE)
 };
 
 /** Parsed payload of a ClientMessageType::JOIN frame. */
@@ -131,6 +134,14 @@ inline std::optional<InputMessage> parseInput(const uint8_t* data, size_t size) 
             std::memcpy(&m.vx, data + 4, sizeof(int32_t));
             std::memcpy(&m.vy, data + 8, sizeof(int32_t));
             std::memcpy(&m.vz, data + 12, sizeof(int32_t));
+            break;
+            
+        case InputType::VOXEL_CREATE:
+            if (size < 17) return std::nullopt;
+            std::memcpy(&m.vx, data + 4, sizeof(int32_t));
+            std::memcpy(&m.vy, data + 8, sizeof(int32_t));
+            std::memcpy(&m.vz, data + 12, sizeof(int32_t));
+            m.voxelType = data[16];
             break;
             
         default:

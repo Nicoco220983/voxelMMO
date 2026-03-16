@@ -8,8 +8,10 @@ import { VoxelType, chunkIdFromVoxelPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_
 /** Maximum reach distance for voxel highlighting (in voxels) */
 const MAX_REACH_DISTANCE = 5
 
-/** Highlight color - yellow */
-const HIGHLIGHT_COLOR = 0xFFFF00
+/** Highlight color - yellow for destroy */
+const HIGHLIGHT_COLOR_DESTROY = 0xFFFF00
+/** Highlight color - green for create */
+const HIGHLIGHT_COLOR_CREATE = 0x00FF00
 
 /**
  * @class VoxelHighlightSystem
@@ -28,6 +30,12 @@ export class VoxelHighlightSystem {
 
   /** @type {{x: number, y: number, z: number}|null} */
   #highlightedVoxel = null
+  
+  /** @type {{x: number, y: number, z: number}|null} */
+  #placementVoxel = null
+  
+  /** @type {'destroy'|'create'|'none'} */
+  #currentMode = 'none'
 
   /**
    * @param {THREE.Scene} scene
@@ -46,7 +54,7 @@ export class VoxelHighlightSystem {
     const geometry = new THREE.BoxGeometry(1.05, 1.05, 1.05)
     const edges = new THREE.EdgesGeometry(geometry)
     const material = new THREE.LineBasicMaterial({ 
-      color: HIGHLIGHT_COLOR,
+      color: HIGHLIGHT_COLOR_DESTROY,
       linewidth: 2 
     })
     
@@ -54,18 +62,39 @@ export class VoxelHighlightSystem {
     this.#highlightMesh.visible = false
     this.#scene.add(this.#highlightMesh)
   }
+  
+  /**
+   * Update highlight color based on tool mode.
+   * @private
+   * @param {'destroy'|'create'|'none'} mode
+   */
+  #updateHighlightColor(mode) {
+    if (!this.#highlightMesh) return
+    const material = /** @type {THREE.LineBasicMaterial} */ (this.#highlightMesh.material)
+    if (mode === 'create') {
+      material.color.setHex(HIGHLIGHT_COLOR_CREATE)
+    } else {
+      material.color.setHex(HIGHLIGHT_COLOR_DESTROY)
+    }
+  }
 
   /**
-   * Update the highlight based on camera position and selected tool.
+   * Update the highlight based on camera position and tool mode.
    * @param {THREE.PerspectiveCamera} camera
    * @param {ChunkRegistry} chunkRegistry
-   * @param {number} selectedToolIndex - Current hotbar selection (0-9)
+   * @param {'destroy'|'create'|'none'} highlightMode - Current tool highlight mode
    */
-  update(camera, chunkRegistry, selectedToolIndex) {
-    // Only show highlight for "Destroy Voxel" tool (slot index 2)
-    if (selectedToolIndex !== 2) {
+  update(camera, chunkRegistry, highlightMode) {
+    // Only show highlight for destroy or create modes
+    if (highlightMode === 'none') {
       this.#hide()
       return
+    }
+    
+    // Update color if mode changed
+    if (this.#currentMode !== highlightMode) {
+      this.#currentMode = highlightMode
+      this.#updateHighlightColor(highlightMode)
     }
 
     // Get camera direction from yaw (Y) and pitch (X) rotation
@@ -84,10 +113,10 @@ export class VoxelHighlightSystem {
     const originZ = camera.position.z
 
     // Cast ray to find target voxel
-    const hit = this.#castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry)
+    const hit = this.#castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry, highlightMode)
 
     if (hit) {
-      this.#showAt(hit.x, hit.y, hit.z)
+      this.#showAt(hit.x, hit.y, hit.z, hit.placementX, hit.placementY, hit.placementZ)
     } else {
       this.#hide()
     }
@@ -95,7 +124,9 @@ export class VoxelHighlightSystem {
 
   /**
    * Cast a ray through the voxel grid using 3D DDA algorithm.
-   * Returns the first non-air voxel within reach, or null if none found.
+   * For DESTROY tool: returns the first non-air voxel.
+   * For CREATE tool: returns the empty voxel adjacent to the first non-air voxel
+   * (the one the ray entered from - closest to player along the ray).
    * @private
    * @param {number} originX
    * @param {number} originY
@@ -104,73 +135,72 @@ export class VoxelHighlightSystem {
    * @param {number} dirY
    * @param {number} dirZ
    * @param {ChunkRegistry} chunkRegistry
-   * @returns {{x: number, y: number, z: number}|null}
+   * @param {'destroy'|'create'|'none'} toolMode - Current tool mode
+   * @returns {{x: number, y: number, z: number, placementX: number, placementY: number, placementZ: number}|null}
    */
-  #castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry) {
+  #castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry, toolMode) {
     // Normalize direction
     const len = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ)
     const dx = dirX / len
     const dy = dirY / len
     const dz = dirZ / len
 
-    // Current voxel position
-    let vx = Math.floor(originX)
-    let vy = Math.floor(originY)
-    let vz = Math.floor(originZ)
-
-    // Step direction (-1 or 1)
-    const stepX = dx > 0 ? 1 : -1
-    const stepY = dy > 0 ? 1 : -1
-    const stepZ = dz > 0 ? 1 : -1
-
-    // Distance to next voxel boundary
-    const nextX = dx > 0 ? (vx + 1 - originX) / dx : (vx - originX) / dx
-    const nextY = dy > 0 ? (vy + 1 - originY) / dy : (vy - originY) / dy
-    const nextZ = dz > 0 ? (vz + 1 - originZ) / dz : (vz - originZ) / dz
-
-    // Delta T between voxel boundaries
-    const deltaX = Math.abs(1 / dx)
-    const deltaY = Math.abs(1 / dy)
-    const deltaZ = Math.abs(1 / dz)
-
-    let tX = nextX
-    let tY = nextY
-    let tZ = nextZ
-
-    // Check initial voxel (offset slightly to avoid self-intersection with camera voxel)
+    // Start slightly offset from origin to avoid self-intersection
     const startOffset = 0.01
-    const startX = Math.floor(originX + dx * startOffset)
-    const startY = Math.floor(originY + dy * startOffset)
-    const startZ = Math.floor(originZ + dz * startOffset)
-
-    // Track visited voxels to avoid checking the same one twice
-    let currX = startX, currY = startY, currZ = startZ
+    let t = startOffset
+    
+    // Current position along ray
+    let currX = originX + dx * t
+    let currY = originY + dy * t
+    let currZ = originZ + dz * t
+    
+    // Current voxel coordinates
+    let vx = Math.floor(currX)
+    let vy = Math.floor(currY)
+    let vz = Math.floor(currZ)
+    
+    // Track previous voxel (the one we came from)
+    let prevX = vx, prevY = vy, prevZ = vz
 
     // Maximum travel distance
     const maxT = MAX_REACH_DISTANCE
+    
+    // Step size (voxel-sized steps along ray)
+    const stepSize = 0.5  // Check every 0.5 voxels to ensure we don't miss any
 
-    while (true) {
-      // Check if we've exceeded reach
-      const minT = Math.min(tX, tY, tZ)
-      if (minT > maxT) break
-
+    while (t < maxT) {
       // Check current voxel
-      const voxel = this.#getVoxelAt(currX, currY, currZ, chunkRegistry)
+      const voxel = this.#getVoxelAt(vx, vy, vz, chunkRegistry)
+      
       if (voxel !== null && voxel !== VoxelType.AIR) {
-        return { x: currX, y: currY, z: currZ }
+        // Found a solid voxel
+        if (toolMode === 'destroy') {
+          // DESTROY tool: highlight the solid voxel itself
+          return { x: vx, y: vy, z: vz, placementX: vx, placementY: vy, placementZ: vz }
+        } else {
+          // CREATE tool: highlight the previous (empty) voxel we came from
+          return { x: prevX, y: prevY, z: prevZ, placementX: prevX, placementY: prevY, placementZ: prevZ }
+        }
       }
+      
+      // Current voxel is empty, remember it as the previous one
+      prevX = vx
+      prevY = vy
+      prevZ = vz
 
-      // Step to next voxel
-      if (tX < tY && tX < tZ) {
-        currX += stepX
-        tX += deltaX
-      } else if (tY < tZ) {
-        currY += stepY
-        tY += deltaY
-      } else {
-        currZ += stepZ
-        tZ += deltaZ
-      }
+      // Step along ray
+      t += stepSize
+      currX = originX + dx * t
+      currY = originY + dy * t
+      currZ = originZ + dz * t
+      
+      // Update voxel coordinates
+      vx = Math.floor(currX)
+      vy = Math.floor(currY)
+      vz = Math.floor(currZ)
+      
+      // If we haven't changed voxels, continue stepping
+      if (vx === prevX && vy === prevY && vz === prevZ) continue
     }
 
     return null
@@ -204,13 +234,17 @@ export class VoxelHighlightSystem {
    * @param {number} vx
    * @param {number} vy
    * @param {number} vz
+   * @param {number} placementX
+   * @param {number} placementY
+   * @param {number} placementZ
    */
-  #showAt(vx, vy, vz) {
+  #showAt(vx, vy, vz, placementX, placementY, placementZ) {
     if (!this.#highlightMesh) return
     this.#highlightMesh.position.set(vx + 0.5, vy + 0.5, vz + 0.5)
     this.#highlightMesh.visible = true
     this.#isVisible = true
     this.#highlightedVoxel = { x: vx, y: vy, z: vz }
+    this.#placementVoxel = { x: placementX, y: placementY, z: placementZ }
   }
 
   /**
@@ -222,6 +256,7 @@ export class VoxelHighlightSystem {
     this.#highlightMesh.visible = false
     this.#isVisible = false
     this.#highlightedVoxel = null
+    this.#placementVoxel = null
   }
 
   /**
@@ -230,6 +265,14 @@ export class VoxelHighlightSystem {
    */
   getHighlightedVoxel() {
     return this.#highlightedVoxel
+  }
+  
+  /**
+   * Get the placement voxel coordinates (for CREATE tool, this is where the voxel will be placed).
+   * @returns {{x: number, y: number, z: number}|null} Null if no placement position available.
+   */
+  getPlacementVoxel() {
+    return this.#placementVoxel
   }
 
   /**

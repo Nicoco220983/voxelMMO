@@ -1,34 +1,30 @@
 // @ts-check
 
+/** @typedef {import('../tools/Tool.js').Tool} Tool */
+
 /**
  * Hotbar UI component - bottom row of 10 selectable slots.
  * Keyboard: 1-0 to select slots (1=slot0, 0=slot9)
+ * Tools are assigned to slots dynamically via setSlot().
  */
 export class Hotbar {
   /** @type {HTMLElement} */
   container
-  /** @type {Array<{icon: string, name: string}>} */
+  
+  /** @type {Array<Tool|null>} */
   slots
+  
   /** @type {number} Currently selected slot index (0-9) */
   selectedIndex
+  
   /** @type {HTMLElement[]} */
   slotElements
 
   constructor() {
     this.selectedIndex = 0
     this.slotElements = []
-    this.slots = [
-      { icon: '✋', name: 'Bare Hand' },      // 1
-      { icon: '➕', name: 'Create Voxel' },   // 2
-      { icon: '✕', name: 'Destroy Voxel' },  // 3
-      { icon: '', name: 'Empty' },           // 4
-      { icon: '', name: 'Empty' },           // 5
-      { icon: '', name: 'Empty' },           // 6
-      { icon: '', name: 'Empty' },           // 7
-      { icon: '', name: 'Empty' },           // 8
-      { icon: '', name: 'Empty' },           // 9
-      { icon: '', name: 'Empty' },           // 0
-    ]
+    // Initialize with 10 empty slots
+    this.slots = Array(10).fill(null)
 
     this.container = document.createElement('div')
     this.container.id = 'hotbar'
@@ -53,13 +49,42 @@ export class Hotbar {
 
       const iconEl = document.createElement('span')
       iconEl.className = 'hotbar-icon'
-      iconEl.textContent = slot.icon
+      iconEl.textContent = slot ? slot.icon : ''
 
       slotEl.appendChild(numberEl)
       slotEl.appendChild(iconEl)
       this.container.appendChild(slotEl)
       this.slotElements.push(slotEl)
     })
+  }
+
+  /**
+   * Set a tool at a specific slot index.
+   * Re-renders the hotbar to show the tool's icon.
+   * @param {number} index - Slot index (0-9)
+   * @param {Tool} tool - The tool to assign (or null to clear)
+   */
+  setSlot(index, tool) {
+    if (index < 0 || index > 9) return
+    this.slots[index] = tool
+    
+    // Update the DOM element if it exists
+    if (this.slotElements[index]) {
+      const iconEl = this.slotElements[index].querySelector('.hotbar-icon')
+      if (iconEl) {
+        iconEl.textContent = tool ? tool.icon : ''
+      }
+    }
+  }
+
+  /**
+   * Get the tool at a specific slot index.
+   * @param {number} index - Slot index (0-9)
+   * @returns {Tool|null}
+   */
+  getSlot(index) {
+    if (index < 0 || index > 9) return null
+    return this.slots[index]
   }
 
   /**
@@ -114,13 +139,12 @@ export class Hotbar {
 
   /**
    * Get the currently selected slot info
-   * @returns {{index: number, icon: string, name: string}}
+   * @returns {{index: number, tool: Tool|null}}
    */
   getSelectedSlot() {
     return {
       index: this.selectedIndex,
-      icon: this.slots[this.selectedIndex].icon,
-      name: this.slots[this.selectedIndex].name,
+      tool: this.slots[this.selectedIndex],
     }
   }
 }

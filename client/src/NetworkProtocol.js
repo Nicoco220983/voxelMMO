@@ -62,6 +62,7 @@ export const InputButton = Object.freeze({
 export const InputType = Object.freeze({
   MOVE: 0,          // Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
   VOXEL_DESTROY: 1, // Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
+  VOXEL_CREATE: 2,  // Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
 })
 
 /**
@@ -88,6 +89,7 @@ export class NetworkProtocol {
    * 
    * For MOVE:      serializeInputMove(buttons, yaw, pitch)
    * For VOXEL_DESTROY: serializeInputVoxelDestroy(vx, vy, vz)
+   * For VOXEL_CREATE: serializeInputVoxelCreate(vx, vy, vz, voxelType)
    * 
    * @param {number} inputType  InputType value.
    * @param {...*} args         Arguments depending on inputType.
@@ -99,6 +101,8 @@ export class NetworkProtocol {
         return this.serializeInputMove(args[0], args[1], args[2])
       case InputType.VOXEL_DESTROY:
         return this.serializeInputVoxelDestroy(args[0], args[1], args[2])
+      case InputType.VOXEL_CREATE:
+        return this.serializeInputVoxelCreate(args[0], args[1], args[2], args[3])
       default:
         throw new Error(`Unknown inputType: ${inputType}`)
     }
@@ -141,6 +145,28 @@ export class NetworkProtocol {
     v.setInt32(4,   vx, true)
     v.setInt32(8,   vy, true)
     v.setInt32(12,  vz, true)
+    return buf
+  }
+
+  /**
+   * Serialize a VOXEL_CREATE input frame (17 bytes).
+   * Wire: type(1) + size(2) + inputType(1) + vx int32LE(4) + vy int32LE(4) + vz int32LE(4) + voxelType(1).
+   * @param {number} vx  World voxel X coordinate.
+   * @param {number} vy  World voxel Y coordinate.
+   * @param {number} vz  World voxel Z coordinate.
+   * @param {number} voxelType  Voxel type to create.
+   * @returns {ArrayBuffer}
+   */
+  static serializeInputVoxelCreate(vx, vy, vz, voxelType) {
+    const buf = new ArrayBuffer(17)
+    const v   = new DataView(buf)
+    v.setUint8(0,   ClientMessageType.INPUT)
+    v.setUint16(1,  17, true)  // size
+    v.setUint8(3,   InputType.VOXEL_CREATE)
+    v.setInt32(4,   vx, true)
+    v.setInt32(8,   vy, true)
+    v.setInt32(12,  vz, true)
+    v.setUint8(16,  voxelType)
     return buf
   }
 

@@ -6,6 +6,9 @@ import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
 import { Hotbar } from './ui/Hotbar.js'
+import { VoxelType } from './types.js'
+import { DestroyVoxelTool } from './tools/DestroyVoxelTool.js'
+import { CreateVoxelTool } from './tools/CreateVoxelTool.js'
 import { VoxelHighlightSystem } from './systems/VoxelHighlightSystem.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
@@ -67,6 +70,9 @@ function getLocalPlayer() {
 
 // ── Hotbar ─────────────────────────────────────────────────────────────────
 const hotbar = new Hotbar()
+// Assign tools to slots (slot index 0 = key "1", slot 1 = key "2", etc.)
+hotbar.setSlot(1, new DestroyVoxelTool())   // Key "2"
+hotbar.setSlot(2, new CreateVoxelTool(VoxelType.GRASS))  // Key "3"
 
 // ── Voxel Highlight System ────────────────────────────────────────────────
 const voxelHighlight = new VoxelHighlightSystem(scene)
@@ -108,20 +114,15 @@ renderer.domElement.addEventListener('click', () => {
   renderer.domElement.requestPointerLock()
 })
 
-// ── Mouse click handling for voxel destruction ────────────────────────────
+// ── Mouse click handling for tools ─────────────────────────────────────────
 window.addEventListener('mousedown', (e) => {
   // Only handle left-click (button 0)
   if (e.button !== 0) return
-
-  // Only active when "Destroy Voxel" tool is selected (slot 2)
-  if (hotbar.selectedIndex !== 2) return
-
-  // Must have a highlighted voxel
-  const targetVoxel = voxelHighlight.getHighlightedVoxel()
-  if (!targetVoxel) return
-
-  // Send destroy request to server
-  client.sendVoxelDestroy(targetVoxel.x, targetVoxel.y, targetVoxel.z)
+  
+  const currentTool = hotbar.getSelectedSlot().tool
+  if (currentTool) {
+    currentTool.onClick(client, voxelHighlight)
+  }
 })
 
 document.addEventListener('mousemove', (e) => {
@@ -218,8 +219,10 @@ function animate() {
   client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   client.rebuildDirtyChunks()
   
-  // Update voxel highlight for "Destroy Voxel" tool
-  voxelHighlight.update(camera, client.chunkRegistry, hotbar.selectedIndex)
+  // Update voxel highlight based on current tool
+  const currentTool = hotbar.getSelectedSlot().tool
+  const highlightMode = currentTool ? currentTool.getHighlightMode() : 'none'
+  voxelHighlight.update(camera, client.chunkRegistry, highlightMode)
   
   renderer.render(scene, camera)
 

@@ -70,6 +70,11 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
                 pendingVoxelDeletions_.push_back({msg->vx, msg->vy, msg->vz});
                 break;
             }
+            case InputType::VOXEL_CREATE: {
+                // Enqueue voxel creation request for processing in tick()
+                pendingVoxelCreations_.push_back({msg->vx, msg->vy, msg->vz, msg->voxelType});
+                break;
+            }
         }
         break;
     }
@@ -193,8 +198,9 @@ void GameEngine::tick() {
     // Process pending player creation requests
     processPendingPlayerCreations();
 
-    // Process pending voxel deletions
+    // Process pending voxel deletions and creations
     processPendingVoxelDeletions();
+    processPendingVoxelCreations();
 
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
@@ -316,6 +322,28 @@ void GameEngine::processPendingVoxelDeletions() {
         chunk->world.setVoxel(localX, localY, localZ, VoxelTypes::AIR);
     }
     pendingVoxelDeletions_.clear();
+}
+
+void GameEngine::processPendingVoxelCreations() {
+    for (const auto& create : pendingVoxelCreations_) {
+        // Find the chunk containing this voxel
+        const ChunkId chunkId = ChunkId::fromVoxelPos(create.vx, create.vy, create.vz);
+        Chunk* chunk = chunkRegistry.getChunkMutable(chunkId);
+        
+        if (!chunk) continue;  // Chunk not loaded, skip
+        
+        // Convert world voxel coordinates to local chunk coordinates
+        const auto cx = (create.vx >> CHUNK_SHIFT_X);
+        const auto cy = (create.vy >> CHUNK_SHIFT_Y);
+        const auto cz = (create.vz >> CHUNK_SHIFT_Z);
+        const uint32_t localX = static_cast<uint32_t>(create.vx - (cx << CHUNK_SHIFT_X));
+        const uint32_t localY = static_cast<uint32_t>(create.vy - (cy << CHUNK_SHIFT_Y));
+        const uint32_t localZ = static_cast<uint32_t>(create.vz - (cz << CHUNK_SHIFT_Z));
+        
+        // Set voxel to the requested type (this also records the delta)
+        chunk->world.setVoxel(localX, localY, localZ, create.voxelType);
+    }
+    pendingVoxelCreations_.clear();
 }
 
 void GameEngine::clearAllDirtyFlags() {

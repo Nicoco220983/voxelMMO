@@ -255,6 +255,19 @@ private:
     /** @brief Queue of pending voxel deletion requests. */
     std::vector<PendingVoxelDeletion> pendingVoxelDeletions_;
     
+    /**
+     * @brief Pending voxel creation request (enqueued on VOXEL_CREATE message).
+     */
+    struct PendingVoxelCreation {
+        int32_t vx;
+        int32_t vy;
+        int32_t vz;
+        VoxelType voxelType;
+    };
+    
+    /** @brief Queue of pending voxel creation requests. */
+    std::vector<PendingVoxelCreation> pendingVoxelCreations_;
+    
     /** @brief Stateless procedural terrain generator for world generation. */
     WorldGenerator worldGenerator;
 
@@ -317,6 +330,14 @@ private:
      * Called in tick() before serialization so changes are sent to clients.
      */
     void processPendingVoxelDeletions();
+    
+    /**
+     * @brief Process pending voxel creation requests.
+     *
+     * Creates voxels in the world at the specified positions.
+     * Called in tick() before serialization so changes are sent to clients.
+     */
+    void processPendingVoxelCreations();
 
     /**
      * @brief Step physics simulation for all entities.
