@@ -12,7 +12,8 @@ namespace VoxelTypes {
     inline constexpr VoxelType AIR   = 0;
     inline constexpr VoxelType STONE = 1;
     inline constexpr VoxelType DIRT  = 2;
-    inline constexpr VoxelType GRASS = 3;
+    inline constexpr VoxelType GRASS = 3;  // deprecated
+    inline constexpr VoxelType BASIC = 4;
 } // namespace VoxelTypes
 
 } // namespace voxelmmo

@@ -47,6 +47,8 @@ static void printUsage(const char* program) {
               << "  --test-entity-type <type> Entity type for TEST mode (optional)\n"
               << "                            Available types: PLAYER, GHOST_PLAYER, SHEEP\n"
               << "                            If not specified, no entities spawn (player-only)\n"
+              << "  --game-key <key>          Save directory name (default: "
+              << voxelmmo::SaveSystem::DEFAULT_GAME_KEY << ")\n"
               << "  --help                    Show this help message\n";
 }
 
@@ -60,6 +62,7 @@ int main(int argc, char* argv[]) {
     bool seedProvided = false;
     voxelmmo::GeneratorType cliGenType = voxelmmo::GeneratorType::NORMAL;
     std::optional<voxelmmo::EntityType> testEntityType;
+    std::string gameKey = voxelmmo::SaveSystem::DEFAULT_GAME_KEY;
     
     for (int i = 1; i < argc; ++i) {
         const char* arg = argv[i];
@@ -94,6 +97,9 @@ int main(int argc, char* argv[]) {
             }
             testEntityType = type;
         }
+        else if (std::strcmp(arg, "--game-key") == 0 && i + 1 < argc) {
+            gameKey = argv[++i];
+        }
         else {
             std::cerr << "Unknown argument: " << arg << "\n";
             printUsage(argv[0]);
@@ -102,7 +108,7 @@ int main(int argc, char* argv[]) {
     }
     
     // ── Initialize GameEngine (creates SaveSystem, loads global state, configures WorldGenerator) ──
-    voxelmmo::GameEngine game(cliSeed, cliGenType, seedProvided, testEntityType);
+    voxelmmo::GameEngine game(cliSeed, cliGenType, seedProvided, testEntityType, gameKey);
     
     voxelmmo::GatewayEngine gateway;
 

@@ -106,7 +106,8 @@ export const VoxelType = Object.freeze({
   AIR:   0,
   STONE: 1,
   DIRT:  2,
-  GRASS: 3,
+  GRASS: 3,  // deprecated
+  BASIC: 4,
 })
 
 // ── Sub-voxel constants (must match server Types.hpp) ────────────────────────

@@ -5,5 +5,8 @@ import { VoxelType } from '../types.js'
 export const DirtVoxel = {
   type: VoxelType.DIRT,
   name: 'dirt',
-  textures: 'dirt',
+  textures: {
+    default: 'dirt',
+    2: 'grass', // +Y top face
+  },
 }

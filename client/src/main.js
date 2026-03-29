@@ -72,7 +72,7 @@ function getLocalPlayer() {
 const hotbar = new Hotbar()
 // Assign tools to slots (slot index 0 = key "1", slot 1 = key "2", etc.)
 hotbar.setSlot(1, new DestroyVoxelTool())   // Key "2"
-hotbar.setSlot(2, new CreateVoxelTool(VoxelType.GRASS))  // Key "3"
+hotbar.setSlot(2, new CreateVoxelTool(VoxelType.BASIC))  // Key "3"
 
 // ── Voxel Highlight System ────────────────────────────────────────────────
 const voxelHighlight = new VoxelHighlightSystem(scene)

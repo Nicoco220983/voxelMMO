@@ -40,27 +40,31 @@ TEST_CASE("WorldGenerator - cy>=1 layer is all air", "[world_gen]") {
     }
 }
 
-// Wherever a GRASS voxel appears in a chunk, its neighbours must obey the
-// layering rule: AIR above, up to 3 DIRT below, STONE deeper down.
+// Wherever a surface DIRT voxel appears in a chunk, its neighbours must obey the
+// layering rule: AIR above, up to 3 DIRT layers below (including surface), STONE deeper down.
 // With 32-high chunks, the entire terrain (surface ∈ [4,30]) fits in cy=0.
 TEST_CASE("WorldGenerator - voxel type layering is correct", "[world_gen]") {
     WorldChunk chunk;
     generateChunk(chunk, 3, 0, 5);  // cy=0 contains all terrain
 
-    bool found_grass = false;
+    bool found_surface = false;
 
     for (int x = 0; x < CHUNK_SIZE_X; ++x) {
         for (int z = 0; z < CHUNK_SIZE_Z; ++z) {
             for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
-                if (chunk.voxels[idx(y, x, z)] != VoxelTypes::GRASS) continue;
+                if (chunk.voxels[idx(y, x, z)] != VoxelTypes::DIRT) continue;
 
-                found_grass = true;
+                // Only check DIRT voxels that have AIR directly above (surface)
+                if (y + 1 < CHUNK_SIZE_Y && chunk.voxels[idx(y + 1, x, z)] != VoxelTypes::AIR)
+                    continue;
+
+                found_surface = true;
 
                 // Voxel above must be AIR (if still within the chunk)
                 if (y + 1 < CHUNK_SIZE_Y)
                     REQUIRE(chunk.voxels[idx(y + 1, x, z)] == VoxelTypes::AIR);
 
-                // Up to 3 DIRT layers directly below
+                // Up to 3 DIRT layers directly below (surface + 2 more)
                 for (int dy = 1; dy <= 3 && (y - dy) >= 0; ++dy)
                     REQUIRE(chunk.voxels[idx(y - dy, x, z)] == VoxelTypes::DIRT);
 
@@ -71,8 +75,8 @@ TEST_CASE("WorldGenerator - voxel type layering is correct", "[world_gen]") {
         }
     }
 
-    // At (cx=3, cz=5) the terrain is not all-mountain, so grass must exist.
-    REQUIRE(found_grass);
+    // At (cx=3, cz=5) the terrain is not all-mountain, so a dirt surface must exist.
+    REQUIRE(found_surface);
 }
 
 TEST_CASE("WorldGenerator - deterministic output", "[world_gen]") {

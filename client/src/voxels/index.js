@@ -12,13 +12,13 @@
 
 import { StoneVoxel } from './StoneVoxel.js'
 import { DirtVoxel } from './DirtVoxel.js'
-import { GrassVoxel } from './GrassVoxel.js'
+import { BasicVoxel } from './BasicVoxel.js'
 
 /** @type {VoxelDef[]} */
 export const VOXEL_DEFS = [
   StoneVoxel,
   DirtVoxel,
-  GrassVoxel,
+  BasicVoxel,
 ]
 
 /** @type {Map<number, VoxelDef>} */

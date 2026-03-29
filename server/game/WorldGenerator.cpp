@@ -188,7 +188,7 @@ void WorldGenerator::computePlayerSpawnPos(const ChunkRegistry& chunkRegistry) {
 
 VoxelCoord WorldGenerator::getSurfaceY(VoxelCoord voxelX, VoxelCoord voxelZ, const ChunkRegistry& chunkRegistry) const noexcept {
     if (type_ == GeneratorType::TEST) {
-        return 4;  // Test world: grass at worldY = 4
+        return 4;  // Test world: basic at worldY = 4
     }
     
     // Find which chunk contains this voxel column
@@ -241,7 +241,7 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
     }
     
     // ── NORMAL mode: procedural entity spawning ──────────────────────────────
-    // Only spawn sheep in surface chunks (cy where grass exists: typically 0 or 1)
+    // Only spawn sheep in surface chunks (cy where dirt exists: typically 0 or 1)
     if (cy < 0 || cy > 1) return;
     
     // Hash chunk coords for deterministic spawning
@@ -284,14 +284,10 @@ void WorldGenerator::generate(std::vector<VoxelType>& voxels,
 {
     // ── TEST world generation ───────────────────────────────────────────────
     if (type_ == GeneratorType::TEST) {
-        constexpr int FLAT_SURFACE_Y = 4;  // Grass at worldY = 4
+        constexpr int FLAT_SURFACE_Y = 4;  // Basic at worldY = 4
         for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
             const int32_t worldY = chunkY * CHUNK_SIZE_Y + y;
-            VoxelType type;
-            if      (worldY > FLAT_SURFACE_Y)     type = VoxelTypes::AIR;
-            else if (worldY == FLAT_SURFACE_Y)    type = VoxelTypes::GRASS;
-            else if (worldY >= FLAT_SURFACE_Y - 3) type = VoxelTypes::DIRT;
-            else                                  type = VoxelTypes::STONE;
+            VoxelType type = (worldY > FLAT_SURFACE_Y) ? VoxelTypes::AIR : VoxelTypes::BASIC;
             
             for (int x = 0; x < CHUNK_SIZE_X; ++x) {
                 for (int z = 0; z < CHUNK_SIZE_Z; ++z) {
@@ -351,7 +347,7 @@ void WorldGenerator::generate(std::vector<VoxelType>& voxels,
 
                         VoxelType type;
                         if      (worldY > surfaceY)        type = VoxelTypes::AIR;
-                        else if (worldY == surfaceY)       type = VoxelTypes::GRASS;
+                        else if (worldY == surfaceY)       type = VoxelTypes::DIRT;
                         else if (worldY >= surfaceY - 3)   type = VoxelTypes::DIRT;
                         else                               type = VoxelTypes::STONE;
 
