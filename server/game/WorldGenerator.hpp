@@ -74,27 +74,31 @@ public:
      * @param chunkRegistry  Registry to populate with generated chunks.
      * @param entityFactory  Factory to queue entity spawn requests.
      * @param radius         Radius around center to generate chunks.
+     * @param saveSystem     Optional SaveSystem to load saved chunks from.
      * @return Spawn position in sub-voxels as {x, y, z}.
      */
-    const int32_t* getPlayerSpawnPos(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius);
+    const int32_t* getPlayerSpawnPos(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius, class SaveSystem* saveSystem = nullptr);
     
     /**
      * @brief Generate and activate initial chunks around a center position.
      *
      * Populates the chunkRegistry with chunks within radius of the center position.
      * Chunks are generated with voxels, activated, and entities are spawned.
+     * If saveSystem is provided, attempts to load saved chunks before generating.
      *
      * @param chunkRegistry        Registry to populate with generated chunks.
      * @param centerX/centerY/centerZ Center position in sub-voxels (typically 0,0,0).
      * @param radius Radius around center to generate chunks.
      * @param entityFactory        Factory to queue entity spawn requests.
      * @param tick                 Current server tick.
+     * @param saveSystem           Optional SaveSystem to load saved chunks from.
      */
     void generateChunks(ChunkRegistry& chunkRegistry,
                         SubVoxelCoord centerX, SubVoxelCoord centerY, SubVoxelCoord centerZ,
                         int32_t radius,
                         EntityFactory& entityFactory,
-                        uint32_t tick);
+                        uint32_t tick,
+                        class SaveSystem* saveSystem = nullptr);
     
     /**
      * @brief Fill @p voxels with terrain data for chunk (cx, cy, cz).

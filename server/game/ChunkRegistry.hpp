@@ -5,12 +5,14 @@
 #include <entt/entt.hpp>
 #include <unordered_map>
 #include <memory>
+#include <functional>
 
 namespace voxelmmo {
 
 // Forward declarations
 class WorldGenerator;
 class EntityFactory;
+class SaveSystem;
 
 /**
  * @brief Central registry for all chunks in the game world.
@@ -63,13 +65,15 @@ public:
      * @brief Generate a chunk's voxel data.
      *
      * Creates the chunk and generates voxels using the provided WorldGenerator.
+     * If a saveSystem is provided and a saved chunk exists, loads from save instead.
      * The chunk is NOT activated by this method - activation is a separate step.
      *
      * @param generator WorldGenerator for terrain generation.
      * @param id Chunk ID to generate.
-     * @return Pointer to the generated chunk.
+     * @param saveSystem Optional SaveSystem to load saved chunks from.
+     * @return Pointer to the generated/loaded chunk.
      */
-    Chunk* generate(WorldGenerator& generator, ChunkId id);
+    Chunk* generate(WorldGenerator& generator, ChunkId id, SaveSystem* saveSystem = nullptr);
 
     /**
      * @brief Create or get a chunk without generating voxels.
@@ -111,6 +115,17 @@ public:
     bool deactivate(ChunkId id, entt::registry& registry);
 
     /**
+     * @brief Unload a chunk from the registry (save it first!).
+     *
+     * This removes the chunk entirely from memory. The chunk should be
+     * saved before calling this. Entities must be removed first via deactivate().
+     *
+     * @param id Chunk ID to unload.
+     * @return true if the chunk was unloaded, false if not found.
+     */
+    bool unload(ChunkId id);
+
+    /**
      * @brief Get all loaded chunks (for iteration).
      * Used by systems that need to process all chunks (serialization, physics).
      */
@@ -131,6 +146,13 @@ public:
     void clear() {
         chunks_.clear();
     }
+
+    /**
+     * @brief Check if a chunk is active (entities spawned).
+     * @param id The chunk ID to check.
+     * @return true if the chunk exists and is activated.
+     */
+    bool isActive(ChunkId id) const;
 
     /**
      * @brief Add a non-player entity to its chunk.

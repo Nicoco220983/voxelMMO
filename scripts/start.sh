@@ -54,7 +54,8 @@ else
   cleanup() {
     echo ""
     echo "=== Stopping voxelmmo ==="
-    kill "$SERVER_PID" "$CLIENT_PID" 2>/dev/null || true
+    # Don't kill - server handles SIGINT itself and saves chunks
+    # Just wait for processes to exit
     wait "$SERVER_PID" "$CLIENT_PID" 2>/dev/null || true
   }
   trap cleanup INT TERM EXIT

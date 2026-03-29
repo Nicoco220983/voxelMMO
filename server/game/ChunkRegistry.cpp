@@ -1,21 +1,42 @@
 #include "game/ChunkRegistry.hpp"
 #include "game/WorldGenerator.hpp"
+#include "game/SaveSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include <iostream>
 
 namespace voxelmmo {
 
-Chunk* ChunkRegistry::generate(WorldGenerator& generator, ChunkId id) {
+Chunk* ChunkRegistry::generate(WorldGenerator& generator, ChunkId id, SaveSystem* saveSystem) {
     auto it = chunks_.find(id);
     if (it != chunks_.end()) {
         return it->second.get();  // Already exists
     }
 
     auto chunk = std::make_unique<Chunk>(id);
-    generator.generate(chunk->world.voxels, id.x(), id.y(), id.z());
+    
+    // Try to load from save first
+    bool loadedFromSave = false;
+    if (saveSystem && saveSystem->hasSavedChunk(id)) {
+        loadedFromSave = saveSystem->loadChunkVoxels(id, chunk->world.voxels);
+        if (loadedFromSave) {
+            std::cout << "[ChunkRegistry] Loaded saved chunk (" 
+                      << id.x() << "," << id.y() << "," << id.z() << ")\n";
+        }
+    }
+    
+    // Generate procedurally if not loaded from save
+    if (!loadedFromSave) {
+        generator.generate(chunk->world.voxels, id.x(), id.y(), id.z());
+    }
     
     Chunk* ptr = chunk.get();
     chunks_[id] = std::move(chunk);
+    
+    // Save new chunks immediately to ensure persistence
+    if (!loadedFromSave && saveSystem) {
+        saveSystem->saveChunkVoxels(id, ptr->world.voxels);
+    }
+    
     return ptr;
 }
 
@@ -78,6 +99,31 @@ bool ChunkRegistry::deactivate(ChunkId id, entt::registry& registry) {
     }
 
     return true;
+}
+
+bool ChunkRegistry::unload(ChunkId id) {
+    auto it = chunks_.find(id);
+    if (it == chunks_.end()) {
+        return false;
+    }
+    
+    // Safety check: don't unload if still activated
+    if (it->second->activated) {
+        std::cerr << "[ChunkRegistry] Warning: Cannot unload active chunk ("
+                  << id.x() << "," << id.y() << "," << id.z() << ")\n";
+        return false;
+    }
+    
+    chunks_.erase(it);
+    return true;
+}
+
+bool ChunkRegistry::isActive(ChunkId id) const {
+    auto it = chunks_.find(id);
+    if (it == chunks_.end()) {
+        return false;
+    }
+    return it->second->activated;
 }
 
 bool ChunkRegistry::addEntity(ChunkId chunkId, entt::entity entity) {

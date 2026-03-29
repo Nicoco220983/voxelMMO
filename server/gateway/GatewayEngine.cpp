@@ -17,6 +17,8 @@ void GatewayEngine::setPlayerInputCallback(PlayerInputCallback cb)             {
 // ── Incoming from game engine ─────────────────────────────────────────────
 
 void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
+    if (!uwsLoop) return;
+    
     // Copy the batch so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
@@ -38,6 +40,8 @@ void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
 }
 
 void GatewayEngine::receiveGameMessageForPlayer(PlayerId playerId, const uint8_t* data, size_t size) {
+    if (!uwsLoop) return;
+    
     // Copy the message so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
@@ -62,6 +66,27 @@ bool GatewayEngine::sendToPlayer(PlayerId playerId, const uint8_t* data, size_t 
 }
 
 // ── WebSocket server ──────────────────────────────────────────────────────
+
+void GatewayEngine::stop() {
+    if (uwsLoop) {
+        uwsLoop->defer([this]() {
+            std::cout << "[gateway] Stopping server...\n";
+            
+            // Close all WebSocket connections gracefully
+            for (auto& [pid, ws] : sockets) {
+                ws->close();
+            }
+            sockets.clear();
+            
+            // Close listen socket to stop accepting new connections
+            if (listenSocket_) {
+                us_listen_socket_close(0, listenSocket_);
+                listenSocket_ = nullptr;
+                std::cout << "[gateway] Listen socket closed\n";
+            }
+        });
+    }
+}
 
 void GatewayEngine::listen(int port) {
     // Capture the loop pointer now, while we are on the uWS thread.
@@ -110,8 +135,9 @@ void GatewayEngine::listen(int port) {
             if (disconnectCb) disconnectCb(pid);
         },
     })
-    .listen(port, [port](us_listen_socket_t* listenSocket) {
+    .listen(port, [this, port](us_listen_socket_t* listenSocket) {
         if (listenSocket) {
+            listenSocket_ = listenSocket;
             std::cout << "[gateway] Listening on port " << port << "\n";
         } else {
             std::cerr << "[gateway] Failed to bind port " << port << "\n";

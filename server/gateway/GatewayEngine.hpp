@@ -70,6 +70,14 @@ public:
     void listen(int port);
 
     /**
+     * @brief Stop the gateway server and close all connections.
+     *
+     * This stops the uWS event loop, causing listen() to return.
+     * Safe to call from any thread (e.g., signal handler).
+     */
+    void stop();
+
+    /**
      * @brief Callback fired when a player connects (use to notify GameEngine).
      * Signature: (PlayerId)
      */
@@ -81,7 +89,7 @@ public:
      * Signature: (PlayerId)
      */
     using PlayerDisconnectCallback = std::function<void(PlayerId)>;
-    void setPlayerDisconnectCallback(PlayerDisconnectCallback cb);
+    void setPlayerDisconnectCallback(PlayerConnectCallback cb);
 
     /**
      * @brief Callback fired for every player input message.
@@ -142,6 +150,9 @@ private:
      * work safely onto the uWS event loop.
      */
     uWS::Loop* uwsLoop{nullptr};
+
+    /** @brief Listen socket for graceful shutdown. */
+    us_listen_socket_t* listenSocket_{nullptr};
 
     /** @brief Active connections keyed by PlayerId. */
     std::unordered_map<PlayerId, uWS::WebSocket<false, true, PlayerConnection>*> sockets;

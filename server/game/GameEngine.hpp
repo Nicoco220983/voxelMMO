@@ -1,6 +1,7 @@
 #pragma once
 #include "ChunkRegistry.hpp"
 #include "WorldGenerator.hpp"
+#include "SaveSystem.hpp"
 #include "ChunkSerializer.hpp"
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
@@ -23,6 +24,10 @@
 #include <mutex>
 #include <random>
 #include <cstdint>
+#include <thread>
+#include <atomic>
+#include <chrono>
+#include <memory>
 
 namespace voxelmmo {
 
@@ -43,15 +48,17 @@ namespace voxelmmo {
 class GameEngine {
 public:
     /**
-     * @brief Construct a GameEngine with configurable world generation.
-     * @param seed           World generation seed (0 = random if seedProvided is false).
-     * @param seedProvided   Whether the seed was explicitly provided.
-     * @param type           World generator type (NORMAL or TEST).
+     * @brief Construct a GameEngine.
+     * Creates internal SaveSystem, loads/creates global state, and configures WorldGenerator.
+     * @param cliSeed        Seed from CLI (used if no saved state exists).
+     * @param cliType        Generator type from CLI.
+     * @param seedProvided   Whether the seed was explicitly provided by CLI.
      * @param testEntityType Entity type for TEST mode (nullopt = no entity).
+     * @param gameKey        Optional save directory name (default: SaveSystem::DEFAULT_GAME_KEY).
      */
-    GameEngine(uint32_t seed = 0, bool seedProvided = false,
-               GeneratorType type = GeneratorType::NORMAL,
-               std::optional<EntityType> testEntityType = std::nullopt);
+    GameEngine(uint32_t cliSeed, GeneratorType cliType, bool seedProvided,
+               std::optional<EntityType> testEntityType = std::nullopt,
+               const std::string& gameKey = SaveSystem::DEFAULT_GAME_KEY);
 
     // ── Gateway management ────────────────────────────────────────────────
 
@@ -173,6 +180,46 @@ public:
     
     /** @brief Access the world generator (non-const, for tests). */
     WorldGenerator& getWorldGenerator() { return worldGenerator; }
+    
+    /** @brief Save all active chunks (for shutdown). */
+    void saveActiveChunks();
+    
+    /** @brief Save global state to disk. */
+    void saveGlobalState();
+    
+    /** @brief Get the SaveSystem (may be nullptr if not initialized). */
+    SaveSystem* getSaveSystem() const { return saveSystem_.get(); }
+    
+    /** @brief Get the base save directory (empty string if not initialized). */
+    std::string getSaveDirectory() const { return saveSystem_ ? saveSystem_->getBaseDir() : ""; }
+    
+    /** @brief Get the seed from SaveSystem (0 if not initialized). */
+    uint32_t getSeed() const { return saveSystem_ ? saveSystem_->getSeed() : 0; }
+    
+    /** @brief Get the generator type from SaveSystem (NORMAL if not initialized). */
+    GeneratorType getGeneratorType() const { return saveSystem_ ? saveSystem_->getGeneratorType() : GeneratorType::NORMAL; }
+
+    // ── Game loop lifecycle ────────────────────────────────────────────────
+
+    /**
+     * @brief Start the game loop in the current thread.
+     *
+     * Blocks until stop() is called. Runs at TICK_RATE ticks per second.
+     */
+    void run();
+
+    /**
+     * @brief Request graceful shutdown of the game loop.
+     *
+     * Signals the game loop to stop. The loop will complete the current
+     * tick, save active chunks, and then return.
+     */
+    void stop();
+
+    /**
+     * @brief Check if the game loop is currently running.
+     */
+    bool isRunning() const { return running_.load(); }
 
     // ── Test accessors ────────────────────────────────────────────────────
 
@@ -270,6 +317,17 @@ private:
     
     /** @brief Stateless procedural terrain generator for world generation. */
     WorldGenerator worldGenerator;
+    
+    /** @brief SaveSystem for loading/saving chunks (must be initialized before run()). */
+    std::unique_ptr<SaveSystem> saveSystem_;
+
+    // ── Game loop control ───────────────────────────────────────────────────
+
+    /** @brief Flag to control game loop execution. */
+    std::atomic<bool> running_{false};
+    
+    /** @brief Flag to request shutdown. */
+    std::atomic<bool> stopRequested_{false};
 
     /** @brief Generate a deterministic random seed. */
     static uint32_t generateRandomSeed();

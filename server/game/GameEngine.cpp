@@ -18,14 +18,21 @@
 
 namespace voxelmmo {
 
-GameEngine::GameEngine(uint32_t seed, bool seedProvided,
-                       GeneratorType type, std::optional<EntityType> testEntityType)
-    : worldGenerator(seedProvided ? seed : generateRandomSeed(), type, testEntityType)
+GameEngine::GameEngine(uint32_t cliSeed, GeneratorType cliType, bool seedProvided,
+                       std::optional<EntityType> testEntityType, const std::string& gameKey)
 {
     // Register entity spawn implementations
     entityFactory.registerSpawnImpl(EntityType::GHOST_PLAYER, GhostPlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::PLAYER, PlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::SHEEP, SheepEntity::spawnImpl);
+    
+    // Initialize SaveSystem and load/create global state
+    saveSystem_ = std::make_unique<SaveSystem>(gameKey);
+    saveSystem_->loadOrCreateGlobalState(cliSeed, cliType);
+    
+    // Configure WorldGenerator with loaded parameters
+    uint32_t effectiveSeed = seedProvided ? saveSystem_->getSeed() : generateRandomSeed();
+    worldGenerator = WorldGenerator(effectiveSeed, saveSystem_->getGeneratorType(), testEntityType);
 }
 
 uint32_t GameEngine::generateRandomSeed() {
@@ -41,6 +48,18 @@ void GameEngine::setOutputCallback(OutputCallback cb) {
 
 void GameEngine::setPlayerOutputCallback(PlayerOutputCallback cb) {
     playerOutputCallback = std::move(cb);
+}
+
+void GameEngine::saveActiveChunks() {
+    if (saveSystem_) {
+        saveSystem_->saveActiveChunks(chunkRegistry);
+    }
+}
+
+void GameEngine::saveGlobalState() {
+    if (saveSystem_) {
+        saveSystem_->saveGlobalState();
+    }
 }
 
 // ── Player input ──────────────────────────────────────────────────────────
@@ -217,6 +236,9 @@ void GameEngine::tick() {
     auto membershipResult = ChunkMembershipSystem::update(
         gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
 
+    // Unload unwatched chunks (save first, then unload from memory)
+    ChunkMembershipSystem::unloadUnwatchedChunks(chunkRegistry, registry, saveSystem_.get());
+
     // Set DELETE_ENTITY delta type on entities marked for deletion
     // This must happen before serialization so the DELETE delta is sent
     setDeleteDeltaOnPendingDeletions();
@@ -279,7 +301,7 @@ void GameEngine::sendSelfEntityMessages() {
 
 void GameEngine::processPendingPlayerCreations() {
     for (const auto& req : pendingPlayerCreations_) {
-        const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS);
+        const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS, saveSystem_.get());
         const GlobalEntityId globalId = acquireEntityId();
         entt::entity ent;
         
@@ -354,6 +376,58 @@ void GameEngine::clearAllDirtyFlags() {
     
     // Note: Entity dirty flags are cleared by ChunkSerializer::serializeAllChunks()
     // which calls Chunk::clearEntityDirtyFlags() based on what was serialized.
+}
+
+// ── Game loop lifecycle ────────────────────────────────────────────────────
+
+void GameEngine::run() {
+    if (running_.exchange(true)) {
+        std::cerr << "[GameEngine] Error: run() called but already running\n";
+        return;
+    }
+    
+    if (!saveSystem_) {
+        std::cerr << "[GameEngine] Error: SaveSystem not set, cannot run\n";
+        running_ = false;
+        return;
+    }
+    
+    std::cout << "[GameEngine] Starting game loop...\n";
+    stopRequested_ = false;
+    
+    using Clock = std::chrono::steady_clock;
+    const auto tickDuration = std::chrono::milliseconds(1000 / TICK_RATE);
+    auto nextTick = Clock::now();
+
+    while (!stopRequested_.load()) {
+        nextTick += tickDuration;
+        tick();
+        std::this_thread::sleep_until(nextTick);
+    }
+    
+    // Shutdown sequence
+    std::cout << "[GameEngine] Stopping game loop...\n";
+    
+    // Save active chunks (unwatched chunks already saved when unloaded)
+    std::cout << "[GameEngine] Saving active chunks...\n";
+    saveSystem_->saveActiveChunks(chunkRegistry);
+    
+    // Save global state
+    // Note: We don't have direct access to globalState here, it's in main.cpp
+    // The caller should save global state after run() returns
+    
+    std::cout << "[GameEngine] Game loop stopped\n";
+    running_ = false;
+}
+
+void GameEngine::stop() {
+    if (!running_.load()) {
+        std::cout << "[GameEngine] stop() called but not running\n";
+        return;
+    }
+    
+    std::cout << "[GameEngine] Shutdown requested\n";
+    stopRequested_ = true;
 }
 
 } // namespace voxelmmo

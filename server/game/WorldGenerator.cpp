@@ -143,7 +143,8 @@ void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
                                     SubVoxelCoord centerX, SubVoxelCoord centerY, SubVoxelCoord centerZ,
                                     int32_t radius,
                                     EntityFactory& entityFactory,
-                                    uint32_t tick) {
+                                    uint32_t tick,
+                                    SaveSystem* saveSystem) {
     // Convert center position to chunk coordinates
     const ChunkCoord centerCx = centerX >> CHUNK_SHIFT_X;
     const ChunkCoord centerCy = centerY >> CHUNK_SHIFT_Y;
@@ -157,18 +158,18 @@ void WorldGenerator::generateChunks(ChunkRegistry& chunkRegistry,
                 const ChunkCoord cy = centerCy + dy;
                 const ChunkCoord cz = centerCz + dz;
                 const ChunkId chunkId = ChunkId::make(cy, cx, cz);
-                // Generate voxels, activate chunk, and generate entities
-                chunkRegistry.generate(*this, chunkId);
+                // Generate voxels (or load from save), activate chunk, and generate entities
+                chunkRegistry.generate(*this, chunkId, saveSystem);
                 chunkRegistry.activate(chunkId, *this, entityFactory, tick);
             }
         }
     }
 }
 
-const int32_t* WorldGenerator::getPlayerSpawnPos(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius) {
+const int32_t* WorldGenerator::getPlayerSpawnPos(ChunkRegistry& chunkRegistry, EntityFactory& entityFactory, int32_t radius, SaveSystem* saveSystem) {
     if (!spawnPosComputed_) {
-        // Generate initial chunks first
-        generateChunks(chunkRegistry, 0, 0, 0, radius, entityFactory, 0);
+        // Generate initial chunks first (or load from save)
+        generateChunks(chunkRegistry, 0, 0, 0, radius, entityFactory, 0, saveSystem);
         computePlayerSpawnPos(chunkRegistry);
         spawnPosComputed_ = true;
     }

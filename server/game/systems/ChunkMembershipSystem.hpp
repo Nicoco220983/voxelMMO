@@ -1,5 +1,6 @@
 #pragma once
 #include "game/ChunkRegistry.hpp"
+#include "game/SaveSystem.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
@@ -154,6 +155,60 @@ inline ChunkMembershipResult update(
     }
 
     return result;
+}
+
+/**
+ * @brief Unload chunks that are no longer watched by any player.
+ *
+ * This function should be called after update() has rebuilt watchingPlayers.
+ * Chunks with empty watchingPlayers are saved and unloaded from memory.
+ *
+ * @param chunkRegistry     Chunk registry for accessing/unloading chunks.
+ * @param registry          The ECS registry (for entity cleanup).
+ * @param saveSystem        SaveSystem for persisting chunks before unload.
+ * @return Number of chunks unloaded.
+ */
+inline size_t unloadUnwatchedChunks(
+    ChunkRegistry& chunkRegistry,
+    entt::registry& registry,
+    SaveSystem* saveSystem)
+{
+    size_t unloadedCount = 0;
+    
+    // Collect chunks to unload (can't modify while iterating)
+    std::vector<ChunkId> toUnload;
+    
+    for (const auto& [cid, chunkPtr] : chunkRegistry.getAllChunks()) {
+        // Unload if:
+        // 1. No players watching
+        // 2. Not activated (entities already removed)
+        // 3. Has been saved before or we can save it now
+        if (chunkPtr->watchingPlayers.empty() && !chunkPtr->activated) {
+            toUnload.push_back(cid);
+        }
+    }
+    
+    // Save and unload
+    for (const ChunkId& cid : toUnload) {
+        if (saveSystem) {
+            if (const Chunk* chunk = chunkRegistry.getChunk(cid)) {
+                saveSystem->saveChunkVoxels(cid, chunk->world.voxels);
+            }
+        }
+        
+        if (chunkRegistry.unload(cid)) {
+            ++unloadedCount;
+            auto pos = getChunkPos(cid);
+            std::cout << "[ChunkMembership] Unloaded unwatched chunk ("
+                      << pos.x << "," << pos.y << "," << pos.z << ")\n";
+        }
+    }
+    
+    if (unloadedCount > 0) {
+        std::cout << "[ChunkMembership] Unloaded " << unloadedCount << " unwatched chunks\n";
+    }
+    
+    return unloadedCount;
 }
 
 } // namespace ChunkMembershipSystem

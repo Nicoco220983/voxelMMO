@@ -8,8 +8,36 @@
 #include <cstring>
 #include <cstdlib>
 #include <optional>
+#include <csignal>
 
 static constexpr int GATEWAY_PORT = 8080;
+
+/** Global pointer to GameEngine for signal handler access */
+static voxelmmo::GameEngine* g_gameEngine = nullptr;
+
+/** Global state for signal handler */
+static std::atomic<bool> g_shutdownRequested{false};
+
+void onSigint(int) {
+    if (!g_shutdownRequested.exchange(true)) {
+        std::cout << "\n[shutdown] Saving game..." << std::endl;
+        
+        // Save all game state from signal handler
+        if (g_gameEngine) {
+            std::cout << "[shutdown] Saving active chunks..." << std::endl;
+            g_gameEngine->saveActiveChunks();
+            std::cout << "[shutdown] Saving global state..." << std::endl;
+            g_gameEngine->saveGlobalState();
+            std::cout << "[shutdown] Save complete" << std::endl;
+        }
+        
+        std::cout << "[shutdown] Goodbye!" << std::endl;
+        std::_Exit(0);
+    } else {
+        std::cout << "\n[shutdown] Force quit!" << std::endl;
+        std::_Exit(1);
+    }
+}
 
 static void printUsage(const char* program) {
     std::cout << "Usage: " << program << " [options]\n"
@@ -23,10 +51,14 @@ static void printUsage(const char* program) {
 }
 
 int main(int argc, char* argv[]) {
+    // ── Setup signal handling ──────────────────────────────────────────────
+    std::signal(SIGINT, onSigint);
+    std::signal(SIGTERM, onSigint);
+    
     // ── Parse CLI arguments ────────────────────────────────────────────────
-    uint32_t seed = 0;
+    uint32_t cliSeed = 0;
     bool seedProvided = false;
-    voxelmmo::GeneratorType genType = voxelmmo::GeneratorType::NORMAL;
+    voxelmmo::GeneratorType cliGenType = voxelmmo::GeneratorType::NORMAL;
     std::optional<voxelmmo::EntityType> testEntityType;
     
     for (int i = 1; i < argc; ++i) {
@@ -37,15 +69,15 @@ int main(int argc, char* argv[]) {
             return 0;
         }
         else if (std::strcmp(arg, "--seed") == 0 && i + 1 < argc) {
-            seed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
+            cliSeed = static_cast<uint32_t>(std::strtoul(argv[++i], nullptr, 10));
             seedProvided = true;
         }
         else if (std::strcmp(arg, "--type") == 0 && i + 1 < argc) {
             const char* typeStr = argv[++i];
             if (std::strcmp(typeStr, "normal") == 0) {
-                genType = voxelmmo::GeneratorType::NORMAL;
+                cliGenType = voxelmmo::GeneratorType::NORMAL;
             } else if (std::strcmp(typeStr, "test") == 0) {
-                genType = voxelmmo::GeneratorType::TEST;
+                cliGenType = voxelmmo::GeneratorType::TEST;
             } else {
                 std::cerr << "Unknown generator type: " << typeStr << "\n";
                 printUsage(argv[0]);
@@ -69,9 +101,13 @@ int main(int argc, char* argv[]) {
         }
     }
     
-    // ── Initialize GameEngine with configured parameters ───────────────────
-    voxelmmo::GameEngine game(seed, seedProvided, genType, testEntityType);
+    // ── Initialize GameEngine (creates SaveSystem, loads global state, configures WorldGenerator) ──
+    voxelmmo::GameEngine game(cliSeed, cliGenType, seedProvided, testEntityType);
+    
     voxelmmo::GatewayEngine gateway;
+
+    // Set up global pointer for signal handler
+    g_gameEngine = &game;
 
     // ── Wire GameEngine → GatewayEngine ────────────────────────────────────
     game.setOutputCallback(
@@ -90,7 +126,6 @@ int main(int argc, char* argv[]) {
     gateway.setPlayerConnectCallback([&](voxelmmo::PlayerId pid) {
         game.registerPlayer(0, pid);
         std::cout << "[main] Player " << pid << " connected (pending JOIN)\n";
-        // Entity is spawned when the client sends JOIN; sendSnapshot() is called then.
     });
 
     gateway.setPlayerDisconnectCallback([&](voxelmmo::PlayerId pid) {
@@ -99,37 +134,37 @@ int main(int argc, char* argv[]) {
 
     gateway.setPlayerInputCallback([&](voxelmmo::PlayerId pid,
                                        const uint8_t* data, size_t size) {
-        // TODO: just stack on a pre-allocated gameEngine.playersInputsBuffer
-        // [size][pid][data][size][pid][data]...
         game.handlePlayerInput(pid, data, size);
     });
 
-    // ── Game loop (separate thread) ────────────────────────────────────────
-    std::atomic<bool> running{true};
-    std::thread gameThread([&]() {
-        using Clock = std::chrono::steady_clock;
-        const auto tickDuration = std::chrono::milliseconds(1000 / voxelmmo::TICK_RATE);
-        auto nextTick = Clock::now();
-
-        while (running) {
-            nextTick += tickDuration;
-            game.tick();
-            std::this_thread::sleep_until(nextTick);
-        }
-    });
-
-    // ── Gateway (blocks main thread with uWS event loop) ───────────────────
+    // ── Start services ─────────────────────────────────────────────────────
     std::cout << "[main] Starting voxelmmo server...\n";
-    std::cout << "[main] World type: " << (genType == voxelmmo::GeneratorType::TEST ? "test" : "normal")
-              << ", seed: " << game.getWorldGenerator().getSeed();
-    if (genType == voxelmmo::GeneratorType::TEST) {
+    std::cout << "[main] World type: " << (game.getGeneratorType() == voxelmmo::GeneratorType::TEST ? "test" : "normal")
+              << ", seed: " << game.getSeed();
+    if (game.getGeneratorType() == voxelmmo::GeneratorType::TEST) {
         auto tet = game.getWorldGenerator().getTestEntityType();
         std::cout << ", test entity: " << (tet ? voxelmmo::entityTypeToString(*tet) : "none");
     }
     std::cout << "\n";
-    gateway.listen(GATEWAY_PORT); // blocks
+    std::cout << "[main] Save directory: " << game.getSaveDirectory() << "\n";
+    std::cout << "[main] Press Ctrl+C to save and quit (or twice to force quit)\n";
 
-    running = false;
-    gameThread.join();
+    // Start game loop in a separate thread
+    std::thread gameThread([&]() {
+        game.run();
+    });
+
+    // Run gateway in main thread (blocks until process ends)
+    gateway.listen(GATEWAY_PORT);
+
+    // This point is only reached if gateway.listen() returns (which shouldn't happen)
+    std::cout << "[main] Gateway stopped unexpectedly\n";
+    
+    // Cleanup (shouldn't reach here in normal operation)
+    if (gameThread.joinable()) {
+        game.stop();
+        gameThread.join();
+    }
+    
     return 0;
 }

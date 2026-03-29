@@ -12,7 +12,7 @@ A high performance online webgame massive multiplayer, on wide generated world.
 
 - Authoritative server with entt C++ ECS. No game logic in the gateway.
 - GameEngine (game loop) and GatewayEngine (uWS) are decoupled; can run on separate servers.
-- World is fully chunked. Chunks activate on first player approach, generate terrain on activation.
+- World is fully chunked. Chunks activate on first player approach, generate terrain on activation. Chunks unload when unwatched to free memory.
 - GameEngine serializes chunks into a single concatenated buffer (ChunkSerializer.chunkBuf) per tick, dispatched to all gateways.
 - 3 message levels per chunk: snapshot → snapshot delta → tick delta. See `docs/wire-format.md`.
 - **Gateway-side ChunkState**: Each gateway maintains per-chunk unified buffers (`[snapshot][snapshot_delta][tick_delta_1]...`) for late-joining players.
@@ -82,7 +82,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 - `{Player,GhostPlayer,Sheep}Entity.hpp` — spawn factories per entity type
 - `EntityFactory.hpp` — `playerFactories` map for player spawning
 
-**server/game/GameEngine.hpp/cpp** — main game loop; owns `registry`, `chunkRegistry`, `gateways[]`, `playerEntities[]`, `ser` (ChunkSerializer); tick flow: Input → AI → Physics → ChunkCrossings → UpdateChunks → RebuildWatched → Serialize → Dispatch
+**server/game/GameEngine.hpp/cpp** — main game loop; owns `registry`, `chunkRegistry`, `gateways[]`, `playerEntities[]`, `ser` (ChunkSerializer); tick flow: Input → AI → Physics → ChunkCrossings → UpdateChunks → RebuildWatched → Serialize → Dispatch. Provides `run()` to start the game loop in a separate thread and `stop()` for graceful shutdown.
 
 **server/game/WorldGenerator.hpp/cpp** — simplex noise terrain generator; `generate()` fills voxels, `generateEntities()` spawns sheep on grass
 
@@ -101,7 +101,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 - Each entity type defines `serialize*Full()` and `serialize*Delta()` methods
 - Player/GhostPlayer: position + player-specific data; Sheep: position + behavior data
 
-**server/game/ChunkRegistry.hpp** — owns `unordered_map<ChunkId, unique_ptr<Chunk>>`; provides `getChunk()` / `getChunkMutable()`, `generate()` / `activate()` / `deactivate()`
+**server/game/ChunkRegistry.hpp** — owns `unordered_map<ChunkId, unique_ptr<Chunk>>`; provides `getChunk()` / `getChunkMutable()`, `generate()` / `activate()` / `deactivate()` / `unload()`
 
 **server/game/WorldChunk.hpp/cpp** — `voxels[]` array + `voxelsDeltas` for per-tick voxel changes
 
@@ -116,11 +116,17 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 **server/game/systems/**
 - `InputSystem.hpp` — converts InputComponent → velocity per EntityType; handles `InputType::MOVE`
 - `PhysicsSystem.hpp` — collision-aware sweeps (X/Y/Z); handles GHOST/FLYING/FULL modes
-- `ChunkMembershipSystem.hpp` — three-phase chunk membership (detect crossings → update → activate chunks near players)
+- `ChunkMembershipSystem.hpp` — three-phase chunk membership (detect crossings → update → activate chunks near players); also unloads unwatched chunks
 - `DisconnectedPlayerSystem.hpp` — cleans up entities marked with `DisconnectedPlayerComponent`
 - `SheepAISystem.hpp` — state machine: IDLE → WALK loop
 
-**server/gateway/GatewayEngine.hpp** — uWS WebSocket server; handles connect/disconnect/input; manages per-chunk state cache + player metadata
+**server/game/SaveSystem.hpp/cpp** — persistent storage for voxel data:
+- `global.json` — seed, generator type, timestamps
+- `chunks/*.chunk` — LZ4-compressed voxel data (one file per chunk)
+- Chunks saved: on generation, on unload (when unwatched), and on shutdown (active chunks only)
+- Chunks loaded from save when available (preserves player modifications)
+
+**server/gateway/GatewayEngine.hpp** — uWS WebSocket server; handles connect/disconnect/input; manages per-chunk state cache + player metadata. Runs in main thread with blocking `listen()`.
 
 **client/src/**
 - `types.js`, `utils.js` — constants, ChunkId/VoxelIndex helpers, `lz4Decompress`, `BufReader`
@@ -135,6 +141,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 
 **docs/**
 - `wire-format.md` — chunk message binary layout (keep in sync with ChunkSerializer.cpp)
+- `saves.md` — save system documentation (chunk lifecycle, file formats)
 
 # AI agent workflow
 

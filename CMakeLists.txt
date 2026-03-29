@@ -18,6 +18,7 @@ add_executable(voxelmmo
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/ChunkRegistry.cpp
+    server/game/SaveSystem.cpp
     server/game/EntitySerializer.cpp
     server/game/EntityTypeSerializers.cpp
     server/gateway/GatewayEngine.cpp
@@ -53,11 +54,14 @@ add_executable(voxelmmo_tests
     tests/server/test_components.cpp
     tests/server/test_physics.cpp
     tests/server/test_game_engine.cpp
+    tests/server/test_save_system.cpp
+    tests/server/test_save_integration.cpp
     # Server implementation files
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/ChunkSerializer.cpp
     server/game/ChunkRegistry.cpp
+    server/game/SaveSystem.cpp
     server/game/GameEngine.cpp
     server/game/EntitySerializer.cpp
     server/game/EntityTypeSerializers.cpp

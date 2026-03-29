@@ -17,7 +17,7 @@ namespace voxelmmo {
 // ── TestEnv Implementation ──────────────────────────────────────────────────
 
 TestEnv::TestEnv(uint32_t seed)
-    : engine_(seed, true, GeneratorType::NORMAL)
+    : engine_(seed, GeneratorType::NORMAL, true)
 {
     // Register gateway and capture outputs
     engine_.registerGateway(gatewayId_);
