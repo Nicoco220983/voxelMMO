@@ -2,6 +2,7 @@
 import * as THREE from 'three'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, getChunkPos } from './types.js'
 import { lz4Decompress, BufReader } from './utils.js'
+import { voxelTextureAtlas, getVoxelUvs } from './VoxelTextures.js'
 
 /** @typedef {import('./types.js').ChunkId} ChunkId */
 /** @typedef {import('./types.js').ChunkCoord} ChunkCoord */
@@ -10,12 +11,6 @@ import { lz4Decompress, BufReader } from './utils.js'
 // Re-export ChunkId helpers for backward compatibility
 export { chunkIdFromChunkPos, chunkIdFromVoxelPos, chunkIdFromSubVoxelPos } from './types.js'
 
-/** Voxel-type → 0xRRGGBB colour. AIR (0) is unused (never rendered). */
-const VOXEL_COLORS = /** @type {Record<number,number>} */ ({
-  [VoxelType.STONE]: 0x888888,
-  [VoxelType.DIRT]:  0x8B4513,
-  [VoxelType.GRASS]: 0x228B22,
-})
 
 /**
  * Face vertex offsets for the 6 axis-aligned cube faces.
@@ -41,8 +36,11 @@ const FACE_SHADE = [0.75, 0.70, 1.00, 0.55, 0.80, 0.65] // +X -X +Y -Y +Z -Z
 /** Neighbour offsets per face — same order as FACE_VERTS / FACE_SHADE. */
 const FACE_DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
 
-/** Shared material — vertex colours carry all shading; no per-fragment lighting needed. */
-const CHUNK_MATERIAL = new THREE.MeshBasicMaterial({ vertexColors: true })
+/** Shared material — atlas texture multiplied by per-vertex shade colours. */
+const CHUNK_MATERIAL = new THREE.MeshBasicMaterial({
+  map: voxelTextureAtlas,
+  vertexColors: true,
+})
 
 /**
  * Deterministic brightness jitter in [0, 1] from integer world coordinates.
@@ -135,6 +133,7 @@ export class Chunk {
 
     /** @type {number[]} */ const positions = []
     /** @type {number[]} */ const colors    = []
+    /** @type {number[]} */ const uvs       = []
     /** @type {number[]} */ const indices   = []
 
     const get = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => {
@@ -150,28 +149,30 @@ export class Chunk {
           const vtype = get(x, y, z)
           if (vtype === 0) continue
 
-          // Decode base RGB from packed hex (avoids THREE.Color allocation per voxel)
-          const hex = VOXEL_COLORS[vtype] ?? 0xffffff
-          const br  = ((hex >>> 16) & 0xFF) / 255
-          const bg  = ((hex >>>  8) & 0xFF) / 255
-          const bb  = ( hex         & 0xFF) / 255
-
           // Per-voxel brightness jitter [0.88 .. 1.12] from world position hash
           const jitter = 0.88 + 0.24 * voxelHash(cx * CHUNK_SIZE_X + x,
                                                    cy * CHUNK_SIZE_Y + y,
                                                    cz * CHUNK_SIZE_Z + z)
+
+          const { u0, v0, u1, v1 } = getVoxelUvs(vtype)
+          const faceUvs = [
+            [u0, v1], [u0, v0], [u1, v0], [u1, v1],
+          ]
 
           for (let face = 0; face < 6; face++) {
             const [dx, dy, dz] = FACE_DIRS[face]
             if (get(x + dx, y + dy, z + dz) !== 0) continue
 
             const shade = FACE_SHADE[face] * jitter
-            const r = br * shade, g = bg * shade, b = bb * shade
+            const r = shade, g = shade, b = shade
 
             const base = positions.length / 3
-            for (const [fx, fy, fz] of FACE_VERTS[face]) {
+            for (let vi = 0; vi < 4; vi++) {
+              const [fx, fy, fz] = FACE_VERTS[face][vi]
               positions.push(x + fx, y + fy, z + fz)
               colors.push(r, g, b)
+              const [fu, fv] = faceUvs[vi]
+              uvs.push(fu, fv)
             }
             indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
           }
@@ -186,6 +187,7 @@ export class Chunk {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors,    3))
+    geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs,       2))
     geo.setIndex(indices)
 
     this.#mesh = new THREE.Mesh(geo, CHUNK_MATERIAL)

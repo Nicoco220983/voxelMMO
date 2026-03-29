@@ -12,6 +12,9 @@ vi.mock('three', () => ({
   },
   Float32BufferAttribute: class {},
   MeshLambertMaterial: class {},
+  CanvasTexture: class {},
+  NearestFilter: 1003,
+  SRGBColorSpace: 'srgb',
 }))
 
 // Mock utils.js — lz4Decompress is replaced with a passthrough that copies src

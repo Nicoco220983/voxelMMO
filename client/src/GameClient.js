@@ -14,6 +14,7 @@ import { BaseEntity } from './entities/BaseEntity.js'
 import { TICK_RATE } from './types.js'
 import { PhysicsPredictionSystem } from './systems/PhysicsPredictionSystem.js'
 import { ChunkMembershipSystem } from './systems/ChunkMembershipSystem.js'
+import { onVoxelTexturesLoaded } from './VoxelTextures.js'
 
 /** @typedef {import('./types.js').ChunkId} ChunkId */
 
@@ -81,6 +82,12 @@ export class GameClient {
     this.#url   = url
     this.#scene = scene
     this.#entityRegistry.setScene(scene)
+
+    onVoxelTexturesLoaded(() => {
+      for (const chunk of this.#chunkRegistry.values()) {
+        chunk.dirty = true
+      }
+    })
   }
 
   /**
