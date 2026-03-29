@@ -154,14 +154,14 @@ export class Chunk {
                                                    cy * CHUNK_SIZE_Y + y,
                                                    cz * CHUNK_SIZE_Z + z)
 
-          const { u0, v0, u1, v1 } = getVoxelUvs(vtype)
-          const faceUvs = [
-            [u0, v1], [u0, v0], [u1, v0], [u1, v1],
-          ]
-
           for (let face = 0; face < 6; face++) {
             const [dx, dy, dz] = FACE_DIRS[face]
             if (get(x + dx, y + dy, z + dz) !== 0) continue
+
+            const { u0, v0, u1, v1 } = getVoxelUvs(vtype, face)
+            const faceUvs = [
+              [u0, v1], [u0, v0], [u1, v0], [u1, v1],
+            ]
 
             const shade = FACE_SHADE[face] * jitter
             const r = shade, g = shade, b = shade

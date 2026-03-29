@@ -1,16 +1,31 @@
 // @ts-check
 import * as THREE from 'three'
-import { VoxelType } from './types.js'
+import { VOXEL_DEFS } from './voxels/index.js'
 
-/** @type {Record<number, string>} */
-const VOXEL_TEXTURE_PATHS = {
-  [VoxelType.STONE]: '/assets/voxels/stone.png',
-  [VoxelType.DIRT]:  '/assets/voxels/dirt.png',
-  [VoxelType.GRASS]: '/assets/voxels/grass.png',
+/**
+ * Collect the unique set of texture names required by all voxel definitions.
+ * @returns {string[]}
+ */
+function collectTextureNames() {
+  /** @type {Set<string>} */
+  const names = new Set()
+  for (const def of VOXEL_DEFS) {
+    if (typeof def.textures === 'string') {
+      names.add(def.textures)
+    } else {
+      for (const key of Object.keys(def.textures)) {
+        names.add(def.textures[key])
+      }
+    }
+  }
+  return Array.from(names).sort()
 }
 
+/** Sorted list of unique texture names in the atlas. */
+const TEXTURE_NAMES = collectTextureNames()
+
 /** Number of atlas tiles horizontally. */
-const ATLAS_TILE_COUNT = Object.keys(VOXEL_TEXTURE_PATHS).length || 1
+const ATLAS_TILE_COUNT = Math.max(TEXTURE_NAMES.length, 1)
 
 /**
  * Build a canvas-based atlas from loaded images.
@@ -18,7 +33,7 @@ const ATLAS_TILE_COUNT = Object.keys(VOXEL_TEXTURE_PATHS).length || 1
  * @returns {HTMLCanvasElement}
  */
 function buildAtlasCanvas(images) {
-  const size = 64  // per-tile resolution (source images are expected to be <= this)
+  const size = 64  // per-tile resolution
   const canvas = document.createElement('canvas')
   canvas.width  = size * ATLAS_TILE_COUNT
   canvas.height = size
@@ -31,13 +46,6 @@ function buildAtlasCanvas(images) {
 
   return canvas
 }
-
-/**
- * @typedef {Object} VoxelTextureAtlas
- * @property {THREE.CanvasTexture} texture
- * @property {boolean} loaded
- * @property {() => void} [onLoad]
- */
 
 /** Shared atlas texture. Starts as a 1x1 white placeholder. */
 function createPlaceholderCanvas() {
@@ -80,15 +88,31 @@ export function onVoxelTexturesLoaded(cb) {
 }
 
 /**
- * Get UV coordinates for a voxel type in the atlas.
+ * Resolve the texture name for a given voxel type and face.
  * @param {number} vtype
+ * @param {number} face
+ * @returns {string}
+ */
+function resolveTextureName(vtype, face) {
+  const def = VOXEL_DEFS.find(d => d.type === vtype)
+  if (!def) return ''
+
+  if (typeof def.textures === 'string') {
+    return def.textures
+  }
+  return def.textures[face] ?? def.textures.default ?? ''
+}
+
+/**
+ * Get UV coordinates for a voxel type and face in the atlas.
+ * @param {number} vtype
+ * @param {number} face
  * @returns {{u0: number, v0: number, u1: number, v1: number}}
  */
-export function getVoxelUvs(vtype) {
-  const types = Object.keys(VOXEL_TEXTURE_PATHS).map(Number)
-  const idx = types.indexOf(vtype)
+export function getVoxelUvs(vtype, face) {
+  const name = resolveTextureName(vtype, face)
+  const idx = TEXTURE_NAMES.indexOf(name)
   if (idx < 0) {
-    // Unknown type: return full atlas (will show white placeholder or first tile)
     return { u0: 0, v0: 0, u1: 1, v1: 1 }
   }
   const u0 = idx / ATLAS_TILE_COUNT
@@ -105,13 +129,12 @@ export const voxelTexturesReady =
   typeof document === 'undefined'
     ? Promise.resolve()
     : Promise.all(
-        Object.entries(VOXEL_TEXTURE_PATHS).map(([vtype, path]) =>
+        TEXTURE_NAMES.map((name) =>
           new Promise((resolve, reject) => {
             loader.load(
-              path,
+              `/assets/voxels/${name}.png`,
               (texture) => {
-                const img = texture.image
-                resolve({ vtype: Number(vtype), img })
+                resolve({ name, img: texture.image })
               },
               undefined,
               (err) => reject(err)
@@ -119,11 +142,10 @@ export const voxelTexturesReady =
           })
         )
       ).then((results) => {
-        /** @type {Array<{vtype: number, img: HTMLImageElement}>} */
+        /** @type {Array<{name: string, img: HTMLImageElement}>} */
         const typed = /** @type {any} */ (results)
-        // Sort by vtype to keep atlas order deterministic
-        typed.sort((a, b) => a.vtype - b.vtype)
-        const images = typed.map(r => r.img)
+        // Preserve TEXTURE_NAMES order
+        const images = TEXTURE_NAMES.map(n => typed.find(r => r.name === n).img)
 
         const canvas = buildAtlasCanvas(images)
         voxelTextureAtlas.image = canvas
