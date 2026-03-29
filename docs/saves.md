@@ -6,31 +6,32 @@ This document describes the voxel world save system implementation.
 
 The save system provides persistent storage for voxel data, ensuring player modifications survive server restarts. The system uses a hybrid approach:
 
-- **Global state** (JSON): Seed, generator type, metadata
+- **Global state** (YAML-like): Seed, generator type, metadata
 - **Chunk data** (binary): Individual chunk voxel data with LZ4 compression
 
 ## Directory Structure
 
 ```
 saves/<gameKey>/
-├── global.json          # Game configuration and metadata
+├── global.yaml          # Game configuration and metadata (key: value format)
 └── chunks/
     └── <packed_chunk_id>.chunk   # Binary voxel data
 ```
 
 ## File Formats
 
-### Global State (global.json)
+### Global State (global.yaml)
 
-```json
-{
-  "gameKey": "voxelmmo_default",
-  "version": 1,
-  "seed": 123456789,
-  "generatorType": "NORMAL",
-  "createdAt": "2026-03-28T18:29:46Z",
-  "lastSavedAt": "2026-03-28T20:15:30Z"
-}
+Simple key-value format (one `key: value` per line, `#` for comments):
+
+```yaml
+# voxelmmo save metadata
+gameKey: voxelmmo_default
+version: 1
+seed: 123456789
+generatorType: NORMAL
+createdAt: 2026-03-28T18:29:46Z
+lastSavedAt: 2026-03-28T20:15:30Z
 ```
 
 ### Chunk File (.chunk)

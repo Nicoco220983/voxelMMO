@@ -53,65 +53,60 @@ std::string SaveSystem::getCurrentTimestamp() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// ═══ GLOBAL STATE (JSON) ═══════════════════════════════════════════════════
+// ═══ GLOBAL STATE (YAML-like) ═══════════════════════════════════════════════
 // ═══════════════════════════════════════════════════════════════════════════
 
+// Helper: trim whitespace from both ends
+static std::string trim(std::string_view sv) {
+    size_t start = 0;
+    while (start < sv.size() && std::isspace(sv[start])) ++start;
+    size_t end = sv.size();
+    while (end > start && std::isspace(sv[end - 1])) --end;
+    return std::string(sv.substr(start, end - start));
+}
+
 void SaveSystem::loadOrCreateGlobalState(uint32_t cliSeed, GeneratorType cliType) {
-    const std::string globalPath = baseDir_ + "/global.json";
+    const std::string globalPath = baseDir_ + "/global.yaml";
     
     // Try to load existing state
     if (fs::exists(globalPath)) {
         try {
             std::ifstream file(globalPath);
             if (!file.is_open()) {
-                throw std::runtime_error("Cannot open global.json");
+                throw std::runtime_error("Cannot open global.yaml");
             }
             
-            std::string line, jsonContent;
+            std::string line;
             while (std::getline(file, line)) {
-                jsonContent += line;
+                // Skip empty lines and comments
+                std::string_view sv = line;
+                size_t nonSpace = sv.find_first_not_of(" \t");
+                if (nonSpace == std::string_view::npos) continue;
+                if (sv[nonSpace] == '#') continue;
+                
+                // Find key:value separator
+                size_t colonPos = sv.find(':');
+                if (colonPos == std::string_view::npos) continue;
+                
+                std::string key = trim(sv.substr(0, colonPos));
+                std::string value = trim(sv.substr(colonPos + 1));
+                
+                if (key == "gameKey") globalState_.gameKey = value;
+                else if (key == "version") globalState_.version = static_cast<uint32_t>(std::stoul(value));
+                else if (key == "seed") globalState_.seed = static_cast<uint32_t>(std::stoul(value));
+                else if (key == "generatorType") globalState_.generatorType = (value == "TEST") ? GeneratorType::TEST : GeneratorType::NORMAL;
+                else if (key == "createdAt") globalState_.createdAt = value;
+                else if (key == "lastSavedAt") globalState_.lastSavedAt = value;
             }
             file.close();
             
-            // Simple JSON parsing (manual, no external dependency)
-            auto extractString = [&](const std::string& key) -> std::string {
-                size_t pos = jsonContent.find("\"" + key + "\"");
-                if (pos == std::string::npos) return "";
-                pos = jsonContent.find(':', pos);
-                if (pos == std::string::npos) return "";
-                pos = jsonContent.find('"', pos);
-                if (pos == std::string::npos) return "";
-                size_t end = jsonContent.find('"', pos + 1);
-                if (end == std::string::npos) return "";
-                return jsonContent.substr(pos + 1, end - pos - 1);
-            };
-            
-            auto extractUint = [&](const std::string& key) -> uint32_t {
-                size_t pos = jsonContent.find("\"" + key + "\"");
-                if (pos == std::string::npos) return 0;
-                pos = jsonContent.find(':', pos);
-                if (pos == std::string::npos) return 0;
-                // Skip whitespace
-                while (pos + 1 < jsonContent.size() && std::isspace(jsonContent[pos + 1])) ++pos;
-                return static_cast<uint32_t>(std::stoul(jsonContent.substr(pos + 1)));
-            };
-            
-            globalState_.gameKey = extractString("gameKey");
-            globalState_.version = extractUint("version");
-            globalState_.seed = extractUint("seed");
-            
-            std::string genTypeStr = extractString("generatorType");
-            globalState_.generatorType = (genTypeStr == "TEST") ? GeneratorType::TEST : GeneratorType::NORMAL;
-            
-            globalState_.createdAt = extractString("createdAt");
-            globalState_.lastSavedAt = extractString("lastSavedAt");
-            
             std::cout << "[SaveSystem] Loaded existing save: " << globalState_.gameKey 
-                      << " (seed=" << globalState_.seed << ", type=" << genTypeStr << ")\n";
+                      << " (seed=" << globalState_.seed << ", type=" 
+                      << (globalState_.generatorType == GeneratorType::TEST ? "TEST" : "NORMAL") << ")\n";
             return;
             
         } catch (const std::exception& e) {
-            std::cerr << "[SaveSystem] Failed to load global.json: " << e.what() 
+            std::cerr << "[SaveSystem] Failed to load global.yaml: " << e.what() 
                       << ", creating new save\n";
         }
     }
@@ -134,21 +129,20 @@ void SaveSystem::loadOrCreateGlobalState(uint32_t cliSeed, GeneratorType cliType
 void SaveSystem::saveGlobalState() {
     globalState_.lastSavedAt = getCurrentTimestamp();
     
-    const std::string globalPath = baseDir_ + "/global.json";
+    const std::string globalPath = baseDir_ + "/global.yaml";
     std::ofstream file(globalPath);
     if (!file.is_open()) {
         std::cerr << "[SaveSystem] Failed to open " << globalPath << " for writing\n";
         return;
     }
     
-    file << "{\n";
-    file << "  \"gameKey\": \"" << globalState_.gameKey << "\",\n";
-    file << "  \"version\": " << globalState_.version << ",\n";
-    file << "  \"seed\": " << globalState_.seed << ",\n";
-    file << "  \"generatorType\": \"" << (globalState_.generatorType == GeneratorType::TEST ? "TEST" : "NORMAL") << "\",\n";
-    file << "  \"createdAt\": \"" << globalState_.createdAt << "\",\n";
-    file << "  \"lastSavedAt\": \"" << globalState_.lastSavedAt << "\"\n";
-    file << "}\n";
+    file << "# voxelmmo save metadata\n";
+    file << "gameKey: " << globalState_.gameKey << "\n";
+    file << "version: " << globalState_.version << "\n";
+    file << "seed: " << globalState_.seed << "\n";
+    file << "generatorType: " << (globalState_.generatorType == GeneratorType::TEST ? "TEST" : "NORMAL") << "\n";
+    file << "createdAt: " << globalState_.createdAt << "\n";
+    file << "lastSavedAt: " << globalState_.lastSavedAt << "\n";
     
     file.close();
 }

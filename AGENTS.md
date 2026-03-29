@@ -121,7 +121,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 - `SheepAISystem.hpp` — state machine: IDLE → WALK loop
 
 **server/game/SaveSystem.hpp/cpp** — persistent storage for voxel data:
-- `global.json` — seed, generator type, timestamps
+- `global.yaml` — seed, generator type, timestamps (key: value format)
 - `chunks/*.chunk` — LZ4-compressed voxel data (one file per chunk)
 - Chunks saved: on generation, on unload (when unwatched), and on shutdown (active chunks only)
 - Chunks loaded from save when available (preserves player modifications)

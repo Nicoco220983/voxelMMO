@@ -15,12 +15,12 @@ class ChunkRegistry;
  * @brief Persistent storage system for game world data.
  *
  * Manages save/load of:
- *   - Global game state (seed, generator type, metadata) as JSON
+ *   - Global game state (seed, generator type, metadata) as YAML-like key-value
  *   - Chunk voxel data as binary files (one file per chunk)
  *
  * Save directory structure:
  *   saves/<gameKey>/
- *     global.json          - Game configuration and metadata
+ *     global.yaml          - Game configuration and metadata (key: value format)
  *     chunks/
  *       <packed_chunk_id>.chunk  - Individual chunk voxel data
  *
