@@ -1,7 +1,7 @@
 // @ts-check
 import * as THREE     from 'three'
 import { GameClient } from './GameClient.js'
-import { NetworkProtocol, InputButton, InputType } from './NetworkProtocol.js'
+import { NetworkProtocol, InputType } from './NetworkProtocol.js'
 import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
@@ -10,6 +10,7 @@ import { VoxelType } from './types.js'
 import { DestroyVoxelTool } from './tools/DestroyVoxelTool.js'
 import { CreateVoxelTool } from './tools/CreateVoxelTool.js'
 import { VoxelHighlightSystem } from './systems/VoxelHighlightSystem.js'
+import { createController } from './controllers/ControllerManager.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -55,9 +56,6 @@ client.connect().then(() => {
   console.error('[main] Failed to connect to server', err)
 })
 
-// ── Camera state (yaw/pitch are client-side only, not from entity) ────────
-let yaw = 0, pitch = -0.3   // slightly downward initial look
-
 // ── Get local player from entity registry via client.selfEntity ───────────
 /**
  * Get the local player entity from the entity registry.
@@ -77,60 +75,8 @@ hotbar.setSlot(2, new CreateVoxelTool(VoxelType.BASIC))  // Key "3"
 // ── Voxel Highlight System ────────────────────────────────────────────────
 const voxelHighlight = new VoxelHighlightSystem(scene)
 
-// ── Keyboard state ────────────────────────────────────────────────────────
-const keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
-
-window.addEventListener('keydown', (e) => {
-  // Hotbar selection (1-0 keys)
-  if (hotbar.handleKeyDown(e)) {
-    e.preventDefault()
-    return
-  }
-
-  switch (e.code) {
-    case 'KeyW': case 'ArrowUp':                      keys.w     = true;  e.preventDefault(); break
-    case 'KeyA': case 'ArrowLeft':                    keys.a     = true;  e.preventDefault(); break
-    case 'KeyS': case 'ArrowDown':                    keys.s     = true;  e.preventDefault(); break
-    case 'KeyD': case 'ArrowRight':                   keys.d     = true;  e.preventDefault(); break
-    case 'Space':    e.preventDefault(); keys.space = true;  break
-    case 'ShiftLeft': case 'ShiftRight': keys.shift = true;  break
-    default: return
-  }
-})
-window.addEventListener('keyup', (e) => {
-  switch (e.code) {
-    case 'KeyW': case 'ArrowUp':                      keys.w     = false; break
-    case 'KeyA': case 'ArrowLeft':                    keys.a     = false; break
-    case 'KeyS': case 'ArrowDown':                    keys.s     = false; break
-    case 'KeyD': case 'ArrowRight':                   keys.d     = false; break
-    case 'Space':                        keys.space = false; break
-    case 'ShiftLeft': case 'ShiftRight': keys.shift = false; break
-    default: return
-  }
-})
-
-// ── Pointer lock (mouse look) ─────────────────────────────────────────────
-renderer.domElement.addEventListener('click', () => {
-  renderer.domElement.requestPointerLock()
-})
-
-// ── Mouse click handling for tools ─────────────────────────────────────────
-window.addEventListener('mousedown', (e) => {
-  // Only handle left-click (button 0)
-  if (e.button !== 0) return
-  
-  const currentTool = hotbar.getSelectedSlot().tool
-  if (currentTool) {
-    currentTool.onClick(client, voxelHighlight)
-  }
-})
-
-document.addEventListener('mousemove', (e) => {
-  if (document.pointerLockElement !== renderer.domElement) return
-  yaw   -= e.movementX * 0.002
-  pitch -= e.movementY * 0.002
-  pitch  = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, pitch))
-})
+// ── Controller (keyboard or touch) ────────────────────────────────────────
+const controller = createController(renderer.domElement)
 
 // ── Input sending ─────────────────────────────────────────────────────────
 
@@ -150,18 +96,6 @@ function slotToInputType(slotIndex) {
   // For now, all inputs are MOVE type
   // Future logic: different slots may trigger different input types
   return InputType.MOVE
-}
-
-/** Compute button bitmask from current key state. @returns {number} */
-function computeButtons() {
-  let b = 0
-  if (keys.w)     b |= InputButton.FORWARD
-  if (keys.s)     b |= InputButton.BACKWARD
-  if (keys.a)     b |= InputButton.LEFT
-  if (keys.d)     b |= InputButton.RIGHT
-  if (keys.space) b |= InputButton.JUMP
-  if (keys.shift) b |= InputButton.DESCEND
-  return b
 }
 
 /** Send INPUT frame only when state changed. */
@@ -185,7 +119,24 @@ function animate() {
   const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
   lastTime  = now
 
-  const buttons = computeButtons()
+  // Read controller state before update() clears one-shot flags
+  const buttons = controller.buttons
+  const yaw     = controller.yaw
+  const pitch   = controller.pitch
+
+  // Hotbar selection from controller
+  if (controller.selectedSlotIndex !== null) {
+    hotbar.selectSlot(controller.selectedSlotIndex)
+  }
+
+  // Tool activation from controller
+  if (controller.toolActivated) {
+    const currentTool = hotbar.getSelectedSlot().tool
+    if (currentTool) {
+      currentTool.onClick(client, voxelHighlight)
+    }
+  }
+
   sendInputIfChanged(buttons, yaw, pitch)
 
   // ── Position update: get from local player entity via registry ────────────
@@ -218,12 +169,12 @@ function animate() {
 
   client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   client.rebuildDirtyChunks()
-  
+
   // Update voxel highlight based on current tool
   const currentTool = hotbar.getSelectedSlot().tool
   const highlightMode = currentTool ? currentTool.getHighlightMode() : 'none'
   voxelHighlight.update(camera, client.chunkRegistry, highlightMode)
-  
+
   renderer.render(scene, camera)
 
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
@@ -231,6 +182,9 @@ function animate() {
   hud.textContent =
     `[${modeName}]  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
     `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
+
+  // Update controller at end of frame (resets one-shot flags)
+  controller.update(dt)
 }
 
 animate()

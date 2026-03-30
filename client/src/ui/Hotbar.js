@@ -55,6 +55,12 @@ export class Hotbar {
       slotEl.appendChild(iconEl)
       this.container.appendChild(slotEl)
       this.slotElements.push(slotEl)
+
+      // Touch selection
+      slotEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        this.selectSlot(index)
+      })
     })
   }
 
