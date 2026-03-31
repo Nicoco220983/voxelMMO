@@ -4,6 +4,8 @@ import { VoxelType, chunkIdFromVoxelPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_
 
 /** @typedef {import('../types.js').ChunkId} ChunkId */
 /** @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
+/** @typedef {import('../ui/Hotbar.js').Hotbar} Hotbar */
+/** @typedef {import('../controllers/BaseController.js').BaseController} BaseController */
 
 /** Maximum reach distance for voxel highlighting (in voxels) */
 const MAX_REACH_DISTANCE = 5
@@ -12,6 +14,10 @@ const MAX_REACH_DISTANCE = 5
 const HIGHLIGHT_COLOR_DESTROY = 0xFFFF00
 /** Highlight color - green for create */
 const HIGHLIGHT_COLOR_CREATE = 0x00FF00
+/** Highlight color - blue for builder mode */
+const HIGHLIGHT_COLOR_BUILDER = 0x0088FF
+/** Highlight color - orange for bulk builder selection */
+const HIGHLIGHT_COLOR_BULK = 0xFF8800
 
 /**
  * @class VoxelHighlightSystem
@@ -37,12 +43,82 @@ export class VoxelHighlightSystem {
   /** @type {'destroy'|'create'|'none'} */
   #currentMode = 'none'
 
+  // Builder mode state
+  /** @type {boolean} */
+  #builderMode = false
+  /** @type {{x: number, y: number, z: number}|null} */
+  #builderTarget = null
+  /** @type {number} */
+  #entryYaw = 0
+
+  // Bulk builder mode state
+  /** @type {THREE.LineSegments|null} */
+  #bulkHighlightMesh = null
+  /** @type {{x: number, y: number, z: number}|null} */
+  #bulkStart = null
+  /** @type {boolean} True when waiting for end voxel selection (start is set, waiting for click #2) */
+  #bulkSelectingEnd = false
+
   /**
    * @param {THREE.Scene} scene
    */
   constructor(scene) {
     this.#scene = scene
     this.#createHighlightMesh()
+    this.#createBulkHighlightMesh()
+  }
+
+  /**
+   * Create the bulk selection highlight mesh (initially hidden).
+   * This shows an orange wireframe box covering the selected volume.
+   * @private
+   */
+  #createBulkHighlightMesh() {
+    // Create a unit cube that we'll scale to fit the selection
+    const geometry = new THREE.BoxGeometry(1, 1, 1)
+    const edges = new THREE.EdgesGeometry(geometry)
+    const material = new THREE.LineBasicMaterial({ 
+      color: HIGHLIGHT_COLOR_BULK,
+      linewidth: 2 
+    })
+    
+    this.#bulkHighlightMesh = new THREE.LineSegments(edges, material)
+    this.#bulkHighlightMesh.visible = false
+    this.#scene.add(this.#bulkHighlightMesh)
+  }
+
+  /**
+   * Sync visualization state with controller and hotbar.
+   * Updates builder mode visuals and bulk preview.
+   * Does NOT handle tool activation - caller should check controller.toolActivated
+   * and call controller.sendToolInput() separately.
+   * @param {THREE.PerspectiveCamera} camera
+   * @param {Hotbar} hotbar
+   * @param {BaseController} controller
+   * @param {ChunkRegistry} chunkRegistry
+   */
+  sync(camera, hotbar, controller, chunkRegistry) {
+    const currentTool = hotbar.getSelectedSlot().tool
+    const highlightMode = currentTool ? currentTool.getHighlightMode() : 'none'
+
+    // Update base highlight system
+    this.update(camera, chunkRegistry, highlightMode)
+
+    // Handle builder mode entry/exit
+    if (controller.builderModeChanged) {
+      if (controller.builderMode) {
+        this.setBuilderMode(true, controller.entryYaw)
+        this.setBuilderTargetFromRaycast(camera, chunkRegistry, highlightMode)
+      } else {
+        this.setBuilderMode(false)
+        this.setBulkPreview(null, false)
+      }
+    }
+
+    // Update bulk preview in 'start' phase
+    if (controller.bulkBuilderMode && controller.bulkPhase === 'start') {
+      this.updateBulkPreview()
+    }
   }
 
   /**
@@ -62,7 +138,7 @@ export class VoxelHighlightSystem {
     this.#highlightMesh.visible = false
     this.#scene.add(this.#highlightMesh)
   }
-  
+
   /**
    * Update highlight color based on tool mode.
    * @private
@@ -71,10 +147,168 @@ export class VoxelHighlightSystem {
   #updateHighlightColor(mode) {
     if (!this.#highlightMesh) return
     const material = /** @type {THREE.LineBasicMaterial} */ (this.#highlightMesh.material)
-    if (mode === 'create') {
+    if (this.#builderMode) {
+      material.color.setHex(HIGHLIGHT_COLOR_BUILDER)
+    } else if (mode === 'create') {
       material.color.setHex(HIGHLIGHT_COLOR_CREATE)
     } else {
       material.color.setHex(HIGHLIGHT_COLOR_DESTROY)
+    }
+  }
+
+  /**
+   * Enable/disable builder mode and update visual state.
+   * @param {boolean} enabled
+   * @param {number} [entryYaw] - Player yaw at builder mode entry time
+   */
+  setBuilderMode(enabled, entryYaw = 0) {
+    this.#builderMode = enabled
+    this.#entryYaw = entryYaw
+    this.#updateHighlightColor(this.#currentMode)
+  }
+
+  /**
+   * Set the builder target from current raycast result.
+   * Call this when entering builder mode.
+   * @param {THREE.PerspectiveCamera} camera
+   * @param {ChunkRegistry} chunkRegistry
+   * @param {'destroy'|'create'|'none'} toolMode
+   * @returns {boolean} true if a target was found and set
+   */
+  setBuilderTargetFromRaycast(camera, chunkRegistry, toolMode) {
+    if (toolMode === 'none') {
+      this.#builderTarget = null
+      return false
+    }
+
+    // Get camera direction from yaw (Y) and pitch (X) rotation
+    const yaw = camera.rotation.y
+    const pitch = camera.rotation.x
+
+    const cosPitch = Math.cos(pitch)
+    const dirX = -Math.sin(yaw) * cosPitch
+    const dirY = Math.sin(pitch)
+    const dirZ = -Math.cos(yaw) * cosPitch
+
+    const originX = camera.position.x
+    const originY = camera.position.y
+    const originZ = camera.position.z
+
+    const hit = this.#castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry, toolMode)
+
+    if (hit) {
+      // Use placement position for create, highlighted position for destroy
+      if (toolMode === 'create') {
+        this.#builderTarget = { x: hit.placementX, y: hit.placementY, z: hit.placementZ }
+      } else {
+        this.#builderTarget = { x: hit.x, y: hit.y, z: hit.z }
+      }
+      this.#updateHighlightPosition()
+      return true
+    }
+
+    this.#builderTarget = null
+    return false
+  }
+
+  /**
+   * Move the builder target by the given delta.
+   * @param {number} dx
+   * @param {number} dy
+   * @param {number} dz
+   */
+  moveBuilderTarget(dx, dy, dz) {
+    if (!this.#builderTarget) return
+    this.#builderTarget.x += dx
+    this.#builderTarget.y += dy
+    this.#builderTarget.z += dz
+    this.#updateHighlightPosition()
+  }
+
+  /**
+   * Get the current builder target position.
+   * @returns {{x: number, y: number, z: number}|null}
+   */
+  getBuilderTarget() {
+    return this.#builderTarget
+  }
+
+  /**
+   * Update highlight mesh position to builder target.
+   * @private
+   */
+  #updateHighlightPosition() {
+    if (!this.#highlightMesh || !this.#builderTarget) return
+    this.#highlightMesh.position.set(
+      this.#builderTarget.x + 0.5,
+      this.#builderTarget.y + 0.5,
+      this.#builderTarget.z + 0.5
+    )
+  }
+
+  /**
+   * Set the bulk selection preview.
+   * Shows a single orange wireframe box covering the entire selection volume.
+   * @param {{x: number, y: number, z: number}|null} start - Start voxel, null to clear
+   * @param {boolean} selectingEnd - True if waiting for end voxel selection (dynamic preview)
+   */
+  setBulkPreview(start, selectingEnd = false) {
+    this.#bulkStart = start
+    this.#bulkSelectingEnd = selectingEnd
+    this.#updateBulkVisuals()
+  }
+
+  /**
+   * Update the bulk highlight mesh based on current #bulkStart.
+   * If #bulkSelectingEnd is true, uses #builderTarget for dynamic preview.
+   * @private
+   */
+  #updateBulkVisuals() {
+    if (!this.#bulkHighlightMesh) return
+    
+    if (!this.#bulkStart) {
+      this.#bulkHighlightMesh.visible = false
+      return
+    }
+    
+    // If selecting end, use current builder target for dynamic preview
+    const actualEnd = this.#bulkSelectingEnd ? this.#builderTarget : this.#bulkStart
+    if (!actualEnd) {
+      this.#bulkHighlightMesh.visible = false
+      return
+    }
+    
+    // Calculate bounds (inclusive)
+    const minX = Math.min(this.#bulkStart.x, actualEnd.x)
+    const maxX = Math.max(this.#bulkStart.x, actualEnd.x)
+    const minY = Math.min(this.#bulkStart.y, actualEnd.y)
+    const maxY = Math.max(this.#bulkStart.y, actualEnd.y)
+    const minZ = Math.min(this.#bulkStart.z, actualEnd.z)
+    const maxZ = Math.max(this.#bulkStart.z, actualEnd.z)
+    
+    // Size of the selection box (add 1.05 for visibility, same as highlight)
+    const sizeX = maxX - minX + 1.05
+    const sizeY = maxY - minY + 1.05
+    const sizeZ = maxZ - minZ + 1.05
+    
+    // Center position
+    const centerX = (minX + maxX) / 2 + 0.5
+    const centerY = (minY + maxY) / 2 + 0.5
+    const centerZ = (minZ + maxZ) / 2 + 0.5
+    
+    this.#bulkHighlightMesh.position.set(centerX, centerY, centerZ)
+    this.#bulkHighlightMesh.scale.set(sizeX, sizeY, sizeZ)
+    this.#bulkHighlightMesh.visible = true
+  }
+
+  /**
+   * Update bulk preview if in 'selecting end' phase (dynamic end following builder target).
+   * Call this after moving the builder target when selecting end voxel.
+   */
+  updateBulkPreview() {
+    // Only update visuals if selecting end and we have a builder target
+    if (this.#bulkStart && this.#bulkSelectingEnd && this.#builderTarget) {
+      this.#updateBulkVisuals()
     }
   }
 
@@ -95,6 +329,17 @@ export class VoxelHighlightSystem {
     if (this.#currentMode !== highlightMode) {
       this.#currentMode = highlightMode
       this.#updateHighlightColor(highlightMode)
+    }
+
+    // In builder mode, don't raycast - just show the builder target
+    if (this.#builderMode) {
+      if (this.#builderTarget) {
+        this.#highlightMesh.visible = true
+        this.#isVisible = true
+      } else {
+        this.#hide()
+      }
+      return
     }
 
     // Get camera direction from yaw (Y) and pitch (X) rotation
@@ -289,6 +534,17 @@ export class VoxelHighlightSystem {
         material.dispose()
       }
       this.#highlightMesh = null
+    }
+    if (this.#bulkHighlightMesh) {
+      this.#scene.remove(this.#bulkHighlightMesh)
+      this.#bulkHighlightMesh.geometry.dispose()
+      const material = this.#bulkHighlightMesh.material
+      if (Array.isArray(material)) {
+        material.forEach(m => m.dispose())
+      } else {
+        material.dispose()
+      }
+      this.#bulkHighlightMesh = null
     }
   }
 }

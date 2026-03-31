@@ -315,6 +315,37 @@ private:
     /** @brief Queue of pending voxel creation requests. */
     std::vector<PendingVoxelCreation> pendingVoxelCreations_;
     
+    /**
+     * @brief Pending bulk voxel deletion request (enqueued on BULK_VOXEL_DESTROY message).
+     */
+    struct PendingBulkVoxelDeletion {
+        int32_t startX;
+        int32_t startY;
+        int32_t startZ;
+        int32_t endX;
+        int32_t endY;
+        int32_t endZ;
+    };
+    
+    /** @brief Queue of pending bulk voxel deletion requests. */
+    std::vector<PendingBulkVoxelDeletion> pendingBulkVoxelDeletions_;
+    
+    /**
+     * @brief Pending bulk voxel creation request (enqueued on BULK_VOXEL_CREATE message).
+     */
+    struct PendingBulkVoxelCreation {
+        int32_t startX;
+        int32_t startY;
+        int32_t startZ;
+        int32_t endX;
+        int32_t endY;
+        int32_t endZ;
+        VoxelType voxelType;
+    };
+    
+    /** @brief Queue of pending bulk voxel creation requests. */
+    std::vector<PendingBulkVoxelCreation> pendingBulkVoxelCreations_;
+    
     /** @brief Stateless procedural terrain generator for world generation. */
     WorldGenerator worldGenerator;
     
@@ -396,6 +427,22 @@ private:
      * Called in tick() before serialization so changes are sent to clients.
      */
     void processPendingVoxelCreations();
+    
+    /**
+     * @brief Process pending bulk voxel deletion requests.
+     *
+     * Expands bulk deletions into individual voxel deletions.
+     * Called in tick() before processPendingVoxelDeletions().
+     */
+    void processPendingBulkVoxelDeletions();
+    
+    /**
+     * @brief Process pending bulk voxel creation requests.
+     *
+     * Expands bulk creations into individual voxel creations.
+     * Called in tick() before processPendingVoxelCreations().
+     */
+    void processPendingBulkVoxelCreations();
 
     /**
      * @brief Step physics simulation for all entities.

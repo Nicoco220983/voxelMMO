@@ -13,6 +13,7 @@
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 
@@ -92,6 +93,23 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
             case InputType::VOXEL_CREATE: {
                 // Enqueue voxel creation request for processing in tick()
                 pendingVoxelCreations_.push_back({msg->vx, msg->vy, msg->vz, msg->voxelType});
+                break;
+            }
+            case InputType::BULK_VOXEL_DESTROY: {
+                // Enqueue bulk voxel deletion request for processing in tick()
+                pendingBulkVoxelDeletions_.push_back({
+                    msg->startX, msg->startY, msg->startZ,
+                    msg->endX, msg->endY, msg->endZ
+                });
+                break;
+            }
+            case InputType::BULK_VOXEL_CREATE: {
+                // Enqueue bulk voxel creation request for processing in tick()
+                pendingBulkVoxelCreations_.push_back({
+                    msg->startX, msg->startY, msg->startZ,
+                    msg->endX, msg->endY, msg->endZ,
+                    msg->voxelType
+                });
                 break;
             }
         }
@@ -218,6 +236,10 @@ void GameEngine::tick() {
     processPendingPlayerCreations();
 
     // Process pending voxel deletions and creations
+    // Process bulk operations first (they expand into individual operations)
+    processPendingBulkVoxelDeletions();
+    processPendingBulkVoxelCreations();
+    // Then process all individual operations (including expanded bulk)
     processPendingVoxelDeletions();
     processPendingVoxelCreations();
 
@@ -366,6 +388,50 @@ void GameEngine::processPendingVoxelCreations() {
         chunk->world.setVoxel(localX, localY, localZ, create.voxelType);
     }
     pendingVoxelCreations_.clear();
+}
+
+void GameEngine::processPendingBulkVoxelDeletions() {
+    for (const auto& bulk : pendingBulkVoxelDeletions_) {
+        // Calculate bounds (inclusive)
+        const int32_t minX = std::min(bulk.startX, bulk.endX);
+        const int32_t maxX = std::max(bulk.startX, bulk.endX);
+        const int32_t minY = std::min(bulk.startY, bulk.endY);
+        const int32_t maxY = std::max(bulk.startY, bulk.endY);
+        const int32_t minZ = std::min(bulk.startZ, bulk.endZ);
+        const int32_t maxZ = std::max(bulk.startZ, bulk.endZ);
+        
+        // Expand bulk deletion into individual deletions
+        for (int32_t x = minX; x <= maxX; ++x) {
+            for (int32_t y = minY; y <= maxY; ++y) {
+                for (int32_t z = minZ; z <= maxZ; ++z) {
+                    pendingVoxelDeletions_.push_back({x, y, z});
+                }
+            }
+        }
+    }
+    pendingBulkVoxelDeletions_.clear();
+}
+
+void GameEngine::processPendingBulkVoxelCreations() {
+    for (const auto& bulk : pendingBulkVoxelCreations_) {
+        // Calculate bounds (inclusive)
+        const int32_t minX = std::min(bulk.startX, bulk.endX);
+        const int32_t maxX = std::max(bulk.startX, bulk.endX);
+        const int32_t minY = std::min(bulk.startY, bulk.endY);
+        const int32_t maxY = std::max(bulk.startY, bulk.endY);
+        const int32_t minZ = std::min(bulk.startZ, bulk.endZ);
+        const int32_t maxZ = std::max(bulk.startZ, bulk.endZ);
+        
+        // Expand bulk creation into individual creations
+        for (int32_t x = minX; x <= maxX; ++x) {
+            for (int32_t y = minY; y <= maxY; ++y) {
+                for (int32_t z = minZ; z <= maxZ; ++z) {
+                    pendingVoxelCreations_.push_back({x, y, z, bulk.voxelType});
+                }
+            }
+        }
+    }
+    pendingBulkVoxelCreations_.clear();
 }
 
 void GameEngine::clearAllDirtyFlags() {

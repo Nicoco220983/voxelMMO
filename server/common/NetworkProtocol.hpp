@@ -60,9 +60,11 @@ enum class InputButton : uint8_t {
 
 /** @brief Input type - determines how the server interprets the input. */
 enum class InputType : uint8_t {
-    MOVE = 0,          ///< Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
-    VOXEL_DESTROY = 1, ///< Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
-    VOXEL_CREATE = 2,  ///< Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
+    MOVE = 0,               ///< Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
+    VOXEL_DESTROY = 1,      ///< Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
+    VOXEL_CREATE = 2,       ///< Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
+    BULK_VOXEL_DESTROY = 3, ///< Bulk voxel destroy: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) = 24 bytes payload
+    BULK_VOXEL_CREATE = 4,  ///< Bulk voxel create: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) + voxelType(1) = 25 bytes payload
 };
 
 /**
@@ -93,12 +95,19 @@ struct InputMessage {
     uint8_t   buttons;  ///< InputButton bitmask (valid if inputType == MOVE)
     float     yaw;      ///< radians (valid if inputType == MOVE)
     float     pitch;    ///< radians (valid if inputType == MOVE)
-    // VOXEL_DESTROY type fields:
-    int32_t   vx;       ///< World voxel X (valid if inputType == VOXEL_DESTROY)
-    int32_t   vy;       ///< World voxel Y (valid if inputType == VOXEL_DESTROY)
-    int32_t   vz;       ///< World voxel Z (valid if inputType == VOXEL_DESTROY)
-    // VOXEL_CREATE type fields:
-    VoxelType voxelType; ///< Voxel type to create (valid if inputType == VOXEL_CREATE)
+    // VOXEL_DESTROY/VOXEL_CREATE type fields:
+    int32_t   vx;       ///< World voxel X (valid if inputType == VOXEL_DESTROY or VOXEL_CREATE)
+    int32_t   vy;       ///< World voxel Y (valid if inputType == VOXEL_DESTROY or VOXEL_CREATE)
+    int32_t   vz;       ///< World voxel Z (valid if inputType == VOXEL_DESTROY or VOXEL_CREATE)
+    // VOXEL_CREATE/BULK_VOXEL_CREATE type fields:
+    VoxelType voxelType; ///< Voxel type to create (valid if inputType == VOXEL_CREATE or BULK_VOXEL_CREATE)
+    // BULK_VOXEL_DESTROY/BULK_VOXEL_CREATE type fields:
+    int32_t   startX;   ///< Start voxel X (valid for bulk types)
+    int32_t   startY;   ///< Start voxel Y (valid for bulk types)
+    int32_t   startZ;   ///< Start voxel Z (valid for bulk types)
+    int32_t   endX;     ///< End voxel X (valid for bulk types)
+    int32_t   endY;     ///< End voxel Y (valid for bulk types)
+    int32_t   endZ;     ///< End voxel Z (valid for bulk types)
 };
 
 /** Parsed payload of a ClientMessageType::JOIN frame. */
@@ -111,8 +120,11 @@ struct JoinMessage {
 /**
  * @brief Parse an INPUT frame.
  * Wire format varies by inputType:
- *   MOVE:          type(1) + size(2) + inputType(1) + buttons(1) + yaw float32LE(4) + pitch float32LE(4) = 14 bytes
- *   VOXEL_DESTROY: type(1) + size(2) + inputType(1) + vx int32LE(4) + vy int32LE(4) + vz int32LE(4) = 16 bytes
+ *   MOVE:               type(1) + size(2) + inputType(1) + buttons(1) + yaw float32LE(4) + pitch float32LE(4) = 14 bytes
+ *   VOXEL_DESTROY:      type(1) + size(2) + inputType(1) + vx int32LE(4) + vy int32LE(4) + vz int32LE(4) = 16 bytes
+ *   VOXEL_CREATE:       type(1) + size(2) + inputType(1) + vx int32LE(4) + vy int32LE(4) + vz int32LE(4) + voxelType(1) = 17 bytes
+ *   BULK_VOXEL_DESTROY: type(1) + size(2) + inputType(1) + startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) = 28 bytes
+ *   BULK_VOXEL_CREATE:  type(1) + size(2) + inputType(1) + startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) + voxelType(1) = 29 bytes
  * @return Parsed struct, or std::nullopt if size is insufficient for the inputType.
  */
 inline std::optional<InputMessage> parseInput(const uint8_t* data, size_t size) {
@@ -141,7 +153,28 @@ inline std::optional<InputMessage> parseInput(const uint8_t* data, size_t size) 
             std::memcpy(&m.vx, data + 4, sizeof(int32_t));
             std::memcpy(&m.vy, data + 8, sizeof(int32_t));
             std::memcpy(&m.vz, data + 12, sizeof(int32_t));
-            m.voxelType = data[16];
+            m.voxelType = static_cast<VoxelType>(data[16]);
+            break;
+            
+        case InputType::BULK_VOXEL_DESTROY:
+            if (size < 28) return std::nullopt;
+            std::memcpy(&m.startX, data + 4, sizeof(int32_t));
+            std::memcpy(&m.startY, data + 8, sizeof(int32_t));
+            std::memcpy(&m.startZ, data + 12, sizeof(int32_t));
+            std::memcpy(&m.endX, data + 16, sizeof(int32_t));
+            std::memcpy(&m.endY, data + 20, sizeof(int32_t));
+            std::memcpy(&m.endZ, data + 24, sizeof(int32_t));
+            break;
+            
+        case InputType::BULK_VOXEL_CREATE:
+            if (size < 29) return std::nullopt;
+            std::memcpy(&m.startX, data + 4, sizeof(int32_t));
+            std::memcpy(&m.startY, data + 8, sizeof(int32_t));
+            std::memcpy(&m.startZ, data + 12, sizeof(int32_t));
+            std::memcpy(&m.endX, data + 16, sizeof(int32_t));
+            std::memcpy(&m.endY, data + 20, sizeof(int32_t));
+            std::memcpy(&m.endZ, data + 24, sizeof(int32_t));
+            m.voxelType = static_cast<VoxelType>(data[28]);
             break;
             
         default:

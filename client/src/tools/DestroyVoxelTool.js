@@ -1,9 +1,8 @@
 // @ts-check
 import { Tool } from './Tool.js'
-import { InputType } from '../NetworkProtocol.js'
+import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
 
 /**
- * @typedef {import('../GameClient.js').GameClient} GameClient
  * @typedef {import('../systems/VoxelHighlightSystem.js').VoxelHighlightSystem} VoxelHighlightSystem
  */
 
@@ -36,18 +35,35 @@ export class DestroyVoxelTool extends Tool {
   }
 
   /**
-   * @param {GameClient} client
    * @param {VoxelHighlightSystem} highlightSystem
+   * @returns {ArrayBuffer|null}
    */
-  onClick(client, highlightSystem) {
+  onClick(highlightSystem) {
     const targetVoxel = highlightSystem.getHighlightedVoxel()
-    if (!targetVoxel) return
+    if (!targetVoxel) return null
     
-    const inputData = DestroyVoxelTool.serializeInput(targetVoxel.x, targetVoxel.y, targetVoxel.z)
-    client.sendInput(inputData)
+    return DestroyVoxelTool.serializeInput(targetVoxel.x, targetVoxel.y, targetVoxel.z)
   }
 
   getHighlightMode() {
     return 'destroy'
+  }
+
+  supportsBuilderMode() {
+    return true
+  }
+
+  /**
+   * Serialize a BULK_VOXEL_DESTROY input frame.
+   * @param {number} startX
+   * @param {number} startY
+   * @param {number} startZ
+   * @param {number} endX
+   * @param {number} endY
+   * @param {number} endZ
+   * @returns {ArrayBuffer}
+   */
+  serializeBulkInput(startX, startY, startZ, endX, endY, endZ) {
+    return NetworkProtocol.serializeInputBulkVoxelDestroy(startX, startY, startZ, endX, endY, endZ)
   }
 }

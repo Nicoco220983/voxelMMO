@@ -60,9 +60,11 @@ export const InputButton = Object.freeze({
  * @enum {number}
  */
 export const InputType = Object.freeze({
-  MOVE: 0,          // Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
-  VOXEL_DESTROY: 1, // Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
-  VOXEL_CREATE: 2,  // Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
+  MOVE: 0,               // Movement input: buttons(1) + yaw(4) + pitch(4) = 10 bytes payload
+  VOXEL_DESTROY: 1,      // Voxel destroy: vx(4) + vy(4) + vz(4) = 12 bytes payload
+  VOXEL_CREATE: 2,       // Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
+  BULK_VOXEL_DESTROY: 3, // Bulk voxel destroy: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) = 24 bytes payload
+  BULK_VOXEL_CREATE: 4,  // Bulk voxel create: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) + voxelType(1) = 25 bytes payload
 })
 
 /**
@@ -167,6 +169,60 @@ export class NetworkProtocol {
     v.setInt32(8,   vy, true)
     v.setInt32(12,  vz, true)
     v.setUint8(16,  voxelType)
+    return buf
+  }
+
+  /**
+   * Serialize a BULK_VOXEL_DESTROY input frame (28 bytes).
+   * Wire: type(1) + size(2) + inputType(1) + startX(4) + startY(4) + startZ(4) + endX(4) + endY(4) + endZ(4).
+   * @param {number} startX  Start voxel X coordinate.
+   * @param {number} startY  Start voxel Y coordinate.
+   * @param {number} startZ  Start voxel Z coordinate.
+   * @param {number} endX    End voxel X coordinate.
+   * @param {number} endY    End voxel Y coordinate.
+   * @param {number} endZ    End voxel Z coordinate.
+   * @returns {ArrayBuffer}
+   */
+  static serializeInputBulkVoxelDestroy(startX, startY, startZ, endX, endY, endZ) {
+    const buf = new ArrayBuffer(28)
+    const v   = new DataView(buf)
+    v.setUint8(0,   ClientMessageType.INPUT)
+    v.setUint16(1,  28, true)  // size
+    v.setUint8(3,   InputType.BULK_VOXEL_DESTROY)
+    v.setInt32(4,   startX, true)
+    v.setInt32(8,   startY, true)
+    v.setInt32(12,  startZ, true)
+    v.setInt32(16,  endX, true)
+    v.setInt32(20,  endY, true)
+    v.setInt32(24,  endZ, true)
+    return buf
+  }
+
+  /**
+   * Serialize a BULK_VOXEL_CREATE input frame (29 bytes).
+   * Wire: type(1) + size(2) + inputType(1) + startX(4) + startY(4) + startZ(4) + endX(4) + endY(4) + endZ(4) + voxelType(1).
+   * @param {number} startX    Start voxel X coordinate.
+   * @param {number} startY    Start voxel Y coordinate.
+   * @param {number} startZ    Start voxel Z coordinate.
+   * @param {number} endX      End voxel X coordinate.
+   * @param {number} endY      End voxel Y coordinate.
+   * @param {number} endZ      End voxel Z coordinate.
+   * @param {number} voxelType Voxel type to create.
+   * @returns {ArrayBuffer}
+   */
+  static serializeInputBulkVoxelCreate(startX, startY, startZ, endX, endY, endZ, voxelType) {
+    const buf = new ArrayBuffer(29)
+    const v   = new DataView(buf)
+    v.setUint8(0,   ClientMessageType.INPUT)
+    v.setUint16(1,  29, true)  // size
+    v.setUint8(3,   InputType.BULK_VOXEL_CREATE)
+    v.setInt32(4,   startX, true)
+    v.setInt32(8,   startY, true)
+    v.setInt32(12,  startZ, true)
+    v.setInt32(16,  endX, true)
+    v.setInt32(20,  endY, true)
+    v.setInt32(24,  endZ, true)
+    v.setUint8(28,  voxelType)
     return buf
   }
 

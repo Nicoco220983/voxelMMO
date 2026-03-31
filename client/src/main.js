@@ -11,6 +11,7 @@ import { DestroyVoxelTool } from './tools/DestroyVoxelTool.js'
 import { CreateVoxelTool } from './tools/CreateVoxelTool.js'
 import { VoxelHighlightSystem } from './systems/VoxelHighlightSystem.js'
 import { createController } from './controllers/ControllerManager.js'
+import { TouchController } from './controllers/TouchController.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -78,6 +79,15 @@ const voxelHighlight = new VoxelHighlightSystem(scene)
 // ── Controller (keyboard or touch) ────────────────────────────────────────
 const controller = createController(renderer.domElement)
 
+// Hook up touch hotbar double-tap detection (must be after controller creation)
+if (controller instanceof TouchController) {
+  const originalSelectSlot = hotbar.selectSlot.bind(hotbar)
+  hotbar.selectSlot = (index) => {
+    controller.onHotbarTap(index)
+    originalSelectSlot(index)
+  }
+}
+
 // ── Input sending ─────────────────────────────────────────────────────────
 
 /** @type {number} */ let lastButtons = -1  // force first send (NaN-like)
@@ -124,20 +134,45 @@ function animate() {
   const yaw     = controller.yaw
   const pitch   = controller.pitch
 
-  // Hotbar selection from controller
-  if (controller.selectedSlotIndex !== null) {
+  // Hotbar selection from controller (keyboard only - touch handled via hook)
+  if (controller.selectedSlotIndex !== null && !(controller instanceof TouchController)) {
     hotbar.selectSlot(controller.selectedSlotIndex)
   }
 
-  // Tool activation from controller
-  if (controller.toolActivated) {
-    const currentTool = hotbar.getSelectedSlot().tool
-    if (currentTool) {
-      currentTool.onClick(client, voxelHighlight)
+  // Sync controller state (auto-exit builder mode if tool changed, etc.)
+  controller.sync(hotbar)
+
+  // Sync voxel highlight visuals with controller and hotbar state
+  voxelHighlight.sync(camera, hotbar, controller, client.chunkRegistry)
+
+  // Update builder target from highlight system (needed for tool operations)
+  controller.builderTarget = voxelHighlight.getBuilderTarget()
+
+  // Handle bulk preview visualization
+  if (controller.bulkBuilderMode) {
+    if (controller.bulkPhase === 'none') {
+      voxelHighlight.setBulkPreview(null, false)
+    } else if (controller.bulkPhase === 'start') {
+      voxelHighlight.setBulkPreview(controller.bulkStartVoxel, true)
     }
   }
 
-  sendInputIfChanged(buttons, yaw, pitch)
+  // Handle tool activation (clicks) - controller sends the input
+  if (controller.toolActivated) {
+    controller.sendToolInput(client, hotbar, voxelHighlight)
+  }
+
+  // Handle builder mode voxel movement OR send player movement
+  if (controller.builderMode) {
+    // In builder mode: apply movement delta to highlighted voxel
+    const delta = controller.builderMoveDelta
+    if (delta.x !== 0 || delta.y !== 0 || delta.z !== 0) {
+      voxelHighlight.moveBuilderTarget(delta.x, delta.y, delta.z)
+    }
+  } else {
+    // Normal mode: send player movement to server
+    sendInputIfChanged(buttons, yaw, pitch)
+  }
 
   // ── Position update: get from local player entity via registry ────────────
   const localPlayer = getLocalPlayer()
@@ -170,17 +205,19 @@ function animate() {
   client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   client.rebuildDirtyChunks()
 
-  // Update voxel highlight based on current tool
-  const currentTool = hotbar.getSelectedSlot().tool
-  const highlightMode = currentTool ? currentTool.getHighlightMode() : 'none'
-  voxelHighlight.update(camera, client.chunkRegistry, highlightMode)
-
   renderer.render(scene, camera)
 
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
   const modeName = _entityType === EntityType.GHOST_PLAYER ? 'ghost' : 'walk'
+  let builderIndicator = ''
+  if (controller.bulkBuilderMode) {
+    const phaseText = controller.bulkPhase === 'none' ? 'SELECT START' : 'SELECT END'
+    builderIndicator = ` [BULK: ${phaseText}]`
+  } else if (controller.builderMode) {
+    builderIndicator = ' [BUILDER]'
+  }
   hud.textContent =
-    `[${modeName}]  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
+    `[${modeName}]${builderIndicator}  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
     `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
 
   // Update controller at end of frame (resets one-shot flags)

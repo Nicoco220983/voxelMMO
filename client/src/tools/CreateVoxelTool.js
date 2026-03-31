@@ -1,9 +1,8 @@
 // @ts-check
 import { Tool } from './Tool.js'
-import { InputType } from '../NetworkProtocol.js'
+import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
 
 /**
- * @typedef {import('../GameClient.js').GameClient} GameClient
  * @typedef {import('../systems/VoxelHighlightSystem.js').VoxelHighlightSystem} VoxelHighlightSystem
  */
 
@@ -45,20 +44,37 @@ export class CreateVoxelTool extends Tool {
   }
 
   /**
-   * @param {GameClient} client
    * @param {VoxelHighlightSystem} highlightSystem
+   * @returns {ArrayBuffer|null}
    */
-  onClick(client, highlightSystem) {
+  onClick(highlightSystem) {
     const placementVoxel = highlightSystem.getPlacementVoxel()
-    if (!placementVoxel) return
+    if (!placementVoxel) return null
     
-    const inputData = CreateVoxelTool.serializeInput(
+    return CreateVoxelTool.serializeInput(
       placementVoxel.x, placementVoxel.y, placementVoxel.z, this.#voxelType
     )
-    client.sendInput(inputData)
   }
 
   getHighlightMode() {
     return 'create'
+  }
+
+  supportsBuilderMode() {
+    return true
+  }
+
+  /**
+   * Serialize a BULK_VOXEL_CREATE input frame.
+   * @param {number} startX
+   * @param {number} startY
+   * @param {number} startZ
+   * @param {number} endX
+   * @param {number} endY
+   * @param {number} endZ
+   * @returns {ArrayBuffer}
+   */
+  serializeBulkInput(startX, startY, startZ, endX, endY, endZ) {
+    return NetworkProtocol.serializeInputBulkVoxelCreate(startX, startY, startZ, endX, endY, endZ, this.#voxelType)
   }
 }

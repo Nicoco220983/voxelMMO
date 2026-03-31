@@ -59,6 +59,12 @@ export class TouchController extends BaseController {
   /** @type {Function} */
   #boundTouchEnd
 
+  // Triple-tap detection for bulk builder mode
+  /** @type {number[]} Timestamps of recent taps on the same slot */
+  #tapSequence = []
+  /** @type {number} Milliseconds window for tap sequence (600ms for triple) */
+  static TAP_WINDOW_MS = 600
+
   constructor() {
     super()
     this.yaw = 0
@@ -248,6 +254,60 @@ export class TouchController extends BaseController {
   }
 
   /**
+   * Called when a hotbar slot is tapped (from Hotbar.js or main.js).
+   * Handles triple-tap detection for bulk builder mode.
+   * @param {number} slotIndex
+   */
+  onHotbarTap(slotIndex) {
+    const now = performance.now()
+    
+    // Clean old taps outside the window
+    this.#tapSequence = this.#tapSequence.filter(t => now - t < TouchController.TAP_WINDOW_MS)
+    this.#tapSequence.push(now)
+    
+    const tapCount = this.#tapSequence.length
+    
+    if (tapCount >= 3) {
+      // Triple tap -> bulk builder mode
+      this.bulkBuilderMode = true
+      this.bulkBuilderModeChanged = true
+      this.builderMode = true
+      this.builderModeChanged = !this.builderMode
+      this.entryYaw = this.yaw
+      // Reset phase for new bulk operation
+      this.bulkPhase = 'none'
+      this.bulkStartVoxel = null
+      this.#tapSequence = [] // Reset sequence
+    } else if (tapCount === 2) {
+      // Double tap -> builder mode
+      const oldBulkMode = this.bulkBuilderMode
+      this.bulkBuilderMode = false
+      this.bulkBuilderModeChanged = oldBulkMode !== false
+      if (!this.builderMode) {
+        this.builderMode = true
+        this.builderModeChanged = true
+        this.entryYaw = this.yaw
+      }
+      // Reset bulk state
+      this.bulkPhase = 'none'
+      this.bulkStartVoxel = null
+    } else {
+      // Single tap -> normal mode
+      const oldBuilderMode = this.builderMode
+      const oldBulkMode = this.bulkBuilderMode
+      this.builderMode = false
+      this.builderModeChanged = oldBuilderMode !== false
+      this.bulkBuilderMode = false
+      this.bulkBuilderModeChanged = oldBulkMode !== false
+      // Reset bulk state
+      this.bulkPhase = 'none'
+      this.bulkStartVoxel = null
+    }
+    
+    this.selectedSlotIndex = slotIndex
+  }
+
+  /**
    * @param {number} dt
    */
   update(dt) {
@@ -269,6 +329,52 @@ export class TouchController extends BaseController {
     if (this.#jumpPressed) b |= InputButton.JUMP
     if (this.#descendPressed) b |= InputButton.DESCEND
     this.buttons = b
+
+    // Compute builder movement delta when in builder mode
+    if (this.builderMode) {
+      this.builderMoveDelta = this.#computeBuilderMoveDelta(b)
+    }
+  }
+
+  /**
+   * Compute voxel movement delta from button mask and entry yaw.
+   * @param {number} buttons
+   * @returns {{x: number, y: number, z: number}}
+   */
+  #computeBuilderMoveDelta(buttons) {
+    const cos = Math.cos(this.entryYaw)
+    const sin = Math.sin(this.entryYaw)
+
+    let dx = 0
+    let dz = 0
+
+    // Forward: move in direction of -sin(yaw), -cos(yaw)
+    if (buttons & InputButton.FORWARD) {
+      dx -= Math.round(sin)
+      dz -= Math.round(cos)
+    }
+    // Backward: opposite
+    if (buttons & InputButton.BACKWARD) {
+      dx += Math.round(sin)
+      dz += Math.round(cos)
+    }
+    // Right: perpendicular (cos, -sin)
+    if (buttons & InputButton.RIGHT) {
+      dx += Math.round(cos)
+      dz -= Math.round(sin)
+    }
+    // Left: opposite
+    if (buttons & InputButton.LEFT) {
+      dx -= Math.round(cos)
+      dz += Math.round(sin)
+    }
+
+    // Up/Down are world-space Y
+    let dy = 0
+    if (buttons & InputButton.JUMP) dy += 1
+    if (buttons & InputButton.DESCEND) dy -= 1
+
+    return { x: dx, y: dy, z: dz }
   }
 
   destroy() {
