@@ -1,7 +1,7 @@
 // @ts-check
 import * as THREE     from 'three'
 import { GameClient } from './GameClient.js'
-import { NetworkProtocol, InputType } from './NetworkProtocol.js'
+import { NetworkProtocol } from './NetworkProtocol.js'
 import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
@@ -145,34 +145,8 @@ function animate() {
   // Sync voxel highlight visuals with controller and hotbar state
   voxelHighlight.sync(camera, hotbar, controller, client.chunkRegistry)
 
-  // Update builder target from highlight system (needed for tool operations)
-  controller.builderTarget = voxelHighlight.getBuilderTarget()
-
-  // Handle bulk preview visualization
-  if (controller.bulkBuilderMode) {
-    if (controller.bulkPhase === 'none') {
-      voxelHighlight.setBulkPreview(null, false)
-    } else if (controller.bulkPhase === 'start') {
-      voxelHighlight.setBulkPreview(controller.bulkStartVoxel, true)
-    }
-  }
-
-  // Handle tool activation (clicks) - controller sends the input
-  if (controller.toolActivated) {
-    controller.sendToolInput(client, hotbar, voxelHighlight)
-  }
-
-  // Handle builder mode voxel movement OR send player movement
-  if (controller.builderMode) {
-    // In builder mode: apply movement delta to highlighted voxel
-    const delta = controller.builderMoveDelta
-    if (delta.x !== 0 || delta.y !== 0 || delta.z !== 0) {
-      voxelHighlight.moveBuilderTarget(delta.x, delta.y, delta.z)
-    }
-  } else {
-    // Normal mode: send player movement to server
-    sendInputIfChanged(buttons, yaw, pitch)
-  }
+  // Send all pending input (tool activation and/or movement)
+  controller.sendInput(client, hotbar, voxelHighlight)
 
   // ── Position update: get from local player entity via registry ────────────
   const localPlayer = getLocalPlayer()

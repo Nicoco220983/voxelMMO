@@ -6,6 +6,8 @@
  * @typedef {import('../GameClient.js').GameClient} GameClient
  */
 
+import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
+
 /**
  * Abstract base class for input controllers (keyboard/mouse or touch).
  * Provides a unified interface so main.js doesn't care about the input source.
@@ -84,12 +86,15 @@ export class BaseController {
    */
   builderMoveDelta = { x: 0, y: 0, z: 0 }
 
-  /**
-   * Current builder target voxel (highlighted position in builder mode).
-   * Updated by main.js from VoxelHighlightSystem.
-   * @type {{x: number, y: number, z: number} | null}
-   */
-  builderTarget = null
+  // ── Movement input state (for delta compression) ─────────────────────────
+  /** @type {number} Last sent buttons bitmask */
+  #lastButtons = -1
+  /** @type {number} Last sent yaw */
+  #lastYaw = NaN
+  /** @type {number} Last sent pitch */
+  #lastPitch = NaN
+  /** @type {number} Last sent input type */
+  #lastInputType = -1
 
   /**
    * Sync controller state with hotbar.
@@ -133,19 +138,55 @@ export class BaseController {
   }
 
   /**
-   * Handle tool activation and send appropriate input to the server.
-   * This is the central place where all tool inputs are sent.
+   * Default builder mode serialization for tools without serializeBuilderInput.
+   * @private
+   * @param {import('../tools/Tool.js').Tool} tool
+   * @param {{x: number, y: number, z: number}} target
+   * @returns {ArrayBuffer|null}
+   */
+  #defaultSerializeBuilderInput(tool, target) {
+    // Create a mock highlight system that returns our target
+    const mockHighlight = {
+      getHighlightedVoxel: () => target,
+      getPlacementVoxel: () => target,
+    }
+    return tool.onClick(mockHighlight)
+  }
+
+  /**
+   * Send all pending input to the server.
+   * This is the central entry point for all input sending.
+   * Handles both tool activation and movement based on controller state.
    * @param {GameClient} client
    * @param {Hotbar} hotbar
    * @param {VoxelHighlightSystem} highlightSystem
    */
-  sendToolInput(client, hotbar, highlightSystem) {
+  sendInput(client, hotbar, highlightSystem) {
+    // Priority: tool activation takes precedence over movement
+    if (this.toolActivated) {
+      this.#sendToolInputInternal(client, hotbar, highlightSystem)
+    }
+
+    // Send movement input only when not in builder mode
+    if (!this.builderMode) {
+      this.#sendMovementInputInternal(client, hotbar.selectedIndex)
+    }
+  }
+
+  /**
+   * Send tool input based on current tool and mode.
+   * @private
+   * @param {GameClient} client
+   * @param {Hotbar} hotbar
+   * @param {VoxelHighlightSystem} highlightSystem
+   */
+  #sendToolInputInternal(client, hotbar, highlightSystem) {
     const currentTool = hotbar.getSelectedSlot().tool
     if (!currentTool) return
 
     if (this.bulkBuilderMode && currentTool.supportsBuilderMode()) {
       // Bulk builder mode: state machine for start/end selection
-      const target = this.builderTarget
+      const target = highlightSystem.getBuilderTarget()
       if (!target) return
 
       if (this.bulkPhase === 'none') {
@@ -168,7 +209,7 @@ export class BaseController {
       }
     } else if (this.builderMode && currentTool.supportsBuilderMode()) {
       // Regular builder mode: use builder target
-      const target = this.builderTarget
+      const target = highlightSystem.getBuilderTarget()
       if (target) {
         const inputData = currentTool.serializeBuilderInput?.(target) ??
           this.#defaultSerializeBuilderInput(currentTool, target)
@@ -186,18 +227,37 @@ export class BaseController {
   }
 
   /**
-   * Default builder mode serialization for tools without serializeBuilderInput.
+   * Send movement INPUT frame only when state changed.
    * @private
-   * @param {import('../tools/Tool.js').Tool} tool
-   * @param {{x: number, y: number, z: number}} target
-   * @returns {ArrayBuffer|null}
+   * @param {GameClient} client
+   * @param {number} selectedSlotIndex - Current hotbar slot (for input type mapping)
    */
-  #defaultSerializeBuilderInput(tool, target) {
-    // Create a mock highlight system that returns our target
-    const mockHighlight = {
-      getHighlightedVoxel: () => target,
-      getPlacementVoxel: () => target,
+  #sendMovementInputInternal(client, selectedSlotIndex) {
+    const inputType = this.#slotToInputType(selectedSlotIndex)
+
+    if (this.buttons === this.#lastButtons &&
+        this.yaw === this.#lastYaw &&
+        this.pitch === this.#lastPitch &&
+        inputType === this.#lastInputType) {
+      return
     }
-    return tool.onClick(mockHighlight)
+
+    client.sendInput(NetworkProtocol.serializeInputMove(this.buttons, this.yaw, this.pitch))
+    this.#lastButtons = this.buttons
+    this.#lastYaw = this.yaw
+    this.#lastPitch = this.pitch
+    this.#lastInputType = inputType
+  }
+
+  /**
+   * Map hotbar slot index to InputType value.
+   * @private
+   * @param {number} slotIndex
+   * @returns {number} InputType value
+   */
+  #slotToInputType(slotIndex) {
+    // For now, all inputs are MOVE type
+    // Future: different slots may trigger different input types
+    return InputType.MOVE
   }
 }

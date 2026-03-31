@@ -119,6 +119,23 @@ export class VoxelHighlightSystem {
     if (controller.bulkBuilderMode && controller.bulkPhase === 'start') {
       this.updateBulkPreview()
     }
+
+    // Handle bulk preview visualization based on controller state
+    if (controller.bulkBuilderMode) {
+      if (controller.bulkPhase === 'none') {
+        this.setBulkPreview(null, false)
+      } else if (controller.bulkPhase === 'start') {
+        this.setBulkPreview(controller.bulkStartVoxel, true)
+      }
+    }
+
+    // Handle builder mode voxel movement
+    if (controller.builderMode) {
+      const delta = controller.builderMoveDelta
+      if (delta.x !== 0 || delta.y !== 0 || delta.z !== 0) {
+        this.moveBuilderTarget(delta.x, delta.y, delta.z)
+      }
+    }
   }
 
   /**
