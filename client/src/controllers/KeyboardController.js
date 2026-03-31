@@ -126,6 +126,26 @@ export class KeyboardController extends BaseController {
       case 'KeyD': case 'ArrowRight': this.#keys.d = true; e.preventDefault(); break
       case 'Space': this.#keys.space = true; e.preventDefault(); break
       case 'ShiftLeft': case 'ShiftRight': this.#keys.shift = true; break
+      case 'Escape':
+        // Priority 1: If in batch mode with startPos defined, clear it
+        if (this.bulkBuilderMode && this.bulkStartVoxel !== null) {
+          this.bulkStartVoxel = null
+          this.bulkPhase = 'none'
+          e.preventDefault()
+        }
+        // Priority 2: If in builder mode, exit it (go to associated non-builder mode)
+        else if (this.builderMode) {
+          const wasBulk = this.bulkBuilderMode
+          this.builderMode = false
+          this.builderModeChanged = true
+          this.bulkBuilderMode = false
+          this.bulkBuilderModeChanged = wasBulk
+          this.bulkPhase = 'none'
+          this.bulkStartVoxel = null
+          e.preventDefault()
+        }
+        // Priority 3: Otherwise, do not impede propagation (no preventDefault)
+        break
       default: return
     }
   }

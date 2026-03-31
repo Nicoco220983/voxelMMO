@@ -8,7 +8,7 @@ import { VoxelType, chunkIdFromVoxelPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_
 /** @typedef {import('../controllers/BaseController.js').BaseController} BaseController */
 
 /** Maximum reach distance for voxel highlighting (in voxels) */
-const MAX_REACH_DISTANCE = 5
+const MAX_REACH_DISTANCE = 8
 
 /** Highlight color - red for destroy (in both normal and builder/batch mode) */
 const HIGHLIGHT_COLOR_DESTROY = 0xFF0000
@@ -360,6 +360,7 @@ export class VoxelHighlightSystem {
     // In builder mode, don't raycast - just show the builder target
     if (this.#builderMode) {
       if (this.#builderTarget) {
+        this.#updateHighlightPosition()
         this.#highlightMesh.visible = true
         this.#isVisible = true
       } else {
