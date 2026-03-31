@@ -10,25 +10,21 @@ import { VoxelType, chunkIdFromVoxelPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_
 /** Maximum reach distance for voxel highlighting (in voxels) */
 const MAX_REACH_DISTANCE = 5
 
-/** Highlight color - yellow for destroy */
-const HIGHLIGHT_COLOR_DESTROY = 0xFFFF00
-/** Highlight color - green for create */
+/** Highlight color - red for destroy (in both normal and builder/batch mode) */
+const HIGHLIGHT_COLOR_DESTROY = 0xFF0000
+/** Highlight color - green for create (in both normal and builder/batch mode) */
 const HIGHLIGHT_COLOR_CREATE = 0x00FF00
-/** Highlight color - blue for builder mode */
-const HIGHLIGHT_COLOR_BUILDER = 0x0088FF
-/** Highlight color - orange for bulk builder selection */
-const HIGHLIGHT_COLOR_BULK = 0xFF8800
 
 /**
  * @class VoxelHighlightSystem
- * @description Manages the wireframe highlight box for voxel destruction.
+ * @description Manages the semi-transparent highlight box for voxel selection.
  * Casts a ray from camera center and highlights the first non-air voxel within reach.
  */
 export class VoxelHighlightSystem {
   /** @type {THREE.Scene} */
   #scene
 
-  /** @type {THREE.LineSegments|null} */
+  /** @type {THREE.Mesh|null} */
   #highlightMesh = null
 
   /** @type {boolean} */
@@ -52,8 +48,8 @@ export class VoxelHighlightSystem {
   #entryYaw = 0
 
   // Bulk builder mode state
-  /** @type {THREE.LineSegments|null} */
-  #bulkHighlightMesh = null
+  /** @type {THREE.Mesh|null} */
+  #bulkPreviewMesh = null
   /** @type {{x: number, y: number, z: number}|null} */
   #bulkStart = null
   /** @type {boolean} True when waiting for end voxel selection (start is set, waiting for click #2) */
@@ -65,26 +61,51 @@ export class VoxelHighlightSystem {
   constructor(scene) {
     this.#scene = scene
     this.#createHighlightMesh()
-    this.#createBulkHighlightMesh()
+    this.#createBulkPreviewMesh()
+  }
+
+  /**
+   * Create the highlight mesh (initially hidden).
+   * Shows a semi-transparent colored box.
+   * @private
+   */
+  #createHighlightMesh() {
+    // Create a slightly larger box (1.05x) to avoid z-fighting
+    const geometry = new THREE.BoxGeometry(1.05, 1.05, 1.05)
+    const material = new THREE.MeshBasicMaterial({ 
+      color: HIGHLIGHT_COLOR_DESTROY,
+      transparent: true,
+      opacity: 0.5,
+      depthWrite: false
+    })
+    
+    this.#highlightMesh = new THREE.Mesh(geometry, material)
+    this.#highlightMesh.visible = false
+    this.#scene.add(this.#highlightMesh)
   }
 
   /**
    * Create the bulk selection highlight mesh (initially hidden).
-   * This shows an orange wireframe box covering the selected volume.
+   * This shows a semi-transparent colored box covering the selected volume.
+   * Color matches the current tool (green for create, red for destroy).
+   * More transparent than the single voxel highlight.
    * @private
    */
-  #createBulkHighlightMesh() {
+  #createBulkPreviewMesh() {
     // Create a unit cube that we'll scale to fit the selection
     const geometry = new THREE.BoxGeometry(1, 1, 1)
-    const edges = new THREE.EdgesGeometry(geometry)
-    const material = new THREE.LineBasicMaterial({ 
-      color: HIGHLIGHT_COLOR_BULK,
-      linewidth: 2 
+    // Use a semi-transparent material that matches the tool color
+    // More transparent than the single voxel highlight (0.25 vs 0.5)
+    const material = new THREE.MeshBasicMaterial({ 
+      color: HIGHLIGHT_COLOR_CREATE, // Default, will be updated dynamically
+      transparent: true,
+      opacity: 0.25,
+      depthWrite: false
     })
     
-    this.#bulkHighlightMesh = new THREE.LineSegments(edges, material)
-    this.#bulkHighlightMesh.visible = false
-    this.#scene.add(this.#bulkHighlightMesh)
+    this.#bulkPreviewMesh = new THREE.Mesh(geometry, material)
+    this.#bulkPreviewMesh.visible = false
+    this.#scene.add(this.#bulkPreviewMesh)
   }
 
   /**
@@ -123,9 +144,9 @@ export class VoxelHighlightSystem {
     // Handle bulk preview visualization based on controller state
     if (controller.bulkBuilderMode) {
       if (controller.bulkPhase === 'none') {
-        this.setBulkPreview(null, false)
+        this.setBulkPreview(null, false, highlightMode)
       } else if (controller.bulkPhase === 'start') {
-        this.setBulkPreview(controller.bulkStartVoxel, true)
+        this.setBulkPreview(controller.bulkStartVoxel, true, highlightMode)
       }
     }
 
@@ -139,34 +160,15 @@ export class VoxelHighlightSystem {
   }
 
   /**
-   * Create the wireframe highlight mesh (initially hidden).
-   * @private
-   */
-  #createHighlightMesh() {
-    // Create a slightly larger box (1.05x) to avoid z-fighting
-    const geometry = new THREE.BoxGeometry(1.05, 1.05, 1.05)
-    const edges = new THREE.EdgesGeometry(geometry)
-    const material = new THREE.LineBasicMaterial({ 
-      color: HIGHLIGHT_COLOR_DESTROY,
-      linewidth: 2 
-    })
-    
-    this.#highlightMesh = new THREE.LineSegments(edges, material)
-    this.#highlightMesh.visible = false
-    this.#scene.add(this.#highlightMesh)
-  }
-
-  /**
    * Update highlight color based on tool mode.
+   * Uses green for create, red for destroy - same colors for normal, builder, and batch modes.
    * @private
    * @param {'destroy'|'create'|'none'} mode
    */
   #updateHighlightColor(mode) {
     if (!this.#highlightMesh) return
-    const material = /** @type {THREE.LineBasicMaterial} */ (this.#highlightMesh.material)
-    if (this.#builderMode) {
-      material.color.setHex(HIGHLIGHT_COLOR_BUILDER)
-    } else if (mode === 'create') {
+    const material = /** @type {THREE.MeshBasicMaterial} */ (this.#highlightMesh.material)
+    if (mode === 'create') {
       material.color.setHex(HIGHLIGHT_COLOR_CREATE)
     } else {
       material.color.setHex(HIGHLIGHT_COLOR_DESTROY)
@@ -265,13 +267,20 @@ export class VoxelHighlightSystem {
 
   /**
    * Set the bulk selection preview.
-   * Shows a single orange wireframe box covering the entire selection volume.
+   * Shows a single semi-transparent colored box covering the entire selection volume.
+   * Color matches the current tool mode (green for create, red for destroy).
    * @param {{x: number, y: number, z: number}|null} start - Start voxel, null to clear
    * @param {boolean} selectingEnd - True if waiting for end voxel selection (dynamic preview)
+   * @param {'destroy'|'create'} [toolMode='destroy'] - Current tool mode to determine color
    */
-  setBulkPreview(start, selectingEnd = false) {
+  setBulkPreview(start, selectingEnd = false, toolMode = 'destroy') {
     this.#bulkStart = start
     this.#bulkSelectingEnd = selectingEnd
+    // Update preview color to match tool mode
+    if (this.#bulkPreviewMesh) {
+      const material = /** @type {THREE.MeshBasicMaterial} */ (this.#bulkPreviewMesh.material)
+      material.color.setHex(toolMode === 'create' ? HIGHLIGHT_COLOR_CREATE : HIGHLIGHT_COLOR_DESTROY)
+    }
     this.#updateBulkVisuals()
   }
 
@@ -281,17 +290,17 @@ export class VoxelHighlightSystem {
    * @private
    */
   #updateBulkVisuals() {
-    if (!this.#bulkHighlightMesh) return
+    if (!this.#bulkPreviewMesh) return
     
     if (!this.#bulkStart) {
-      this.#bulkHighlightMesh.visible = false
+      this.#bulkPreviewMesh.visible = false
       return
     }
     
     // If selecting end, use current builder target for dynamic preview
     const actualEnd = this.#bulkSelectingEnd ? this.#builderTarget : this.#bulkStart
     if (!actualEnd) {
-      this.#bulkHighlightMesh.visible = false
+      this.#bulkPreviewMesh.visible = false
       return
     }
     
@@ -313,9 +322,9 @@ export class VoxelHighlightSystem {
     const centerY = (minY + maxY) / 2 + 0.5
     const centerZ = (minZ + maxZ) / 2 + 0.5
     
-    this.#bulkHighlightMesh.position.set(centerX, centerY, centerZ)
-    this.#bulkHighlightMesh.scale.set(sizeX, sizeY, sizeZ)
-    this.#bulkHighlightMesh.visible = true
+    this.#bulkPreviewMesh.position.set(centerX, centerY, centerZ)
+    this.#bulkPreviewMesh.scale.set(sizeX, sizeY, sizeZ)
+    this.#bulkPreviewMesh.visible = true
   }
 
   /**
@@ -544,24 +553,14 @@ export class VoxelHighlightSystem {
     if (this.#highlightMesh) {
       this.#scene.remove(this.#highlightMesh)
       this.#highlightMesh.geometry.dispose()
-      const material = this.#highlightMesh.material
-      if (Array.isArray(material)) {
-        material.forEach(m => m.dispose())
-      } else {
-        material.dispose()
-      }
+      this.#highlightMesh.material.dispose()
       this.#highlightMesh = null
     }
-    if (this.#bulkHighlightMesh) {
-      this.#scene.remove(this.#bulkHighlightMesh)
-      this.#bulkHighlightMesh.geometry.dispose()
-      const material = this.#bulkHighlightMesh.material
-      if (Array.isArray(material)) {
-        material.forEach(m => m.dispose())
-      } else {
-        material.dispose()
-      }
-      this.#bulkHighlightMesh = null
+    if (this.#bulkPreviewMesh) {
+      this.#scene.remove(this.#bulkPreviewMesh)
+      this.#bulkPreviewMesh.geometry.dispose()
+      this.#bulkPreviewMesh.material.dispose()
+      this.#bulkPreviewMesh = null
     }
   }
 }
