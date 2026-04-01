@@ -60,7 +60,7 @@ Chunk coord = sub-voxel position >> 13 (arithmetic shift handles negatives).
 | VoxelIndex | uint16 | uint5(y) · uint5(x) · uint5(z) — flat array index; helpers: `voxelIndexFromPos()`, `getVoxelIndexPos()` |
 | VoxelType | uint8 | 0 = air |
 | GlobalEntityId | uint32 | assigned at spawn, stable across moves |
-| PlayerId | uint32 | persistent |
+| PlayerId | uint64 | derived from session token (first 8 bytes) — deterministic, enables stateless reconnection |
 | GatewayId | uint32 | |
 
 Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to compute flat array index.
@@ -109,7 +109,8 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 - `GlobalEntityIdComponent` — stable uint32 ID assigned at spawn
 - `DirtyComponent` — `dirtyFlags` (component change bits) + `deltaType` (CREATE_ENTITY/UPDATE_ENTITY/DELETE_ENTITY) + `snapshotDeltaType` (for SELF_ENTITY detection)
 - `DynamicPositionComponent` — x,y,z,vx,vy,vz (int32 sub-voxels), grounded flag; `serializeFields(SafeBufWriter&)`
-- `EntityTypeComponent`, `PlayerComponent`, `ChunkMembershipComponent`, `PhysicsModeComponent`, `BoundingBoxComponent`, `SheepBehaviorComponent`
+- `PlayerComponent` — `playerId` only (PlayerId derived from session token, no separate session storage needed)
+- `EntityTypeComponent`, `ChunkMembershipComponent`, `PhysicsModeComponent`, `BoundingBoxComponent`, `SheepBehaviorComponent`
 - `Pending{Create,ChunkChange,Delete}Component` — deferred chunk membership changes
 - `DisconnectedPlayerComponent` — marks players for cleanup; processed by `DisconnectedPlayerSystem`
 

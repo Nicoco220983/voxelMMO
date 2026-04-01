@@ -269,7 +269,7 @@ public:
 private:
     GameEngine engine_;
     GatewayId gatewayId_ = 1;
-    PlayerId nextPlayerId_ = 1;
+    uint32_t nextPlayerIndex_ = 1;  // Used to generate unique session tokens
     int tickCount_ = 0;
     
     // Output capture

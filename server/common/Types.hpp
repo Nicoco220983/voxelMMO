@@ -143,8 +143,12 @@ using VoxelType = uint8_t;
  */
 using GlobalEntityId = uint32_t;
 
-/** @brief Persistent player identifier (uint32). */
-using PlayerId = uint32_t;
+/** @brief Persistent player identifier (uint64).
+ * 
+ * Derived deterministically from the first 8 bytes of the 16-byte session token.
+ * This allows stateless player identification across reconnections.
+ */
+using PlayerId = uint64_t;
 
 /** @brief Gateway instance identifier (uint32). */
 using GatewayId = uint32_t;

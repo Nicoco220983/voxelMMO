@@ -1,5 +1,6 @@
 #pragma once
 #include "common/Types.hpp"
+#include "common/NetworkProtocol.hpp"
 #include "gateway/ChunkState.hpp"
 #include "gateway/PlayerInfo.hpp"
 #include <uwebsockets/App.h>
@@ -141,6 +142,16 @@ public:
     /** @brief Remove all per-chunk tracking for a disconnected player. */
     void removePlayer(PlayerId pid);
 
+    /**
+     * @brief Handle a JOIN message from a client.
+     * 
+     * Derives PlayerId from session token, handles reconnection if this PlayerId
+     * is already connected, assigns the PlayerId to the WebSocket, sends cached
+     * chunk state, and invokes the connect callback.
+     */
+    void handleJoin(uWS::WebSocket<false, true, PlayerConnection>* ws,
+                    const NetworkProtocol::JoinMessage& joinMsg);
+
 private:
     uWS::App  wsApp;
 
@@ -156,8 +167,6 @@ private:
 
     /** @brief Active connections keyed by PlayerId. */
     std::unordered_map<PlayerId, uWS::WebSocket<false, true, PlayerConnection>*> sockets;
-
-    PlayerId nextPlayerId{1};
 
     PlayerConnectCallback    connectCb;
     PlayerDisconnectCallback disconnectCb;

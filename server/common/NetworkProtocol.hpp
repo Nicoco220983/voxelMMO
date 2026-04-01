@@ -117,6 +117,23 @@ struct JoinMessage {
     std::array<uint8_t, 16> sessionToken;
 };
 
+/**
+ * @brief Derive PlayerId deterministically from session token.
+ * 
+ * Uses the first 8 bytes of the 16-byte session token as the PlayerId.
+ * This allows stateless player identification - the same session token
+ * always maps to the same PlayerId, enabling automatic reconnection
+ * without server-side session-to-player mapping.
+ * 
+ * @param token 16-byte session token (UUID).
+ * @return PlayerId derived from first 8 bytes (little-endian).
+ */
+inline PlayerId playerIdFromSessionToken(const std::array<uint8_t, 16>& token) {
+    PlayerId pid;
+    std::memcpy(&pid, token.data(), sizeof(PlayerId));
+    return pid;
+}
+
 // ── Client → Server (deserialization) ────────────────────────────────────
 
 /**

@@ -39,7 +39,10 @@
  */
 
 /**
- * Player identifier (uint32).
+ * Player identifier (uint64).
+ * Derived deterministically from session token (first 8 bytes).
+ * Note: JavaScript numbers can precisely represent uint64 up to 2^53-1,
+ * but we use bigint for full uint64 range in future if needed.
  * @typedef {number} PlayerId
  */
 

@@ -22,16 +22,20 @@ TEST_CASE("Chunks are saved after player joins", "[save][integration]") {
     engine.registerGateway(0);
     
     // Simulate player connecting and sending JOIN
-    PlayerId pid = 1;
+    // Use session token that derives to PlayerId = 1
+    std::array<uint8_t, 16> sessionToken{};
+    sessionToken[0] = 1;  // PlayerId = 1 in little-endian
+    PlayerId pid;
+    std::memcpy(&pid, sessionToken.data(), sizeof(PlayerId));
     engine.registerPlayer(0, pid);
     
     // Build JOIN message: [type(1)] [size(2)] [entityType(1)] [sessionToken(16)]
     uint8_t joinMsg[21] = {
         static_cast<uint8_t>(ClientMessageType::JOIN),
         21, 0,  // size = 21 bytes
-        static_cast<uint8_t>(EntityType::PLAYER),
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // session token (zeroed)
+        static_cast<uint8_t>(EntityType::PLAYER)
     };
+    std::memcpy(joinMsg + 4, sessionToken.data(), 16);
     engine.handlePlayerInput(pid, joinMsg, sizeof(joinMsg));
     
     // Run a few ticks to let chunks generate

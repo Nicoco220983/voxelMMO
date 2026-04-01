@@ -88,6 +88,38 @@ void GatewayEngine::stop() {
     }
 }
 
+// ── Join handling ──────────────────────────────────────────────────────────
+
+void GatewayEngine::handleJoin(uWS::WebSocket<false, true, PlayerConnection>* ws,
+                                const NetworkProtocol::JoinMessage& joinMsg) {
+    // Derive PlayerId deterministically from session token
+    const PlayerId pid = NetworkProtocol::playerIdFromSessionToken(joinMsg.sessionToken);
+    
+    // Check if this PlayerId is already connected (reconnection)
+    auto existingIt = sockets.find(pid);
+    if (existingIt != sockets.end()) {
+        // Close the old connection
+        existingIt->second->close();
+        sockets.erase(existingIt);
+        removePlayer(pid);
+        if (disconnectCb) disconnectCb(pid);
+    }
+    
+    // Assign PlayerId to this connection
+    ws->getUserData()->playerId = pid;
+    sockets[pid] = ws;
+    
+    // Send all cached chunk state to the new player
+    for (const auto& [cid, state] : chunkStates) {
+        auto [stateData, length] = state.getDataToSend(0);
+        if (length > 0) {
+            sendToPlayer(pid, stateData, length);
+        }
+    }
+    
+    if (connectCb) connectCb(pid);
+}
+
 void GatewayEngine::listen(int port) {
     // Capture the loop pointer now, while we are on the uWS thread.
     // receiveGameMessage() will use this from the game thread.
@@ -99,38 +131,39 @@ void GatewayEngine::listen(int port) {
         .idleTimeout      = 120,
 
         .open = [this](uWS::WebSocket<false, true, PlayerConnection>* ws) {
-            const PlayerId pid = nextPlayerId++;
-            ws->getUserData()->playerId = pid;
-            sockets[pid] = ws;
-            
-            // Send all cached chunk state to the new player
-            for (const auto& [cid, state] : chunkStates) {
-                auto [data, length] = state.getDataToSend(0);
-                if (length > 0) {
-                    sendToPlayer(pid, data, length);
-                }
-            }
-            
-            if (connectCb) connectCb(pid);
+            // PlayerId not yet assigned - will be derived from session token on JOIN
+            ws->getUserData()->playerId = 0;
         },
 
         .message = [this](uWS::WebSocket<false, true, PlayerConnection>* ws,
                           std::string_view msg, uWS::OpCode opCode) {
             if (opCode != uWS::OpCode::BINARY) return;
+            
+            const uint8_t* data = reinterpret_cast<const uint8_t*>(msg.data());
+            const size_t size = msg.size();
+            
+            // Check if this is a JOIN message (first byte = ClientMessageType::JOIN = 1)
+            if (size >= 1 && data[0] == static_cast<uint8_t>(ClientMessageType::JOIN)) {
+                auto joinMsg = NetworkProtocol::parseJoin(data, size);
+                if (!joinMsg) return;  // Invalid JOIN message
+                handleJoin(ws, *joinMsg);
+            }
+            
+            // Forward all messages (including JOIN) to the game engine
             const PlayerId pid = ws->getUserData()->playerId;
-            if (inputCb) {
-                inputCb(pid,
-                        reinterpret_cast<const uint8_t*>(msg.data()),
-                        msg.size());
+            if (pid != 0 && inputCb) {
+                inputCb(pid, data, size);
             }
         },
 
         .close = [this](uWS::WebSocket<false, true, PlayerConnection>* ws,
                         int /*code*/, std::string_view /*reason*/) {
             const PlayerId pid = ws->getUserData()->playerId;
-            sockets.erase(pid);
-            removePlayer(pid);
-            if (disconnectCb) disconnectCb(pid);
+            if (pid != 0) {
+                sockets.erase(pid);
+                removePlayer(pid);
+                if (disconnectCb) disconnectCb(pid);
+            }
         },
     })
     .listen(port, [this, port](us_listen_socket_t* listenSocket) {

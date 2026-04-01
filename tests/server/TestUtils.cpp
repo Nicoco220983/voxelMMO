@@ -32,7 +32,19 @@ TestEnv::TestEnv(uint32_t seed)
 }
 
 PlayerId TestEnv::addPlayer(EntityType type) {
-    PlayerId pid = nextPlayerId_++;
+    // Generate a unique session token for this player
+    // First 8 bytes will become the PlayerId, last 8 bytes are padding
+    std::array<uint8_t, 16> sessionToken{};
+    // Write a unique identifier in the first 4 bytes
+    sessionToken[0] = static_cast<uint8_t>(nextPlayerIndex_ & 0xFF);
+    sessionToken[1] = static_cast<uint8_t>((nextPlayerIndex_ >> 8) & 0xFF);
+    sessionToken[2] = static_cast<uint8_t>((nextPlayerIndex_ >> 16) & 0xFF);
+    sessionToken[3] = static_cast<uint8_t>((nextPlayerIndex_ >> 24) & 0xFF);
+    nextPlayerIndex_++;
+    
+    // Derive PlayerId from session token (first 8 bytes)
+    PlayerId pid;
+    std::memcpy(&pid, sessionToken.data(), sizeof(PlayerId));
     
     // Queue as pending player (spawn position is determined by WorldGenerator)
     engine_.registerPlayer(gatewayId_, pid);
@@ -41,9 +53,9 @@ PlayerId TestEnv::addPlayer(EntityType type) {
     uint8_t joinMsg[21] = {
         static_cast<uint8_t>(ClientMessageType::JOIN),
         21, 0,  // size
-        static_cast<uint8_t>(type),
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // session token (zeroed = no previous session)
+        static_cast<uint8_t>(type)
     };
+    std::memcpy(joinMsg + 4, sessionToken.data(), 16);
     engine_.handlePlayerInput(pid, joinMsg, sizeof(joinMsg));
     
     // Track the entity (will be created on next tick)

@@ -118,10 +118,9 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
     case ClientMessageType::JOIN: {
         auto msg = NetworkProtocol::parseJoin(data, size);
         if (!msg) return;
-        // Ignore if player already has an entity (already spawned).
-        if (playerEntities.find(playerId) != playerEntities.end()) return;
         // Enqueue player creation request for processing in tick()
-        pendingPlayerCreations_.push_back({playerId, msg->entityType, msg->sessionToken});
+        // (Reconnection check happens in processPendingPlayerCreations)
+        pendingPlayerCreations_.push_back({playerId, msg->entityType});
         break;
     }
 
@@ -298,63 +297,39 @@ void GameEngine::setDeleteDeltaOnPendingDeletions() {
 
 void GameEngine::processPendingPlayerCreations() {
     for (const auto& req : pendingPlayerCreations_) {
-        // Convert session token to string for map lookup
-        auto tokenToString = [](const std::array<uint8_t, 16>& token) -> std::string {
-            return std::string(reinterpret_cast<const char*>(token.data()), 16);
-        };
+        // Check if this PlayerId already has an entity (reconnection case).
+        // PlayerId is derived deterministically from session token, so the same
+        // session token always maps to the same PlayerId.
+        auto existingIt = playerEntities.find(req.playerId);
         
-        const std::string sessionKey = tokenToString(req.sessionToken);
-        const bool hasSessionToken = sessionKey.find_first_not_of('\0') != std::string::npos;
-        
-        // Check if this is a reconnection with a valid session token
-        entt::entity ent = entt::null;
-        bool isReconnection = false;
-        
-        if (hasSessionToken) {
-            auto it = sessionToEntity_.find(sessionKey);
-            if (it != sessionToEntity_.end()) {
-                ent = it->second;
-                if (registry.valid(ent)) {
-                    isReconnection = true;
+        if (existingIt != playerEntities.end()) {
+            // Reconnection: recover existing entity
+            entt::entity ent = existingIt->second;
+            
+            if (registry.valid(ent)) {
+                // Remove disconnected component if present
+                if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
+                    registry.remove<DisconnectedPlayerComponent>(ent);
                 }
+                
+                // Mark entity as newly created for serialization (so client gets full state)
+                if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
+                    dirty->markCreated();
+                }
+                
+                // Re-add player entity to its chunk (to sync chunk.presentPlayers)
+                auto& pos = registry.get<DynamicPositionComponent>(ent);
+                const ChunkId chunkId = ChunkId::fromSubVoxelPos(pos.x, pos.y, pos.z);
+                chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
+                
+                std::cout << "[GameEngine] Client " << req.playerId << " connected (reconnect)\n";
             }
-        }
-        
-        if (isReconnection) {
-            // Recover existing entity
-            auto& playerComp = registry.get<PlayerComponent>(ent);
-            
-            // Remove old playerId from playerEntities map
-            playerEntities.erase(playerComp.playerId);
-            
-            // Update to new playerId
-            playerComp.playerId = req.playerId;
-            playerComp.sessionToken = req.sessionToken;
-            
-            // Remove disconnected component if present
-            if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
-                registry.remove<DisconnectedPlayerComponent>(ent);
-            }
-            
-            // Mark entity as newly created for serialization (so client gets full state)
-            if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
-                dirty->markCreated();
-            }
-            
-            // Update playerEntities map
-            playerEntities[req.playerId] = ent;
-
-            // Re-Add player entity to its chunk (to sync chunk.presentPlayers)
-            auto& pos = registry.get<DynamicPositionComponent>(ent);
-            const ChunkId chunkId = ChunkId::fromSubVoxelPos(pos.x, pos.y, pos.z);
-            chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
-            
-            std::cout << "[GameEngine] Client " << req.playerId << " connected (reconnect)\n";
         } else {
-            // Create new entity
+            // New player: create entity
             const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS, saveSystem_.get());
             const GlobalEntityId globalId = acquireEntityId();
             
+            entt::entity ent;
             switch (req.entityType) {
                 case EntityType::PLAYER:
                     ent = PlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
@@ -363,13 +338,6 @@ void GameEngine::processPendingPlayerCreations() {
                 default:
                     ent = GhostPlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
                     break;
-            }
-            
-            // Store session token if provided
-            if (hasSessionToken) {
-                auto& playerComp = registry.get<PlayerComponent>(ent);
-                playerComp.sessionToken = req.sessionToken;
-                sessionToEntity_[sessionKey] = ent;
             }
             
             playerEntities[req.playerId] = ent;

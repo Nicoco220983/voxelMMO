@@ -248,9 +248,6 @@ private:
     ChunkRegistry chunkRegistry;
     std::unordered_map<GatewayId, GatewayInfo>             gateways;
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
-    
-    /** @brief Map from session token to entity for reconnection lookup. */
-    std::unordered_map<std::string, entt::entity>          sessionToEntity_;
 
     int32_t  tickCount{0};
     uint32_t  lastDisconnectCheckTick{0};  ///< Last tick when disconnect system was run
@@ -288,7 +285,6 @@ private:
     struct PendingPlayerCreation {
         PlayerId playerId;
         EntityType entityType;
-        std::array<uint8_t, 16> sessionToken;
     };
     
     /** @brief Queue of pending player entity creation requests. */
