@@ -78,6 +78,7 @@ export class SheepEntity extends BaseEntity {
     const body = new THREE.Mesh(bodyGeo, woolMat)
     body.position.y = HEIGHT_OFFSET
     body.castShadow = true
+    body.receiveShadow = true
     group.add(body)
 
     // Head
@@ -85,6 +86,7 @@ export class SheepEntity extends BaseEntity {
     const head = new THREE.Mesh(headGeo, woolMat)
     head.position.set(0, 0.25 + HEIGHT_OFFSET, 0.6)
     head.castShadow = true
+    head.receiveShadow = true
     group.add(head)
 
     // Eyes
@@ -114,6 +116,7 @@ export class SheepEntity extends BaseEntity {
       const leg = new THREE.Mesh(legGeo, woolMat)
       leg.position.y = -0.2  // Offset so pivot is at top
       leg.castShadow = true
+      leg.receiveShadow = true
 
       legGroup.add(leg)
       group.add(legGroup)

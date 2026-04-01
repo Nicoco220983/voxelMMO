@@ -30,6 +30,7 @@ export class RenderManager {
     this.renderer = new THREE.WebGLRenderer({ antialias: true })
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.renderer.setPixelRatio(devicePixelRatio)
+    this.renderer.shadowMap.enabled = true
     document.body.appendChild(this.renderer.domElement)
 
     // ── Scene ───────────────────────────────────────────────────────────────
@@ -59,6 +60,16 @@ export class RenderManager {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.35))
     const sun = new THREE.DirectionalLight(0xffffff, 0.8)
     sun.position.set(200, 400, 100)
+    sun.castShadow = true
+    sun.shadow.mapSize.width = 2048
+    sun.shadow.mapSize.height = 2048
+    sun.shadow.camera.near = 0.5
+    sun.shadow.camera.far = 1000
+    const d = 300
+    sun.shadow.camera.left = -d
+    sun.shadow.camera.right = d
+    sun.shadow.camera.top = d
+    sun.shadow.camera.bottom = -d
     this.scene.add(sun)
   }
 

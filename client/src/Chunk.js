@@ -40,7 +40,7 @@ const FACE_DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
 const FACE_NORMALS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
 
 /** Shared material — atlas texture multiplied by per-vertex shade colours. */
-const CHUNK_MATERIAL = new THREE.MeshBasicMaterial({
+const CHUNK_MATERIAL = new THREE.MeshLambertMaterial({
   map: voxelTextureAtlas,
   vertexColors: true,
 })
@@ -199,6 +199,8 @@ export class Chunk {
 
     this.#mesh = new THREE.Mesh(geo, CHUNK_MATERIAL)
     this.#mesh.position.set(cx * CHUNK_SIZE_X, cy * CHUNK_SIZE_Y, cz * CHUNK_SIZE_Z)
+    this.#mesh.castShadow = true
+    this.#mesh.receiveShadow = true
     scene.add(this.#mesh)
   }
 

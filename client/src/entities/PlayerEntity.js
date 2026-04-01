@@ -122,6 +122,7 @@ export class PlayerEntity extends BaseEntity {
     const head = new THREE.Mesh(headGeo, skinMat)
     head.position.y = 1.0 * SIZE + HEIGHT_OFFSET
     head.castShadow = true
+    head.receiveShadow = true
     group.add(head)
 
     // Eyes
@@ -144,6 +145,7 @@ export class PlayerEntity extends BaseEntity {
     const body = new THREE.Mesh(bodyGeo, shirtMat)
     body.position.y = 0.5 * SIZE + HEIGHT_OFFSET
     body.castShadow = true
+    body.receiveShadow = true
     group.add(body)
 
     // --- Arms ---
@@ -160,6 +162,7 @@ export class PlayerEntity extends BaseEntity {
     const leftArmMesh = new THREE.Mesh(armGeo, shirtMat)
     leftArmMesh.position.y = -0.3 * SIZE // Offset so pivot is at top
     leftArmMesh.castShadow = true
+    leftArmMesh.receiveShadow = true
     leftArmGroup.add(leftArmMesh)
     group.add(leftArmGroup)
     this.leftArm = leftArmGroup
@@ -170,6 +173,7 @@ export class PlayerEntity extends BaseEntity {
     const rightArmMesh = new THREE.Mesh(armGeo, shirtMat)
     rightArmMesh.position.y = -0.3 * SIZE // Offset so pivot is at top
     rightArmMesh.castShadow = true
+    rightArmMesh.receiveShadow = true
     rightArmGroup.add(rightArmMesh)
     group.add(rightArmGroup)
     this.rightArm = rightArmGroup
@@ -188,6 +192,7 @@ export class PlayerEntity extends BaseEntity {
     const leftLegMesh = new THREE.Mesh(legGeo, pantsMat)
     leftLegMesh.position.y = -0.3 * SIZE // Offset so pivot is at top
     leftLegMesh.castShadow = true
+    leftLegMesh.receiveShadow = true
     leftLegGroup.add(leftLegMesh)
     group.add(leftLegGroup)
     this.leftLeg = leftLegGroup
@@ -198,6 +203,7 @@ export class PlayerEntity extends BaseEntity {
     const rightLegMesh = new THREE.Mesh(legGeo, pantsMat)
     rightLegMesh.position.y = -0.3 * SIZE // Offset so pivot is at top
     rightLegMesh.castShadow = true
+    rightLegMesh.receiveShadow = true
     rightLegGroup.add(rightLegMesh)
     group.add(rightLegGroup)
     this.rightLeg = rightLegGroup
