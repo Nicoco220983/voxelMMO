@@ -1,5 +1,7 @@
 #pragma once
 #include "common/SafeBufWriter.hpp"
+#include "game/components/DirtyComponent.hpp"
+#include <entt/entt.hpp>
 #include <cstdint>
 
 namespace voxelmmo {

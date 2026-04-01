@@ -26,6 +26,11 @@ add_executable(voxelmmo
     server/game/entities/PlayerEntity.cpp
     server/game/entities/GhostPlayerEntity.cpp
     server/game/entities/SheepEntity.cpp
+    server/game/systems/ChunkMembershipSystem.cpp
+    server/game/systems/DisconnectedPlayerSystem.cpp
+    server/game/systems/InputSystem.cpp
+    server/game/systems/PhysicsSystem.cpp
+    server/game/systems/SheepAISystem.cpp
 )
 
 target_include_directories(voxelmmo PRIVATE server/)
@@ -69,6 +74,11 @@ add_executable(voxelmmo_tests
     server/game/entities/PlayerEntity.cpp
     server/game/entities/GhostPlayerEntity.cpp
     server/game/entities/SheepEntity.cpp
+    server/game/systems/ChunkMembershipSystem.cpp
+    server/game/systems/DisconnectedPlayerSystem.cpp
+    server/game/systems/InputSystem.cpp
+    server/game/systems/PhysicsSystem.cpp
+    server/game/systems/SheepAISystem.cpp
 )
 
 target_include_directories(voxelmmo_tests PRIVATE server/ tests/server/)

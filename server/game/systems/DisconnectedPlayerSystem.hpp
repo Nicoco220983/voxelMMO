@@ -35,34 +35,10 @@ namespace DisconnectedPlayerSystem {
  * @param currentTick    The current server tick.
  * @return Number of players deleted.
  */
-inline size_t process(
+size_t process(
     entt::registry& registry,
     std::unordered_map<PlayerId, entt::entity>& playerEntities,
-    uint32_t currentTick)
-{
-    size_t deletedCount = 0;
-
-    auto view = registry.view<DisconnectedPlayerComponent, PlayerComponent>();
-    std::vector<entt::entity> toDelete;
-
-    // Find all expired disconnections
-    for (auto ent : view) {
-        const auto& disc = view.get<DisconnectedPlayerComponent>(ent);
-        if (disc.hasExpired(currentTick)) {
-            toDelete.push_back(ent);
-        }
-    }
-
-    // Process deletions - destroy entity and remove from playerEntities map
-    for (auto ent : toDelete) {
-        const auto& player = registry.get<PlayerComponent>(ent);
-        playerEntities.erase(player.playerId);
-        registry.destroy(ent);
-        ++deletedCount;
-    }
-
-    return deletedCount;
-}
+    uint32_t currentTick);
 
 /**
  * @brief Cancel a pending disconnection (player reconnected).
@@ -73,13 +49,7 @@ inline size_t process(
  * @param ent      The player entity that reconnected.
  * @return true if the component was removed, false if not found.
  */
-inline bool cancelDisconnection(entt::registry& registry, entt::entity ent) {
-    if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
-        registry.remove<DisconnectedPlayerComponent>(ent);
-        return true;
-    }
-    return false;
-}
+bool cancelDisconnection(entt::registry& registry, entt::entity ent);
 
 } // namespace DisconnectedPlayerSystem
 
