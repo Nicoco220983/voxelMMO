@@ -99,6 +99,17 @@ export class GameClient {
   }
 
   /**
+   * Server tick with sub-tick fractional part for smooth interpolation.
+   * Returns float where integer part = last server tick, fractional part = progress to next tick.
+   * @returns {number} Float tick value (e.g., 150.6 = 60% of the way to tick 151)
+   */
+  get renderTick() {
+    const elapsedMs = Date.now() - this.#latestServerTickTimeMs
+    const fraction = (elapsedMs / 1000) * TICK_RATE
+    return this.#latestServerTick + fraction
+  }
+
+  /**
    * @param {number}      serverTick
    */
   syncTick(serverTick) {
@@ -216,8 +227,8 @@ export class GameClient {
    * @param {number} dt  Delta time in seconds.
    */
   updateEntities(dt) {
-    // Run physics prediction for all entities (updates currentPos based on last received state)
-    PhysicsPredictionSystem.update(this.#entityRegistry, this.tick)
+    // Run physics prediction for all entities using sub-tick precision for smooth interpolation
+    PhysicsPredictionSystem.update(this.#entityRegistry, this.renderTick)
     
     // Update chunk membership based on predicted positions
     ChunkMembershipSystem.update(this.#entityRegistry, this.#chunkRegistry)

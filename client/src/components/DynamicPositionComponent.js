@@ -77,8 +77,9 @@ export class DynamicPositionComponent {
 
   /**
    * Update current* position based on received state and elapsed ticks.
-   * Called once per tick by PhysicsPredictionSystem.
-   * @param {number} currentTick
+   * Called once per render frame by PhysicsPredictionSystem.
+   * Supports sub-tick precision for smooth interpolation (currentTick can be float).
+   * @param {number} currentTick - Can be integer (tick) or float (sub-tick for smooth rendering)
    */
   updatePrediction(currentTick) {
     const { receivedTick, receivedX, receivedY, receivedZ, 
@@ -93,7 +94,8 @@ export class DynamicPositionComponent {
     }
     
     const n = currentTick - receivedTick
-    if (n < 0) {
+    // Allow small negative tolerance for floating point jitter (shouldn't happen with proper sync)
+    if (n < -0.1) {
       console.warn(`DynamicPositionComponent receivedTick (${receivedTick}) newer than global tick (${currentTick})`)
       this.currentX = receivedX
       this.currentY = receivedY
