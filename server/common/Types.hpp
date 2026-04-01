@@ -194,9 +194,7 @@ inline constexpr int32_t PLAYER_BBOX_HY     = static_cast<int32_t>(0.9f * SUBVOX
 inline constexpr int32_t PLAYER_BBOX_HZ     = static_cast<int32_t>(0.4f * SUBVOXEL_SIZE);
 
 // ── Input-system movement speeds (sub-voxels per tick) ────────────────────
-inline constexpr int32_t GHOST_MOVE_SPEED  = 256;  ///< 20 vox/s × SUBVOXEL_SIZE × TICK_DT
-inline constexpr int32_t PLAYER_WALK_SPEED = 77;   ///<  6 vox/s × SUBVOXEL_SIZE × TICK_DT
-inline constexpr int32_t PLAYER_JUMP_VY    = 110;  ///< gives ≈ 3.9 voxel jump height
+// These constants now live in game/entities/GhostPlayerEntity.hpp and PlayerEntity.hpp
 
 } // namespace voxelmmo
 

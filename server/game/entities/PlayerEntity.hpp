@@ -11,6 +11,7 @@
 #include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
+#include <cmath>
 
 namespace voxelmmo {
 struct EntitySpawnRequest;
@@ -33,6 +34,30 @@ namespace voxelmmo::PlayerEntity {
  * @param playerId Persistent player ID.
  * @return Entity handle.
  */
+inline constexpr int32_t PLAYER_WALK_SPEED = 77;   ///<  6 vox/s × SUBVOXEL_SIZE × TICK_DT
+inline constexpr int32_t PLAYER_JUMP_VY    = 90;   ///< gives ≈ 3.9 voxel jump height
+
+/**
+ * @brief Compute player velocity from input buttons and yaw.
+ * Horizontal-only: W/S/A/D ignore pitch; Space = jump impulse when grounded.
+ */
+inline void computeVelocity(const InputComponent& inp, const DynamicPositionComponent& dyn, int32_t& nvx, int32_t& nvy, int32_t& nvz) {
+    const uint8_t b = inp.buttons;
+    const float cy = std::cos(inp.yaw), sy = std::sin(inp.yaw);
+    float dx = 0, dz = 0;
+    if (b & static_cast<uint8_t>(InputButton::FORWARD))  { dx += -sy; dz += -cy; }
+    if (b & static_cast<uint8_t>(InputButton::BACKWARD)) { dx -= -sy; dz -= -cy; }
+    if (b & static_cast<uint8_t>(InputButton::LEFT))     { dx -= cy;  dz -= -sy; }
+    if (b & static_cast<uint8_t>(InputButton::RIGHT))    { dx += cy;  dz += -sy; }
+    const float hlen = std::sqrt(dx*dx + dz*dz);
+    const float hs   = (hlen > 0.001f) ? (static_cast<float>(PLAYER_WALK_SPEED) / hlen) : 0.0f;
+    nvx = static_cast<int32_t>(dx * hs);
+    nvz = static_cast<int32_t>(dz * hs);
+    // Jump: impulse when grounded; vy otherwise owned by physics (gravity)
+    if ((b & static_cast<uint8_t>(InputButton::JUMP)) && dyn.grounded)
+        nvy = PLAYER_JUMP_VY;
+}
+
 inline entt::entity spawn(entt::registry& reg,
                           GlobalEntityId globalId,
                           SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z,

@@ -11,6 +11,7 @@
 #include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
 #include <entt/entt.hpp>
+#include <cmath>
 
 namespace voxelmmo {
 struct EntitySpawnRequest;
@@ -33,6 +34,29 @@ namespace voxelmmo::GhostPlayerEntity {
  * @param playerId Persistent player ID.
  * @return Entity handle.
  */
+inline constexpr int32_t GHOST_MOVE_SPEED = 256;  ///< 20 vox/s × SUBVOXEL_SIZE × TICK_DT
+
+/**
+ * @brief Compute ghost player velocity from input buttons, yaw and pitch.
+ */
+inline void computeVelocity(const InputComponent& inp, int32_t& nvx, int32_t& nvy, int32_t& nvz) {
+    const uint8_t b = inp.buttons;
+    const float cy = std::cos(inp.yaw),   sy = std::sin(inp.yaw);
+    const float cp = std::cos(inp.pitch),  sp = std::sin(inp.pitch);
+    float dx = 0, dy = 0, dz = 0;
+    if (b & static_cast<uint8_t>(InputButton::FORWARD))  { dx += -sy*cp; dy += sp; dz += -cy*cp; }
+    if (b & static_cast<uint8_t>(InputButton::BACKWARD)) { dx -= -sy*cp; dy -= sp; dz -= -cy*cp; }
+    if (b & static_cast<uint8_t>(InputButton::LEFT))     { dx -= cy;              dz -= -sy;     }
+    if (b & static_cast<uint8_t>(InputButton::RIGHT))    { dx += cy;              dz += -sy;     }
+    if (b & static_cast<uint8_t>(InputButton::JUMP))     { dy += 1.0f; }
+    if (b & static_cast<uint8_t>(InputButton::DESCEND))  { dy -= 1.0f; }
+    const float len = std::sqrt(dx*dx + dy*dy + dz*dz);
+    const float s   = (len > 0.001f) ? (static_cast<float>(GHOST_MOVE_SPEED) / len) : 0.0f;
+    nvx = static_cast<int32_t>(dx * s);
+    nvy = static_cast<int32_t>(dy * s);
+    nvz = static_cast<int32_t>(dz * s);
+}
+
 inline entt::entity spawn(entt::registry& reg,
                           GlobalEntityId globalId,
                           SubVoxelCoord x, SubVoxelCoord y, SubVoxelCoord z,
