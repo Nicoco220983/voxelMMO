@@ -1,5 +1,5 @@
 // @ts-check
-import * as THREE     from 'three'
+import { RenderManager } from './RenderManager.js'
 import { GameClient } from './GameClient.js'
 import { NetworkProtocol } from './NetworkProtocol.js'
 import {
@@ -15,34 +15,13 @@ import { TouchController } from './controllers/TouchController.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
-// ── Renderer ──────────────────────────────────────────────────────────────
-const renderer = new THREE.WebGLRenderer({ antialias: true })
-renderer.setSize(window.innerWidth, window.innerHeight)
-renderer.setPixelRatio(devicePixelRatio)
-document.body.appendChild(renderer.domElement)
-
-// ── Scene ─────────────────────────────────────────────────────────────────
-const scene = new THREE.Scene()
-scene.background = new THREE.Color(0x87ceeb)
-scene.fog = new THREE.Fog(0x87ceeb, 200, 600)
-
-// ── Camera ────────────────────────────────────────────────────────────────
-const camera = new THREE.PerspectiveCamera(
-  75, window.innerWidth / window.innerHeight, 0.1, 1000)
-camera.rotation.order = 'YXZ'
-
-// ── Lights ────────────────────────────────────────────────────────────────
-scene.add(new THREE.AmbientLight(0xffffff, 0.5))
-const sun = new THREE.DirectionalLight(0xffffff, 0.8)
-sun.position.set(200, 400, 100)
-scene.add(sun)
-
-// ── Resize handler ────────────────────────────────────────────────────────
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight
-  camera.updateProjectionMatrix()
-  renderer.setSize(window.innerWidth, window.innerHeight)
-})
+// ── Graphics ──────────────────────────────────────────────────────────────
+const rm = new RenderManager()
+const renderer = rm.renderer
+const scene    = rm.scene
+const camera   = rm.camera
+const composer = rm.composer
+const ssaoPass = rm.ssaoPass
 
 // ── Network ───────────────────────────────────────────────────────────────
 // ?mode=ghost → GHOST_PLAYER (noclip); default (bare URL) → PLAYER (full physics)
@@ -201,7 +180,7 @@ function animate() {
   client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
   client.rebuildDirtyChunks()
 
-  renderer.render(scene, camera)
+  composer.render()
 
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
   const modeName = _entityType === EntityType.GHOST_PLAYER ? 'ghost' : 'walk'

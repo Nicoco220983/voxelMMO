@@ -36,6 +36,9 @@ const FACE_SHADE = [0.75, 0.70, 1.00, 0.55, 0.80, 0.65] // +X -X +Y -Y +Z -Z
 /** Neighbour offsets per face — same order as FACE_VERTS / FACE_SHADE. */
 const FACE_DIRS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
 
+/** Face normals — same order as FACE_VERTS. */
+const FACE_NORMALS = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]]
+
 /** Shared material — atlas texture multiplied by per-vertex shade colours. */
 const CHUNK_MATERIAL = new THREE.MeshBasicMaterial({
   map: voxelTextureAtlas,
@@ -134,6 +137,7 @@ export class Chunk {
     /** @type {number[]} */ const positions = []
     /** @type {number[]} */ const colors    = []
     /** @type {number[]} */ const uvs       = []
+    /** @type {number[]} */ const normals   = []
     /** @type {number[]} */ const indices   = []
 
     const get = (/** @type {number} */ x, /** @type {number} */ y, /** @type {number} */ z) => {
@@ -167,10 +171,12 @@ export class Chunk {
             const r = shade, g = shade, b = shade
 
             const base = positions.length / 3
+            const [nx, ny, nz] = FACE_NORMALS[face]
             for (let vi = 0; vi < 4; vi++) {
               const [fx, fy, fz] = FACE_VERTS[face][vi]
               positions.push(x + fx, y + fy, z + fz)
               colors.push(r, g, b)
+              normals.push(nx, ny, nz)
               const [fu, fv] = faceUvs[vi]
               uvs.push(fu, fv)
             }
@@ -187,6 +193,7 @@ export class Chunk {
     const geo = new THREE.BufferGeometry()
     geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
     geo.setAttribute('color',    new THREE.Float32BufferAttribute(colors,    3))
+    geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals,   3))
     geo.setAttribute('uv',       new THREE.Float32BufferAttribute(uvs,       2))
     geo.setIndex(indices)
 

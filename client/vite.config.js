@@ -3,6 +3,9 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   root: '.',
   publicDir: 'static',
+  resolve: {
+    dedupe: ['three'],
+  },
   build: {
     outDir:      'dist',
     emptyOutDir: true,
