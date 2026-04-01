@@ -98,9 +98,8 @@ inline ChunkMembershipResult update(
                 oldChunk->leftEntities.insert(ent);
             }
             // Mark entity with CREATE_ENTITY delta type so new chunk serializes full state
-            if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
-                dirty->markCreated();
-            }
+            auto& dirty = registry.get<DirtyComponent>(ent);
+            dirty.markCreated();
             
             // Update membership
             membership.currentChunkId = newChunkId;

@@ -9,6 +9,7 @@
 #include <lz4.h>
 #include <algorithm>
 #include <cstring>
+#include <iostream>
 
 namespace voxelmmo {
 
@@ -384,27 +385,18 @@ static size_t buildSnapshotDelta(const Chunk& chunk, entt::registry& reg, uint32
 // ── Entity dirty flag clearing ─────────────────────────────────────────────
 
 static void clearEntityDirtyFlags(const Chunk& chunk, entt::registry& reg, bool clearSnapshotFlags) {
-    auto clearFlags = [&](entt::entity ent) {
-        if (auto* dirty = reg.try_get<DirtyComponent>(ent)) {
-            dirty->clear();
-            if (clearSnapshotFlags) {
-                // Don't clear snapshotDeltaType if it's CREATE_ENTITY - 
-                // sendSelfEntityMessages() needs this to detect new players
-                if (dirty->snapshotDeltaType != DeltaType::CREATE_ENTITY) {
-                    dirty->snapshotDeltaType = DeltaType::UPDATE_ENTITY;
-                }
-            }
-        }
-    };
     
     // Clear flags for all entities currently in this chunk
     for (auto ent : chunk.entities) {
-        clearFlags(ent);
-    }
-    
-    // Also clear flags for entities that left this chunk
-    for (auto ent : chunk.leftEntities) {
-        clearFlags(ent);
+        auto& dirty = reg.get<DirtyComponent>(ent);
+        dirty.clear();
+        if (clearSnapshotFlags) {
+            // Don't clear snapshotDeltaType if it's CREATE_ENTITY - 
+            // sendSelfEntityMessages() needs this to detect new players
+            if (dirty.snapshotDeltaType != DeltaType::CREATE_ENTITY) {
+                dirty.snapshotDeltaType = DeltaType::UPDATE_ENTITY;
+            }
+        }
     }
 }
 
