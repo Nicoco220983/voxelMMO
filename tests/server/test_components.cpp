@@ -118,7 +118,6 @@ TEST_CASE("DirtyComponent default state is clean", "[components]") {
     CHECK_FALSE(dirty.isDirty());
     CHECK_FALSE(dirty.isCreated());
     CHECK_FALSE(dirty.hasComponentChanges());
-    CHECK(dirty.snapshotDeltaType == DeltaType::UPDATE_ENTITY);
     CHECK(dirty.deltaType == DeltaType::UPDATE_ENTITY);
 }
 
@@ -135,7 +134,6 @@ TEST_CASE("DirtyComponent::markCreated sets CREATE_ENTITY delta type", "[compone
     dirty.markCreated();
     
     CHECK(dirty.isCreated());
-    CHECK(dirty.snapshotDeltaType == DeltaType::CREATE_ENTITY);
     CHECK(dirty.deltaType == DeltaType::CREATE_ENTITY);
     CHECK(dirty.isDirty());
 }
@@ -158,8 +156,6 @@ TEST_CASE("DirtyComponent::clear clears dirty flags", "[components]") {
     
     CHECK_FALSE(dirty.isDirty());
     CHECK(dirty.deltaType == DeltaType::UPDATE_ENTITY);
-    // snapshotDeltaType is preserved for SELF_ENTITY detection
-    CHECK(dirty.snapshotDeltaType == DeltaType::CREATE_ENTITY);
 }
 
 TEST_CASE("DirtyComponent hasComponentChanges ignores delta type", "[components]") {

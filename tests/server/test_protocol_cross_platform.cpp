@@ -185,7 +185,7 @@ TEST_CASE("All fixtures have correct message headers", "[protocol][cross-platfor
             INFO("Checking header for: " << fixture);
             REQUIRE(data.size() >= 3);
             CHECK(data[0] == static_cast<uint8_t>(ClientMessageType::JOIN));
-            CHECK(data[1] == 5);   // size low byte
+            CHECK(data[1] == 21);  // size low byte
             CHECK(data[2] == 0);   // size high byte
         }
     }

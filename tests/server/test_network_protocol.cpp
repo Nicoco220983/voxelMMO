@@ -241,9 +241,9 @@ TEST_CASE("loadHexFixture loads input fixtures correctly", "[network][fixtures]"
 TEST_CASE("loadHexFixture loads join fixtures correctly", "[network][fixtures]") {
     auto data = loadHexFixture("client_to_server/join/join_player.hex");
     
-    REQUIRE(data.size() == 5);
+    REQUIRE(data.size() == 21);
     CHECK(data[0] == 1);   // type = JOIN
-    CHECK(data[1] == 5);   // size low
+    CHECK(data[1] == 21);  // size low
     CHECK(data[3] == 0);   // entityType = PLAYER
 }
 

@@ -3,7 +3,6 @@
 #include "game/systems/DisconnectedPlayerSystem.hpp"
 
 #include "game/components/SheepBehaviorComponent.hpp"
-#include "game/components/DirtyComponent.hpp"
 #include "game/components/PendingDeleteComponent.hpp"
 #include "common/NetworkProtocol.hpp"
 #include "common/VoxelTypes.hpp"
@@ -122,7 +121,7 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
         // Ignore if player already has an entity (already spawned).
         if (playerEntities.find(playerId) != playerEntities.end()) return;
         // Enqueue player creation request for processing in tick()
-        pendingPlayerCreations_.push_back({playerId, msg->entityType});
+        pendingPlayerCreations_.push_back({playerId, msg->entityType, msg->sessionToken});
         break;
     }
 
@@ -197,10 +196,17 @@ void GameEngine::serializeChunks() {
     serializer_.clear();
     serializer_.serializeAllChunks(registry, chunkRegistry, tick);
     
-    // Broadcast to all gateways (all gateways receive the same data)
+    // Broadcast chunk data to all gateways (all gateways receive the same data)
     if (serializer_.hasChunkData() && outputCallback) {
         for (auto& [gwId, gwInfo] : gateways) {
             outputCallback(gwId, serializer_.getChunkData(), serializer_.getChunkDataSize());
+        }
+    }
+    
+    // Send buffered SELF_ENTITY messages to individual players
+    if (serializer_.hasSelfEntityData() && playerOutputCallback) {
+        for (const auto& msg : serializer_.getSelfEntityMessages()) {
+            playerOutputCallback(msg.playerId, msg.data.data(), msg.data.size());
         }
     }
 }
@@ -266,14 +272,9 @@ void GameEngine::tick() {
     setDeleteDeltaOnPendingDeletions();
 
     // Send state updates to clients (includes chunk snapshots with player entities)
+    // Also sends SELF_ENTITY messages to newly created players
+    // Also clear dirty flags
     serializeChunks();
-
-    // Send SELF_ENTITY messages to newly created players (after serializeChunks)
-    // This ensures the chunk snapshot arrives first, so client knows the entity
-    sendSelfEntityMessages();
-
-    // Clear all dirty flags after serialization
-    clearAllDirtyFlags();
 
     // Destroy any pending deletions
     // (their DELETE deltas have been serialized and sent above)
@@ -293,55 +294,92 @@ void GameEngine::setDeleteDeltaOnPendingDeletions() {
     }
 }
 
-// ── Self Entity Messages ──────────────────────────────────────────────────
-
-void GameEngine::sendSelfEntityMessages() {
-    if (!playerOutputCallback) return;
-
-    const uint32_t tick = static_cast<uint32_t>(tickCount);
-
-    // Find all player entities that were created this tick
-    auto view = registry.view<DirtyComponent, PlayerComponent, GlobalEntityIdComponent>();
-    for (auto ent : view) {
-        auto& dirty = view.get<DirtyComponent>(ent);
-        if (!dirty.isCreated()) continue;
-
-        const auto& player = view.get<PlayerComponent>(ent);
-        const auto& globalId = view.get<GlobalEntityIdComponent>(ent);
-
-        // Build and send SELF_ENTITY message
-        auto msg = NetworkProtocol::buildSelfEntityMessage(globalId.id, tick);
-        playerOutputCallback(player.playerId, msg.data(), msg.size());
-
-        // Clear delta type so SELF_ENTITY is not sent again on next tick
-        // Other dirty flags are preserved for chunk serialization
-        dirty.snapshotDeltaType = DeltaType::UPDATE_ENTITY;
-    }
-}
-
 // ── Dirty Flags Clearing ───────────────────────────────────────────────────
 
 void GameEngine::processPendingPlayerCreations() {
     for (const auto& req : pendingPlayerCreations_) {
-        const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS, saveSystem_.get());
-        const GlobalEntityId globalId = acquireEntityId();
-        entt::entity ent;
+        // Convert session token to string for map lookup
+        auto tokenToString = [](const std::array<uint8_t, 16>& token) -> std::string {
+            return std::string(reinterpret_cast<const char*>(token.data()), 16);
+        };
         
-        switch (req.entityType) {
-            case EntityType::PLAYER:
-                ent = PlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
-                break;
-            case EntityType::GHOST_PLAYER:
-            default:
-                ent = GhostPlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
-                break;
+        const std::string sessionKey = tokenToString(req.sessionToken);
+        const bool hasSessionToken = sessionKey.find_first_not_of('\0') != std::string::npos;
+        
+        // Check if this is a reconnection with a valid session token
+        entt::entity ent = entt::null;
+        bool isReconnection = false;
+        
+        if (hasSessionToken) {
+            auto it = sessionToEntity_.find(sessionKey);
+            if (it != sessionToEntity_.end()) {
+                ent = it->second;
+                if (registry.valid(ent)) {
+                    isReconnection = true;
+                }
+            }
         }
         
-        playerEntities[req.playerId] = ent;
-        
-        // Add player entity to its chunk
-        const ChunkId chunkId = ChunkId::fromSubVoxelPos(spawnPos[0], spawnPos[1], spawnPos[2]);
-        chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
+        if (isReconnection) {
+            // Recover existing entity
+            auto& playerComp = registry.get<PlayerComponent>(ent);
+            
+            // Remove old playerId from playerEntities map
+            playerEntities.erase(playerComp.playerId);
+            
+            // Update to new playerId
+            playerComp.playerId = req.playerId;
+            playerComp.sessionToken = req.sessionToken;
+            
+            // Remove disconnected component if present
+            if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
+                registry.remove<DisconnectedPlayerComponent>(ent);
+            }
+            
+            // Mark entity as newly created for serialization (so client gets full state)
+            if (auto* dirty = registry.try_get<DirtyComponent>(ent)) {
+                dirty->markCreated();
+            }
+            
+            // Update playerEntities map
+            playerEntities[req.playerId] = ent;
+
+            // Re-Add player entity to its chunk (to sync chunk.presentPlayers)
+            auto& pos = registry.get<DynamicPositionComponent>(ent);
+            const ChunkId chunkId = ChunkId::fromSubVoxelPos(pos.x, pos.y, pos.z);
+            chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
+            
+            std::cout << "[GameEngine] Client " << req.playerId << " connected (reconnect)\n";
+        } else {
+            // Create new entity
+            const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS, saveSystem_.get());
+            const GlobalEntityId globalId = acquireEntityId();
+            
+            switch (req.entityType) {
+                case EntityType::PLAYER:
+                    ent = PlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
+                    break;
+                case EntityType::GHOST_PLAYER:
+                default:
+                    ent = GhostPlayerEntity::spawn(registry, globalId, spawnPos[0], spawnPos[1], spawnPos[2], req.playerId);
+                    break;
+            }
+            
+            // Store session token if provided
+            if (hasSessionToken) {
+                auto& playerComp = registry.get<PlayerComponent>(ent);
+                playerComp.sessionToken = req.sessionToken;
+                sessionToEntity_[sessionKey] = ent;
+            }
+            
+            playerEntities[req.playerId] = ent;
+            
+            // Add player entity to its chunk
+            const ChunkId chunkId = ChunkId::fromSubVoxelPos(spawnPos[0], spawnPos[1], spawnPos[2]);
+            chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
+            
+            std::cout << "[GameEngine] Client " << req.playerId << " connected (new)\n";
+        }
     }
     pendingPlayerCreations_.clear();
 }
@@ -432,16 +470,6 @@ void GameEngine::processPendingBulkVoxelCreations() {
         }
     }
     pendingBulkVoxelCreations_.clear();
-}
-
-void GameEngine::clearAllDirtyFlags() {
-    // Clear voxel deltas for all chunks
-    for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
-        chunkPtr->world.clearDelta();
-    }
-    
-    // Note: Entity dirty flags are cleared by ChunkSerializer::serializeAllChunks()
-    // which calls Chunk::clearEntityDirtyFlags() based on what was serialized.
 }
 
 // ── Game loop lifecycle ────────────────────────────────────────────────────

@@ -29,13 +29,21 @@ struct ChunkSerializationState {
  * concatenated buffer, which is then broadcast to all gateways.
  * All gateways receive the same data (chunks are not filtered per-gateway).
  */
+/**
+ * @brief A buffered player-specific message.
+ */
+struct PlayerMessage {
+    PlayerId playerId;
+    std::vector<uint8_t> data;
+};
+
 class ChunkSerializer {
 public:
     /** Concatenated chunk messages: [chunk1_msg][chunk2_msg]... */
     std::vector<uint8_t> chunkBuf;
 
-    /** SELF_ENTITY messages for newly created players. */
-    std::vector<uint8_t> selfEntityBuf;
+    /** SELF_ENTITY messages for newly created players, keyed by playerId. */
+    std::vector<PlayerMessage> selfEntityMessages;
 
     /** Reusable scratch buffer for LZ4 compression. */
     std::vector<uint8_t> scratch;
@@ -58,14 +66,22 @@ public:
     /** Check if any chunk data was serialized. */
     bool hasChunkData() const;
 
-    /** Check if any self entity data was serialized. */
+    /** Check if any self entity messages were buffered. */
     bool hasSelfEntityData() const;
+
+    /**
+     * @brief Get the buffered SELF_ENTITY messages.
+     * @return Vector of player-specific messages (valid until next clear()).
+     */
+    const std::vector<PlayerMessage>& getSelfEntityMessages() const;
 
     /**
      * @brief Serialize all active chunks into the concatenated buffer.
      *
      * Each chunk will have a snapshot, snapshot delta, or tick delta built
      * based on its serialization state. All messages are appended to chunkBuf.
+     *
+     * Also buffers SELF_ENTITY messages for newly created players in selfEntityBuf.
      *
      * @param registry The ECS registry.
      * @param chunkRegistry The chunk registry containing all chunks.
@@ -85,6 +101,8 @@ public:
      */
     size_t getChunkDataSize() const;
 
+
+
 private:
     /** Track serialization state for each chunk. */
     std::unordered_map<ChunkId, ChunkSerializationState> chunkStates_;
@@ -94,6 +112,9 @@ private:
 
     /** Ensure staging has at least minSize capacity. */
     void ensureStaging(size_t minSize);
+
+    /** Buffer SELF_ENTITY messages for newly created players in a specific chunk. */
+    void bufferSelfEntityMessagesForChunk(const Chunk& chunk, entt::registry& registry, uint32_t tick);
 };
 
 } // namespace voxelmmo

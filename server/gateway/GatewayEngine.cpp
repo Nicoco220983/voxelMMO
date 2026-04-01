@@ -102,7 +102,6 @@ void GatewayEngine::listen(int port) {
             const PlayerId pid = nextPlayerId++;
             ws->getUserData()->playerId = pid;
             sockets[pid] = ws;
-            std::cout << "[gateway] Player " << pid << " connected\n";
             
             // Send all cached chunk state to the new player
             for (const auto& [cid, state] : chunkStates) {
@@ -131,7 +130,6 @@ void GatewayEngine::listen(int port) {
             const PlayerId pid = ws->getUserData()->playerId;
             sockets.erase(pid);
             removePlayer(pid);
-            std::cout << "[gateway] Player " << pid << " disconnected\n";
             if (disconnectCb) disconnectCb(pid);
         },
     })

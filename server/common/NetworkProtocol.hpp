@@ -113,6 +113,8 @@ struct InputMessage {
 /** Parsed payload of a ClientMessageType::JOIN frame. */
 struct JoinMessage {
     EntityType entityType;
+    /** Session token (16-byte UUID) for entity recovery across reconnects. Zeroed = no previous session. */
+    std::array<uint8_t, 16> sessionToken;
 };
 
 // ── Client → Server (deserialization) ────────────────────────────────────
@@ -186,12 +188,15 @@ inline std::optional<InputMessage> parseInput(const uint8_t* data, size_t size) 
 
 /**
  * @brief Parse a JOIN frame.
- * Wire: type(1) + size(2) + EntityType uint8(1) = 5 bytes.
- * @return Parsed struct, or std::nullopt if @p size < 5.
+ * Wire: type(1) + size(2) + EntityType uint8(1) + sessionToken(16) = 21 bytes.
+ * @return Parsed struct, or std::nullopt if @p size < 21.
  */
 inline std::optional<JoinMessage> parseJoin(const uint8_t* data, size_t size) {
-    if (size < 5) return std::nullopt;
-    return JoinMessage{static_cast<EntityType>(data[3])};
+    if (size < 21) return std::nullopt;
+    JoinMessage msg;
+    msg.entityType = static_cast<EntityType>(data[3]);
+    std::memcpy(msg.sessionToken.data(), data + 4, 16);
+    return msg;
 }
 
 // ── Server → Client (serialization) ──────────────────────────────────────

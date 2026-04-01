@@ -70,9 +70,11 @@ describe('NetworkProtocol.serializeInput matches fixtures', () => {
 // ── serializeJoin matches fixtures ───────────────────────────────────────────
 
 describe('NetworkProtocol.serializeJoin matches fixtures', () => {
+  const zeroToken = new Uint8Array(16)  // All zeros
+
   it('serializes PLAYER join matching join_player.hex', () => {
     const expected = loadHexFixture('client_to_server/join/join_player.hex')
-    const actual = new Uint8Array(NetworkProtocol.serializeJoin(EntityType.PLAYER))
+    const actual = new Uint8Array(NetworkProtocol.serializeJoin(EntityType.PLAYER, zeroToken))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -80,7 +82,7 @@ describe('NetworkProtocol.serializeJoin matches fixtures', () => {
 
   it('serializes GHOST_PLAYER join matching join_ghost.hex', () => {
     const expected = loadHexFixture('client_to_server/join/join_ghost.hex')
-    const actual = new Uint8Array(NetworkProtocol.serializeJoin(EntityType.GHOST_PLAYER))
+    const actual = new Uint8Array(NetworkProtocol.serializeJoin(EntityType.GHOST_PLAYER, zeroToken))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -88,7 +90,7 @@ describe('NetworkProtocol.serializeJoin matches fixtures', () => {
 
   it('serializes SHEEP join matching join_sheep.hex', () => {
     const expected = loadHexFixture('client_to_server/join/join_sheep.hex')
-    const actual = new Uint8Array(NetworkProtocol.serializeJoin(EntityType.SHEEP))
+    const actual = new Uint8Array(NetworkProtocol.serializeJoin(EntityType.SHEEP, zeroToken))
     
     expect(actual.length).toBe(expected.length)
     expect(bytesEqual(actual, expected)).toBe(true)
@@ -158,14 +160,14 @@ describe('FixtureLoader', () => {
   it('loadJoinFixture parses join_player correctly', () => {
     const result = loadJoinFixture('join_player.hex')
     
-    expect(result.bytes.length).toBe(5)
+    expect(result.bytes.length).toBe(21)
     expect(result.entityType).toBe(EntityType.PLAYER)
   })
 
   it('loadJoinFixture parses join_ghost correctly', () => {
     const result = loadJoinFixture('join_ghost.hex')
     
-    expect(result.bytes.length).toBe(5)
+    expect(result.bytes.length).toBe(21)
     expect(result.entityType).toBe(EntityType.GHOST_PLAYER)
   })
 

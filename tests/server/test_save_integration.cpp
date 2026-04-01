@@ -25,11 +25,12 @@ TEST_CASE("Chunks are saved after player joins", "[save][integration]") {
     PlayerId pid = 1;
     engine.registerPlayer(0, pid);
     
-    // Build JOIN message: [type(1)] [size(2)] [entityType(1)]
-    uint8_t joinMsg[5] = {
+    // Build JOIN message: [type(1)] [size(2)] [entityType(1)] [sessionToken(16)]
+    uint8_t joinMsg[21] = {
         static_cast<uint8_t>(ClientMessageType::JOIN),
-        5, 0,  // size = 5 bytes
-        static_cast<uint8_t>(EntityType::PLAYER)
+        21, 0,  // size = 21 bytes
+        static_cast<uint8_t>(EntityType::PLAYER),
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // session token (zeroed)
     };
     engine.handlePlayerInput(pid, joinMsg, sizeof(joinMsg));
     
@@ -86,9 +87,10 @@ TEST_CASE("Saved chunks persist across server restarts", "[save][integration]") 
         PlayerId pid = 1;
         engine.registerPlayer(0, pid);
         
-        uint8_t joinMsg[5] = {
-            static_cast<uint8_t>(ClientMessageType::JOIN), 5, 0,
-            static_cast<uint8_t>(EntityType::PLAYER)
+        uint8_t joinMsg[21] = {
+            static_cast<uint8_t>(ClientMessageType::JOIN), 21, 0,
+            static_cast<uint8_t>(EntityType::PLAYER),
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         };
         engine.handlePlayerInput(pid, joinMsg, sizeof(joinMsg));
         
@@ -140,9 +142,10 @@ TEST_CASE("Chunk loading prevents regeneration", "[save][integration]") {
         PlayerId pid = 1;
         engine.registerPlayer(0, pid);
         
-        uint8_t joinMsg[5] = {
-            static_cast<uint8_t>(ClientMessageType::JOIN), 5, 0,
-            static_cast<uint8_t>(EntityType::PLAYER)
+        uint8_t joinMsg[21] = {
+            static_cast<uint8_t>(ClientMessageType::JOIN), 21, 0,
+            static_cast<uint8_t>(EntityType::PLAYER),
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         };
         engine.handlePlayerInput(pid, joinMsg, sizeof(joinMsg));
         
@@ -167,9 +170,10 @@ TEST_CASE("Chunk loading prevents regeneration", "[save][integration]") {
         PlayerId pid = 1;
         engine.registerPlayer(0, pid);
         
-        uint8_t joinMsg[5] = {
-            static_cast<uint8_t>(ClientMessageType::JOIN), 5, 0,
-            static_cast<uint8_t>(EntityType::PLAYER)
+        uint8_t joinMsg[21] = {
+            static_cast<uint8_t>(ClientMessageType::JOIN), 21, 0,
+            static_cast<uint8_t>(EntityType::PLAYER),
+            0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
         };
         engine.handlePlayerInput(pid, joinMsg, sizeof(joinMsg));
         

@@ -227,17 +227,21 @@ export class NetworkProtocol {
   }
 
   /**
-   * Serialize a JOIN frame (5 bytes).
-   * Wire: type(1) + size(2) + EntityType uint8(1).
+   * Serialize a JOIN frame (21 bytes).
+   * Wire: type(1) + size(2) + EntityType uint8(1) + sessionToken(16).
    * @param {number} entityType  EntityType value.
+   * @param {Uint8Array} sessionToken  16-byte session token for entity recovery.
    * @returns {ArrayBuffer}
    */
-  static serializeJoin(entityType) {
-    const buf = new ArrayBuffer(5)
+  static serializeJoin(entityType, sessionToken) {
+    const buf = new ArrayBuffer(21)
     const v   = new DataView(buf)
     v.setUint8(0,  ClientMessageType.JOIN)
-    v.setUint16(1, 5, true)  // size
+    v.setUint16(1, 21, true)  // size
     v.setUint8(3,  entityType)
+    // Copy session token (16 bytes)
+    const tokenArray = new Uint8Array(buf, 4, 16)
+    tokenArray.set(sessionToken)
     return buf
   }
 

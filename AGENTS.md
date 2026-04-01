@@ -25,9 +25,9 @@ A high performance online webgame massive multiplayer, on wide generated world.
   - Client sends button bitmask + yaw/pitch; server `InputSystem` converts to velocity each tick.
   - Rendering: divide by `SUBVOXEL_SIZE` before passing to Three.js.
 - **Dirty tracking**: `DirtyComponent` carries `dirtyFlags` (1 bit per component), `deltaType` (CREATE_ENTITY vs UPDATE_ENTITY),
-  and `snapshotDeltaType` (for SELF_ENTITY detection). Cleared after each tick:
+  Cleared after each tick:
   - `dirtyFlags` and `deltaType` cleared after every tick delta
-  - `snapshotDeltaType` preserved until snapshot delta (for SELF_ENTITY detection)
+
 - **GlobalEntityId** (uint32): assigned at spawn, stable across chunk moves and server lifetime. Used on wire.
 - **Serialisation ownership**: each component's `serializeFields(SafeBufWriter&)` writes its own bytes only.
   The caller (Chunk) writes the component-flags byte and decides which components to include.

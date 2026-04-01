@@ -49,10 +49,32 @@ window.addEventListener('resize', () => {
 const _mode = new URLSearchParams(location.search).get('mode')
 const _entityType = _mode === 'ghost' ? EntityType.GHOST_PLAYER : EntityType.PLAYER
 
+// Generate or retrieve session token for entity recovery across reconnects
+function getOrCreateSessionToken() {
+  const STORAGE_KEY = 'voxelmmo_session_token'
+  let token = localStorage.getItem(STORAGE_KEY)
+  if (!token) {
+    // Generate 16-byte random token and encode as base64
+    const bytes = new Uint8Array(16)
+    crypto.getRandomValues(bytes)
+    token = btoa(String.fromCharCode(...bytes))
+    localStorage.setItem(STORAGE_KEY, token)
+  }
+  // Decode base64 back to Uint8Array
+  const binary = atob(token)
+  const bytes = new Uint8Array(16)
+  for (let i = 0; i < 16; i++) {
+    bytes[i] = binary.charCodeAt(i)
+  }
+  return bytes
+}
+
+const _sessionToken = getOrCreateSessionToken()
+
 const client = new GameClient(`ws://${location.host}/ws`, scene)
 window.gameClient = client  // Expose for entity prediction
 client.connect().then(() => {
-  client.sendJoin(_entityType)
+  client.sendJoin(_entityType, _sessionToken)
 }).catch((err) => {
   console.error('[main] Failed to connect to server', err)
 })

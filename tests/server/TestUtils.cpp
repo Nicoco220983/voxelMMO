@@ -37,11 +37,12 @@ PlayerId TestEnv::addPlayer(EntityType type) {
     // Queue as pending player (spawn position is determined by WorldGenerator)
     engine_.registerPlayer(gatewayId_, pid);
     
-    // Send JOIN message to spawn the entity
-    uint8_t joinMsg[5] = {
+    // Send JOIN message to spawn the entity (21 bytes: type + size + entityType + sessionToken)
+    uint8_t joinMsg[21] = {
         static_cast<uint8_t>(ClientMessageType::JOIN),
-        5, 0,  // size
-        static_cast<uint8_t>(type)
+        21, 0,  // size
+        static_cast<uint8_t>(type),
+        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0  // session token (zeroed = no previous session)
     };
     engine_.handlePlayerInput(pid, joinMsg, sizeof(joinMsg));
     

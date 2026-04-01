@@ -128,8 +128,8 @@ export function loadInputFixture(filename) {
 export function loadJoinFixture(filename) {
   const bytes = loadHexFixture(`client_to_server/join/${filename}`)
   
-  if (bytes.length !== 5) {
-    throw new Error(`JOIN fixture ${filename} should be 5 bytes, got ${bytes.length}`)
+  if (bytes.length !== 21) {
+    throw new Error(`JOIN fixture ${filename} should be 21 bytes, got ${bytes.length}`)
   }
   
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
@@ -140,8 +140,8 @@ export function loadJoinFixture(filename) {
   if (msgType !== 1) {
     throw new Error(`JOIN fixture ${filename} should have type=1, got ${msgType}`)
   }
-  if (size !== 5) {
-    throw new Error(`JOIN fixture ${filename} should have size=5, got ${size}`)
+  if (size !== 21) {
+    throw new Error(`JOIN fixture ${filename} should have size=21, got ${size}`)
   }
   
   return { bytes, entityType }

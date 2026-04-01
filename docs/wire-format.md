@@ -183,15 +183,16 @@ All frames use the universal header `[type][size]`.
 | 4 | JUMP | Jump when grounded | Ascend |
 | 5 | DESCEND | (ignored) | Descend |
 
-### JOIN (type = 0x01) — 5 bytes total
+### JOIN (type = 0x01) — 21 bytes total
 
 | Offset | Size | Field |
 |--------|------|-------|
 | 0 | uint8 | type = 0x01 |
-| 1 | uint16 LE | size = 5 |
+| 1 | uint16 LE | size = 21 |
 | 3 | uint8 | EntityType (0=PLAYER, 1=GHOST_PLAYER) |
+| 4 | 16 bytes | Session token (UUID for entity recovery) |
 
-Must be the first message after WebSocket connection.
+Must be the first message after WebSocket connection. The session token allows the server to recover the player's entity after a reconnect (e.g., page refresh). A zeroed token indicates no previous session.
 
 ### VOXEL_DELETION (type = 0x02) — 17 bytes total
 

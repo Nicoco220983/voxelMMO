@@ -18,12 +18,10 @@ namespace voxelmmo {
  *   - CHUNK_CHANGE_ENTITY (3): entity moved to different chunk
  *
  * Granularity:
- *   - snapshotDeltaType: persists until snapshot delta is sent (every N ticks), used for SELF_ENTITY detection
  *   - deltaType / dirtyFlags: cleared after every tick delta
  */
 struct DirtyComponent {
     uint8_t dirtyFlags{0};
-    DeltaType snapshotDeltaType{DeltaType::UPDATE_ENTITY};
     DeltaType deltaType{DeltaType::UPDATE_ENTITY};
 
     /** @brief Mark a component dirty. */
@@ -33,12 +31,11 @@ struct DirtyComponent {
 
     // Delta type helpers
     void markCreated() noexcept {
-        snapshotDeltaType = DeltaType::CREATE_ENTITY;
         deltaType = DeltaType::CREATE_ENTITY;
     }
 
     bool isCreated() const noexcept {
-        return snapshotDeltaType == DeltaType::CREATE_ENTITY;
+        return deltaType == DeltaType::CREATE_ENTITY;
     }
 
     void markForDeletion() noexcept {

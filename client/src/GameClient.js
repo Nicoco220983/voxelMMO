@@ -150,9 +150,10 @@ export class GameClient {
    * Send a JOIN message declaring the entity type for this client.
    * Must be called once after connect(), before sending velocity input.
    * @param {number} entityType  EntityType value (e.g. EntityType.GHOST_PLAYER).
+   * @param {Uint8Array} sessionToken  16-byte session token for entity recovery.
    */
-  sendJoin(entityType) {
-    this.#socket?.send(NetworkProtocol.serializeJoin(entityType))
+  sendJoin(entityType, sessionToken) {
+    this.#socket?.send(NetworkProtocol.serializeJoin(entityType, sessionToken))
   }
 
   /**

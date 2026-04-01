@@ -4,7 +4,12 @@
 #include "game/EntitySerializer.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
+#include "game/components/PlayerComponent.hpp"
+#include "game/components/GlobalEntityIdComponent.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
 #include "common/SafeBufWriter.hpp"
+#include "common/NetworkProtocol.hpp"
+#include "common/Types.hpp"
 #include <entt/entt.hpp>
 #include <lz4.h>
 #include <algorithm>
@@ -24,6 +29,7 @@ ChunkSerializer::ChunkSerializer() {
 
 void ChunkSerializer::clear() {
     chunkBuf.clear();
+    selfEntityMessages.clear();
     // scratch and staging kept for reuse (capacity preserved)
 }
 
@@ -32,7 +38,11 @@ bool ChunkSerializer::hasChunkData() const {
 }
 
 bool ChunkSerializer::hasSelfEntityData() const {
-    return !selfEntityBuf.empty();
+    return !selfEntityMessages.empty();
+}
+
+const std::vector<PlayerMessage>& ChunkSerializer::getSelfEntityMessages() const {
+    return selfEntityMessages;
 }
 
 const uint8_t* ChunkSerializer::getChunkData() const {
@@ -43,6 +53,8 @@ size_t ChunkSerializer::getChunkDataSize() const {
     return chunkBuf.size();
 }
 
+
+
 void ChunkSerializer::ensureScratch(size_t minSize) {
     if (scratch.capacity() < minSize) {
         scratch.reserve(minSize);
@@ -52,6 +64,25 @@ void ChunkSerializer::ensureScratch(size_t minSize) {
 void ChunkSerializer::ensureStaging(size_t minSize) {
     if (staging.capacity() < minSize) {
         staging.reserve(minSize);
+    }
+}
+
+// ── Self Entity Messages ───────────────────────────────────────────────────
+
+void ChunkSerializer::bufferSelfEntityMessagesForChunk(const Chunk& chunk, entt::registry& registry, uint32_t tick) {
+    // Check entities in this chunk for newly created players
+    for (auto ent : chunk.entities) {
+        auto& dirty = registry.get<DirtyComponent>(ent);
+        if (dirty.deltaType != DeltaType::CREATE_ENTITY) continue;
+
+        auto* player = registry.try_get<PlayerComponent>(ent);
+        if (!player) continue;
+
+        auto& globalId = registry.get<GlobalEntityIdComponent>(ent);
+
+        // Build and buffer SELF_ENTITY message for this player
+        auto msg = NetworkProtocol::buildSelfEntityMessage(globalId.id, tick);
+        selfEntityMessages.push_back({player->playerId, {msg.begin(), msg.end()}});
     }
 }
 
@@ -382,21 +413,14 @@ static size_t buildSnapshotDelta(const Chunk& chunk, entt::registry& reg, uint32
     return outBuf.size() - msgStartOffset;
 }
 
-// ── Entity dirty flag clearing ─────────────────────────────────────────────
+static void clearChunkDirtiness(Chunk& chunk, entt::registry& reg) {
+    // Clear voxel deltas for all chunks
+    chunk.world.clearDelta();
 
-static void clearEntityDirtyFlags(const Chunk& chunk, entt::registry& reg, bool clearSnapshotFlags) {
-    
-    // Clear flags for all entities currently in this chunk
+    // Clear entity dirty flags
     for (auto ent : chunk.entities) {
         auto& dirty = reg.get<DirtyComponent>(ent);
         dirty.clear();
-        if (clearSnapshotFlags) {
-            // Don't clear snapshotDeltaType if it's CREATE_ENTITY - 
-            // sendSelfEntityMessages() needs this to detect new players
-            if (dirty.snapshotDeltaType != DeltaType::CREATE_ENTITY) {
-                dirty.snapshotDeltaType = DeltaType::UPDATE_ENTITY;
-            }
-        }
     }
 }
 
@@ -408,21 +432,20 @@ size_t ChunkSerializer::serializeAllChunks(entt::registry& registry, ChunkRegist
     ensureScratch(64 * 1024);
     ensureStaging(64 * 1024);
     size_t chunksSerialized = 0;
-    
+
     for (auto& [cid, chunkPtr] : chunkRegistry.getAllChunksMutable()) {
         auto& serState = chunkStates_[cid];
-        
+
         size_t bytesWritten = 0;
-        bool isSnapshot = false;
-        bool isSnapshotDelta = false;
-        
+        bool hadSnapshot = false;
+
         if (!serState.hasBeenSerialized) {
             // First time serializing this chunk: build full snapshot
             bytesWritten = buildSnapshot(*chunkPtr, registry, tick, chunkBuf, scratch);
             serState.hasBeenSerialized = true;
             serState.lastSnapshotTick = tick;
             serState.deltaCount = 0;
-            isSnapshot = true;
+            hadSnapshot = true;
         } else {
             // Check if we should build snapshot delta (every 20 ticks or first delta after snapshot)
             if (serState.deltaCount == 0 || serState.deltaCount % 20 == 0) {
@@ -430,23 +453,26 @@ size_t ChunkSerializer::serializeAllChunks(entt::registry& registry, ChunkRegist
                 if (bytesWritten > 0) {
                     serState.lastSnapshotTick = tick;
                     serState.deltaCount = 0;
-                    isSnapshotDelta = true;
+                    hadSnapshot = true;
                 }
             } else {
                 // Build tick delta
                 bytesWritten = buildTickDelta(*chunkPtr, registry, tick, chunkBuf, scratch, staging);
             }
         }
-        
+
         if (bytesWritten > 0) {
             serState.deltaCount++;
             chunksSerialized++;
-            
-            // Clear dirty flags based on what was serialized
-            clearEntityDirtyFlags(*chunkPtr, registry, isSnapshot || isSnapshotDelta);
         }
+
+        // After serializing this chunk, buffer SELF_ENTITY for newly created players
+        // This ensures entity details arrive before the SELF_ENTITY message
+        bufferSelfEntityMessagesForChunk(*chunkPtr, registry, tick);
+
+        clearChunkDirtiness(*chunkPtr, registry);
     }
-    
+
     return chunksSerialized;
 }
 

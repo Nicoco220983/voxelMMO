@@ -248,6 +248,9 @@ private:
     ChunkRegistry chunkRegistry;
     std::unordered_map<GatewayId, GatewayInfo>             gateways;
     std::unordered_map<PlayerId,  entt::entity>            playerEntities;
+    
+    /** @brief Map from session token to entity for reconnection lookup. */
+    std::unordered_map<std::string, entt::entity>          sessionToEntity_;
 
     int32_t  tickCount{0};
     uint32_t  lastDisconnectCheckTick{0};  ///< Last tick when disconnect system was run
@@ -285,6 +288,7 @@ private:
     struct PendingPlayerCreation {
         PlayerId playerId;
         EntityType entityType;
+        std::array<uint8_t, 16> sessionToken;
     };
     
     /** @brief Queue of pending player entity creation requests. */
@@ -372,24 +376,6 @@ private:
      * global serialization state tracked by ChunkSerializer.
      */
     void serializeChunks();
-
-    /**
-     * @brief Send SELF_ENTITY messages to newly created players.
-     *
-     * Finds entities with DirtyComponent::isCreated() and PlayerComponent,
-     * builds SELF_ENTITY message for each, and sends via playerOutputCallback.
-     * Called before serializeChunks() in tick().
-     */
-    void sendSelfEntityMessages();
-
-    /**
-     * @brief Clear chunk-level state after serialization.
-     *
-     * Clears voxel tick deltas for all chunks.
-     * Entity dirty flags are cleared by ChunkSerializer during serialization.
-     * Called at the end of tick() after all serialization.
-     */
-    void clearAllDirtyFlags();
 
     /**
      * @brief Set DELETE_ENTITY delta type on entities marked with PendingDeleteComponent.

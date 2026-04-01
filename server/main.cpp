@@ -131,11 +131,10 @@ int main(int argc, char* argv[]) {
 
     gateway.setPlayerConnectCallback([&](voxelmmo::PlayerId pid) {
         game.registerPlayer(0, pid);
-        std::cout << "[main] Player " << pid << " connected (pending JOIN)\n";
     });
 
     gateway.setPlayerDisconnectCallback([&](voxelmmo::PlayerId pid) {
-        //game.removePlayer(pid);
+        game.markPlayerDisconnected(pid);
     });
 
     gateway.setPlayerInputCallback([&](voxelmmo::PlayerId pid,
