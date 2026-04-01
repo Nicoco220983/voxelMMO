@@ -34,8 +34,11 @@ export class RenderManager {
 
     // ── Scene ───────────────────────────────────────────────────────────────
     this.scene = new THREE.Scene()
-    this.scene.background = new THREE.Color(0x87ceeb)
-    this.scene.fog = new THREE.Fog(0x87ceeb, 200, 600)
+    // Exponential fog for better distance falloff, matches sky horizon
+    this.scene.fog = new THREE.FogExp2(0x87ceeb, 0.02)
+
+    // ── Sky ─────────────────────────────────────────────────────────────────
+    this._setupSky()
 
     // ── Camera ──────────────────────────────────────────────────────────────
     this.camera = new THREE.PerspectiveCamera(
@@ -57,6 +60,43 @@ export class RenderManager {
     const sun = new THREE.DirectionalLight(0xffffff, 0.8)
     sun.position.set(200, 400, 100)
     this.scene.add(sun)
+  }
+
+  _setupSky() {
+    // Large sphere with gradient shader that follows camera
+    const skyGeo = new THREE.SphereGeometry(900, 32, 32)
+    const skyMat = new THREE.ShaderMaterial({
+      uniforms: {
+        topColor:    { value: new THREE.Color(0x0077ff) },
+        bottomColor: { value: new THREE.Color(0x87ceeb) },
+        offset:      { value: 100 },
+        exponent:    { value: 0.6 },
+      },
+      vertexShader: /* glsl */ `
+        varying vec3 vWorldPosition;
+        void main() {
+          vec4 worldPosition = modelMatrix * vec4(position, 1.0);
+          vWorldPosition = worldPosition.xyz;
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+        }
+      `,
+      fragmentShader: /* glsl */ `
+        uniform vec3 topColor;
+        uniform vec3 bottomColor;
+        uniform float offset;
+        uniform float exponent;
+        varying vec3 vWorldPosition;
+        void main() {
+          float h = normalize(vWorldPosition + offset).y;
+          gl_FragColor = vec4(mix(bottomColor, topColor, max(pow(max(h, 0.0), exponent), 0.0)), 1.0);
+        }
+      `,
+      side: THREE.BackSide,
+      depthWrite: false,
+    })
+    this.sky = new THREE.Mesh(skyGeo, skyMat)
+    this.sky.frustumCulled = false
+    this.scene.add(this.sky)
   }
 
   _setupPostProcessing() {
@@ -116,6 +156,10 @@ export class RenderManager {
 
   /** Render one frame through the post-processing composer. */
   render() {
+    // Sky follows camera for infinite distance effect
+    if (this.sky) {
+      this.sky.position.copy(this.camera.position)
+    }
     this.composer.render()
   }
 }
