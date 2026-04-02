@@ -14,6 +14,8 @@ namespace VoxelTypes {
     inline constexpr VoxelType BASIC = 1;
     inline constexpr VoxelType STONE = 2;
     inline constexpr VoxelType DIRT  = 3;
+    inline constexpr VoxelType PLANKS  = 4;
+    inline constexpr VoxelType BRICKS  = 5;
 } // namespace VoxelTypes
 
 } // namespace voxelmmo

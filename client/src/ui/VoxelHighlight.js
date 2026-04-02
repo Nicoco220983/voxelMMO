@@ -206,6 +206,9 @@ export class VoxelHighlight {
     // Track previous voxel (the one we came from)
     let prevX = vx, prevY = vy, prevZ = vz
 
+    // Track if we've moved at least one step (to avoid returning start position)
+    let hasMoved = false
+
     // Maximum travel distance
     const maxT = MAX_REACH_DISTANCE
 
@@ -221,16 +224,19 @@ export class VoxelHighlight {
         if (toolMode === 'destroy') {
           // DESTROY tool: highlight the solid voxel itself
           return { x: vx, y: vy, z: vz, placementX: vx, placementY: vy, placementZ: vz }
-        } else {
+        } else if (hasMoved) {
           // CREATE tool: highlight the previous (empty) voxel we came from
+          // Only if we've moved at least one step from the start
           return { x: prevX, y: prevY, z: prevZ, placementX: prevX, placementY: prevY, placementZ: prevZ }
         }
+        // For CREATE mode: if we haven't moved yet, continue stepping to find a valid placement
       }
 
       // Current voxel is empty, remember it as the previous one
       prevX = vx
       prevY = vy
       prevZ = vz
+      hasMoved = true
 
       // Step along ray
       t += stepSize

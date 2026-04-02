@@ -6,10 +6,6 @@ import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
 import { Hotbar } from './ui/Hotbar.js'
-import { VoxelType } from './VoxelTypes.js'
-import { DestroyVoxelTool } from './tools/DestroyVoxelTool.js'
-import { CreateVoxelTool } from './tools/CreateVoxelTool.js'
-import { VoxelItem } from './tools/VoxelItem.js'
 import { VoxelHighlight } from './ui/VoxelHighlight.js'
 import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
 import { createController } from './controllers/ControllerManager.js'
@@ -71,36 +67,11 @@ function getLocalPlayer() {
   return client.selfEntity
 }
 
-// ── Voxel Items for CreateVoxelTool ───────────────────────────────────────
-// Ordered by VoxelType value: BASIC (1), STONE (2), DIRT (3)
-const voxelItems = [
-  new VoxelItem(VoxelType.BASIC, 'Basic', '⬜'),
-  new VoxelItem(VoxelType.STONE, 'Stone', '🪨'),
-  new VoxelItem(VoxelType.DIRT, 'Dirt', '🟫'),
-]
-
 // ── Hotbar ─────────────────────────────────────────────────────────────────
 const hotbar = new Hotbar()
 
-// Create tools
-const destroyVoxelTool = new DestroyVoxelTool()
-const createVoxelTool = new CreateVoxelTool(VoxelType.BASIC)
-
-// Assign tools to slots (slot index 0 = key "1", slot 1 = key "2", etc.)
-hotbar.setSlot(1, destroyVoxelTool)   // Key "2"
-hotbar.setSlot(2, createVoxelTool)    // Key "3"
-
-// Wire up CreateVoxelTool callbacks for voxel mode
 /** @type {import('./tools/Tool.js').Tool|null} */
 let lastSelectedTool = null
-
-createVoxelTool.onSelect = () => {
-  hotbar.enterVoxelMode(voxelItems, createVoxelTool)
-}
-
-createVoxelTool.onDeselect = () => {
-  hotbar.exitVoxelMode()
-}
 
 // Handle tool unselection (ESC/BACK pressed)
 hotbar.onToolUnselected = () => {
@@ -282,9 +253,12 @@ function animate() {
   // Add voxel mode indicator
   let voxelModeIndicator = ''
   if (hotbar.isInVoxelMode()) {
-    const voxelTypeName = createVoxelTool.getVoxelType() === VoxelType.BASIC ? 'Basic' :
-                          createVoxelTool.getVoxelType() === VoxelType.STONE ? 'Stone' : 'Dirt'
-    voxelModeIndicator = ` [VOXEL: ${voxelTypeName}]`
+    const createVoxelTool = hotbar.getCreateVoxelTool()
+    if (createVoxelTool) {
+      const item = hotbar.voxelItems.find(i => i.type === createVoxelTool.getVoxelType())
+      const voxelTypeName = item ? item.name : 'Unknown'
+      voxelModeIndicator = ` [VOXEL: ${voxelTypeName}]`
+    }
   }
 
   hud.textContent =

@@ -86,6 +86,14 @@ export class Tool {
   }
 
   /**
+   * Returns true if selecting this tool should switch the hotbar into voxel mode.
+   * @returns {boolean}
+   */
+  needsVoxelMode() {
+    return false
+  }
+
+  /**
    * Serialize input for builder mode activation.
    * Default implementation delegates to onClick with a mock highlight system.
    * Override for tools that need special builder mode handling.

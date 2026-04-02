@@ -1,7 +1,12 @@
 // @ts-check
 
+import { DestroyVoxelTool } from '../tools/DestroyVoxelTool.js'
+import { CreateVoxelTool } from '../tools/CreateVoxelTool.js'
+import { VoxelType } from '../VoxelTypes.js'
+import { StoneVoxel, DirtVoxel, BasicVoxel, PlanksVoxel, BricksVoxel } from '../voxels/index.js'
+
 /** @typedef {import('../tools/Tool.js').Tool} Tool */
-/** @typedef {import('../tools/VoxelItem.js').VoxelItem} VoxelItem */
+/** @typedef {import('../voxels/index.js').VoxelDef} VoxelDef */
 
 /**
  * Hotbar UI component - bottom row of selectable slots.
@@ -37,12 +42,19 @@ export class Hotbar {
   #savedSlots = []
   /** @type {import('../tools/CreateVoxelTool.js').CreateVoxelTool|null} */
   #createVoxelTool = null
-  /** @type {VoxelItem[]} */
+  /** @type {VoxelDef[]} */
   #voxelItems = []
 
   // Callbacks
   /** @type {Function|null} Called when ESC/BACK exits voxel mode or unselects tool */
   onToolUnselected = null
+
+  /**
+   * Voxel types available in the CreateVoxelTool hotbar.
+   * Player can customize this list.
+   * @type {VoxelDef[]}
+   */
+  voxelItems
 
   constructor() {
     this.selectedIndex = -1  // -1 means no selection
@@ -50,11 +62,24 @@ export class Hotbar {
     // Initialize with 10 empty slots
     this.slots = Array(10).fill(null)
 
+    // Initialize voxel items for CreateVoxelTool (can be customized by player)
+    this.voxelItems = [
+      StoneVoxel,
+      DirtVoxel,
+      BasicVoxel,
+      PlanksVoxel,
+      BricksVoxel,
+    ]
+
     this.container = document.createElement('div')
     this.container.id = 'hotbar'
     this.#createBackButton()
     this.render()
     document.body.appendChild(this.container)
+
+    // Set up default tools
+    this.setSlot(1, new DestroyVoxelTool())   // Key "2"
+    this.setSlot(2, new CreateVoxelTool())  // Key "3"
   }
 
   /**
@@ -148,7 +173,7 @@ export class Hotbar {
     if (this.#mode === 'voxels') {
       const voxelItem = this.slots[index]
       if (voxelItem && this.#createVoxelTool) {
-        this.#createVoxelTool.setVoxelType(voxelItem.voxelType)
+        this.#createVoxelTool.setVoxelType(voxelItem.type)
         
         // Update visual selection
         if (this.slotElements[this.selectedIndex]) {
@@ -165,7 +190,12 @@ export class Hotbar {
     // Normal tool mode
     if (this.slotElements[this.selectedIndex]) {
       const oldTool = this.slots[this.selectedIndex]
-      if (oldTool) oldTool.onDeselect?.()
+      if (oldTool) {
+        oldTool.onDeselect?.()
+        if (oldTool.needsVoxelMode()) {
+          this.exitVoxelMode()
+        }
+      }
       this.slotElements[this.selectedIndex].classList.remove('selected')
     }
 
@@ -173,7 +203,12 @@ export class Hotbar {
 
     if (this.slotElements[this.selectedIndex]) {
       const newTool = this.slots[this.selectedIndex]
-      if (newTool) newTool.onSelect?.()
+      if (newTool) {
+        newTool.onSelect?.()
+        if (newTool.needsVoxelMode()) {
+          this.enterVoxelMode(newTool)
+        }
+      }
       this.slotElements[this.selectedIndex].classList.add('selected')
     }
   }
@@ -184,7 +219,12 @@ export class Hotbar {
   clearSelection() {
     if (this.selectedIndex >= 0 && this.slotElements[this.selectedIndex]) {
       const tool = this.slots[this.selectedIndex]
-      if (tool) tool.onDeselect?.()
+      if (tool) {
+        tool.onDeselect?.()
+        if (tool.needsVoxelMode()) {
+          this.exitVoxelMode()
+        }
+      }
       this.slotElements[this.selectedIndex].classList.remove('selected')
     }
     this.selectedIndex = -1
@@ -211,21 +251,19 @@ export class Hotbar {
 
   /**
    * Enter voxel selection mode.
-   * Saves current slots and fills hotbar with voxel items.
-   * @param {VoxelItem[]} voxelItems - Array of voxel items to display
+   * Saves current slots and fills hotbar with this.voxelItems.
    * @param {import('../tools/CreateVoxelTool.js').CreateVoxelTool} createVoxelTool - The tool to configure
    */
-  enterVoxelMode(voxelItems, createVoxelTool) {
+  enterVoxelMode(createVoxelTool) {
     if (this.#mode === 'voxels') return
     
     this.#mode = 'voxels'
     this.#savedSlots = [...this.slots]
-    this.#voxelItems = voxelItems
     this.#createVoxelTool = createVoxelTool
     
     // Fill slots with voxel items
     this.slots = Array(10).fill(null)
-    voxelItems.forEach((item, i) => {
+    this.voxelItems.forEach((item, i) => {
       if (i < 10) this.slots[i] = item
     })
     
@@ -236,10 +274,10 @@ export class Hotbar {
     
     // Preserve selection if the voxel type matches, otherwise clear
     const currentVoxelType = createVoxelTool.getVoxelType()
-    const matchingIndex = voxelItems.findIndex(item => item.voxelType === currentVoxelType)
+    const matchingIndex = this.voxelItems.findIndex(item => item.type === currentVoxelType)
     this.selectedIndex = matchingIndex >= 0 ? matchingIndex : -1
     
-    this.render()
+    this.renderVoxelMode()
   }
 
   /**
@@ -260,6 +298,57 @@ export class Hotbar {
     
     this.selectedIndex = -1
     this.render()
+  }
+
+  /**
+   * Render the hotbar in voxel mode (shows voxel textures as icons).
+   */
+  renderVoxelMode() {
+    // Clear slot elements (keep back button)
+    const slotsToRemove = this.container.querySelectorAll('.hotbar-slot')
+    slotsToRemove.forEach(el => el.remove())
+    this.slotElements = []
+
+    this.slots.forEach((slot, index) => {
+      const slotEl = document.createElement('div')
+      slotEl.className = 'hotbar-slot'
+      if (index === this.selectedIndex) {
+        slotEl.classList.add('selected')
+      }
+
+      const numberEl = document.createElement('span')
+      numberEl.className = 'hotbar-key'
+      numberEl.textContent = index === 9 ? '0' : String(index + 1)
+
+      const iconEl = document.createElement('span')
+      iconEl.className = 'hotbar-icon'
+      
+      // Show voxel texture as icon
+      if (slot) {
+        const voxelDef = slot
+        const textureName = typeof voxelDef.textures === 'string' 
+          ? voxelDef.textures 
+          : voxelDef.textures.default ?? ''
+        iconEl.style.backgroundImage = `url(/assets/voxels/${textureName}.png)`
+        iconEl.style.backgroundSize = 'cover'
+        iconEl.style.imageRendering = 'pixelated'
+        iconEl.style.display = 'inline-block'
+        iconEl.style.width = '32px'
+        iconEl.style.height = '32px'
+        iconEl.textContent = ''  // Clear any text content
+      }
+
+      slotEl.appendChild(numberEl)
+      slotEl.appendChild(iconEl)
+      this.container.appendChild(slotEl)
+      this.slotElements.push(slotEl)
+
+      // Touch selection
+      slotEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        this.selectSlot(index)
+      })
+    })
   }
 
   /**
@@ -316,7 +405,7 @@ export class Hotbar {
 
   /**
    * Get the currently selected slot info.
-   * In voxel mode, returns the CreateVoxelTool as the tool, not the VoxelItem.
+   * In voxel mode, returns the CreateVoxelTool as the tool, not the voxel definition.
    * @returns {{index: number, tool: Tool|null}}
    */
   getSelectedSlot() {
@@ -324,7 +413,7 @@ export class Hotbar {
       return { index: -1, tool: null }
     }
     
-    // In voxel mode, return the CreateVoxelTool, not the VoxelItem
+    // In voxel mode, return the CreateVoxelTool, not the voxel definition
     if (this.#mode === 'voxels') {
       return {
         index: this.selectedIndex,
@@ -336,5 +425,13 @@ export class Hotbar {
       index: this.selectedIndex,
       tool: this.slots[this.selectedIndex],
     }
+  }
+
+  /**
+   * Get the CreateVoxelTool instance.
+   * @returns {import('../tools/CreateVoxelTool.js').CreateVoxelTool|null}
+   */
+  getCreateVoxelTool() {
+    return this.#createVoxelTool
   }
 }

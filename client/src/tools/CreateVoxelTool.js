@@ -16,7 +16,7 @@ export class CreateVoxelTool extends Tool {
   /**
    * @param {number} voxelType - The voxel type to create (defaults to BASIC)
    */
-  constructor(voxelType = 4) { // 4 = BASIC
+  constructor(voxelType = 1) { // 1 = BASIC
     super('Create Voxel', '➕')
     this.#voxelType = voxelType
   }
@@ -78,6 +78,10 @@ export class CreateVoxelTool extends Tool {
 
   getHighlightColor() {
     return 0x00FF00  // Green for create
+  }
+
+  needsVoxelMode() {
+    return true
   }
 
   supportsBuilderMode() {

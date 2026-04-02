@@ -15,4 +15,6 @@ export const VoxelType = Object.freeze({
   BASIC: 1,
   STONE: 2,
   DIRT:  3,
+  PLANKS:  4,
+  BRICKS:  5,
 })
