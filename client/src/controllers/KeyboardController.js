@@ -308,11 +308,11 @@ export class KeyboardController extends BaseController {
   /**
    * Compute voxel movement delta per keypress (not while holding).
    * Only returns non-zero delta on the first frame a key is pressed.
+   * Movement is locked to cardinal axes so W/A/S/D are always distinct.
    * @returns {{x: number, y: number, z: number}}
    */
   #computeBuilderMoveDeltaPerKeypress() {
-    const cos = Math.cos(this.getEntryYaw())
-    const sin = Math.sin(this.getEntryYaw())
+    const { forward, right } = this.getCardinalBuilderDirections()
 
     let dx = 0
     let dz = 0
@@ -320,26 +320,26 @@ export class KeyboardController extends BaseController {
 
     // Forward (W): only move if key is pressed AND not yet processed
     if (this.#keys.w && !this.#builderKeyProcessed.w) {
-      dx -= Math.round(sin)
-      dz -= Math.round(cos)
+      dx += forward.x
+      dz += forward.z
       this.#builderKeyProcessed.w = true
     }
     // Backward (S)
     if (this.#keys.s && !this.#builderKeyProcessed.s) {
-      dx += Math.round(sin)
-      dz += Math.round(cos)
+      dx -= forward.x
+      dz -= forward.z
       this.#builderKeyProcessed.s = true
     }
     // Right (D)
     if (this.#keys.d && !this.#builderKeyProcessed.d) {
-      dx += Math.round(cos)
-      dz -= Math.round(sin)
+      dx += right.x
+      dz += right.z
       this.#builderKeyProcessed.d = true
     }
     // Left (A)
     if (this.#keys.a && !this.#builderKeyProcessed.a) {
-      dx -= Math.round(cos)
-      dz += Math.round(sin)
+      dx -= right.x
+      dz -= right.z
       this.#builderKeyProcessed.a = true
     }
     // Up (Space)

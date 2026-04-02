@@ -251,9 +251,17 @@ export class BaseController {
    */
   moveBuilderTarget(dx, dy, dz) {
     if (!this.#builderTarget) return
-    this.#builderTarget.x += dx
-    this.#builderTarget.y += dy
-    this.#builderTarget.z += dz
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+    const adz = Math.abs(dz)
+    // Builder mode: only move along one axis at a time. Priority: Y > Z > X.
+    if (ady >= adx && ady >= adz) {
+      this.#builderTarget.y += Math.sign(dy)
+    } else if (adz >= adx && adz >= ady) {
+      this.#builderTarget.z += Math.sign(dz)
+    } else if (adx > 0) {
+      this.#builderTarget.x += Math.sign(dx)
+    }
   }
 
   /**
@@ -262,6 +270,35 @@ export class BaseController {
    */
   setBuilderTarget(target) {
     this.#builderTarget = target
+  }
+
+  /**
+   * Get cardinal builder directions based on entry yaw.
+   * Forward is locked to one of the 4 world axes (+/-X or +/-Z).
+   * Right is always 90° clockwise from forward.
+   * @returns {{forward: {x: number, z: number}, right: {x: number, z: number}}}
+   */
+  getCardinalBuilderDirections() {
+    const yaw = this.getEntryYaw()
+    let normalizedYaw = yaw % (2 * Math.PI)
+    if (normalizedYaw < 0) normalizedYaw += 2 * Math.PI
+
+    let fx = 0, fz = 0
+    if (normalizedYaw < Math.PI / 4 || normalizedYaw >= 7 * Math.PI / 4) {
+      fx = 0; fz = -1   // facing -Z
+    } else if (normalizedYaw < 3 * Math.PI / 4) {
+      fx = -1; fz = 0   // facing -X
+    } else if (normalizedYaw < 5 * Math.PI / 4) {
+      fx = 0; fz = 1    // facing +Z
+    } else {
+      fx = 1; fz = 0    // facing +X
+    }
+
+    // Right is 90° clockwise from forward: (-fz, fx)
+    const rx = -fz
+    const rz = fx
+
+    return { forward: { x: fx, z: fz }, right: { x: rx, z: rz } }
   }
 
   /**

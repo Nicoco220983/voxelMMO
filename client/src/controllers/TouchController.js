@@ -352,35 +352,31 @@ export class TouchController extends BaseController {
 
   /**
    * Compute voxel movement delta from button mask and entry yaw.
+   * Movement is locked to cardinal axes so inputs are unambiguous.
    * @param {number} buttons
    * @returns {{x: number, y: number, z: number}}
    */
   #computeBuilderMoveDelta(buttons) {
-    const cos = Math.cos(this.getEntryYaw())
-    const sin = Math.sin(this.getEntryYaw())
+    const { forward, right } = this.getCardinalBuilderDirections()
 
     let dx = 0
     let dz = 0
 
-    // Forward: move in direction of -sin(yaw), -cos(yaw)
     if (buttons & InputButton.FORWARD) {
-      dx -= Math.round(sin)
-      dz -= Math.round(cos)
+      dx += forward.x
+      dz += forward.z
     }
-    // Backward: opposite
     if (buttons & InputButton.BACKWARD) {
-      dx += Math.round(sin)
-      dz += Math.round(cos)
+      dx -= forward.x
+      dz -= forward.z
     }
-    // Right: perpendicular (cos, -sin)
     if (buttons & InputButton.RIGHT) {
-      dx += Math.round(cos)
-      dz -= Math.round(sin)
+      dx += right.x
+      dz += right.z
     }
-    // Left: opposite
     if (buttons & InputButton.LEFT) {
-      dx -= Math.round(cos)
-      dz += Math.round(sin)
+      dx -= right.x
+      dz -= right.z
     }
 
     // Up/Down are world-space Y
