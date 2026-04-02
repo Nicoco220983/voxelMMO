@@ -136,7 +136,7 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 - `components/DynamicPositionComponent.js` — client-side interpolation
 - `entities/{Base,Player,Sheep}Entity.js` — entity classes
 - `systems/{ChunkMembership,PhysicsPrediction}System.js` — client-side chunk tracking + interpolation
-- `systems/VoxelHighlightSystem.js` — voxel selection highlight + deletion (click to remove voxels)
+- `ui/VoxelHighlight.js` — voxel selection highlight + deletion (click to remove voxels)
 - `NetworkProtocol.js` — serialization helpers, message parsing
 - `main.js` — Three.js scene, render loop, HUD
 - `VoxelTextures.js` — runtime texture atlas builder; loads PNGs from `client/static/assets/voxels/` into a `THREE.CanvasTexture` used by chunk meshing

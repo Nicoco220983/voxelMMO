@@ -1,39 +1,82 @@
 // @ts-check
 
 /** @typedef {import('../tools/Tool.js').Tool} Tool */
+/** @typedef {import('../tools/VoxelItem.js').VoxelItem} VoxelItem */
 
 /**
- * Hotbar UI component - bottom row of 10 selectable slots.
- * Keyboard: 1-0 to select slots (1=slot0, 0=slot9)
- * Tools are assigned to slots dynamically via setSlot().
+ * Hotbar UI component - bottom row of selectable slots.
+ * Supports two modes:
+ * - 'tools': normal tool selection (keyboard 1-0, touch slots)
+ * - 'voxels': voxel type selection when CreateVoxelTool is active
+ * 
+ * ESC/BACK behavior:
+ * - If in voxel mode: exit voxel mode AND unselect tool
+ * - Else if tool selected: unselect tool
+ * - Else: let event propagate
  */
 export class Hotbar {
   /** @type {HTMLElement} */
   container
   
+  /** @type {HTMLElement|null} */
+  #backButton = null
+  
   /** @type {Array<Tool|null>} */
   slots
   
-  /** @type {number} Currently selected slot index (0-9) */
+  /** @type {number} Currently selected slot index (0-9), or -1 if none */
   selectedIndex
   
   /** @type {HTMLElement[]} */
   slotElements
 
+  // Voxel mode state
+  /** @type {'tools'|'voxels'} */
+  #mode = 'tools'
+  /** @type {Array<Tool|null>} Saved slots when entering voxel mode */
+  #savedSlots = []
+  /** @type {import('../tools/CreateVoxelTool.js').CreateVoxelTool|null} */
+  #createVoxelTool = null
+  /** @type {VoxelItem[]} */
+  #voxelItems = []
+
+  // Callbacks
+  /** @type {Function|null} Called when ESC/BACK exits voxel mode or unselects tool */
+  onToolUnselected = null
+
   constructor() {
-    this.selectedIndex = 0
+    this.selectedIndex = -1  // -1 means no selection
     this.slotElements = []
     // Initialize with 10 empty slots
     this.slots = Array(10).fill(null)
 
     this.container = document.createElement('div')
     this.container.id = 'hotbar'
+    this.#createBackButton()
     this.render()
     document.body.appendChild(this.container)
   }
 
+  /**
+   * Create the BACK button for touch mode (hidden by default).
+   * @private
+   */
+  #createBackButton() {
+    this.#backButton = document.createElement('div')
+    this.#backButton.className = 'hotbar-back-btn'
+    this.#backButton.innerHTML = '<span class="hotbar-key">q</span><span class="hotbar-icon">←</span>'
+    this.#backButton.style.display = 'none'
+    this.#backButton.addEventListener('pointerdown', (e) => {
+      e.preventDefault()
+      this.handleEsc()
+    })
+    this.container.appendChild(this.#backButton)
+  }
+
   render() {
-    this.container.innerHTML = ''
+    // Clear slot elements (keep back button)
+    const slotsToRemove = this.container.querySelectorAll('.hotbar-slot')
+    slotsToRemove.forEach(el => el.remove())
     this.slotElements = []
 
     this.slots.forEach((slot, index) => {
@@ -44,7 +87,7 @@ export class Hotbar {
       }
 
       const numberEl = document.createElement('span')
-      numberEl.className = 'hotbar-number'
+      numberEl.className = 'hotbar-key'
       numberEl.textContent = index === 9 ? '0' : String(index + 1)
 
       const iconEl = document.createElement('span')
@@ -95,26 +138,154 @@ export class Hotbar {
 
   /**
    * Select a slot by index (0-9)
+   * In voxel mode, this updates the CreateVoxelTool's voxel type.
    * @param {number} index
    */
   selectSlot(index) {
     if (index < 0 || index > 9) return
 
-    // Remove selected class from old slot
+    // In voxel mode, selecting a voxel item updates the tool but stays in voxel mode
+    if (this.#mode === 'voxels') {
+      const voxelItem = this.slots[index]
+      if (voxelItem && this.#createVoxelTool) {
+        this.#createVoxelTool.setVoxelType(voxelItem.voxelType)
+        
+        // Update visual selection
+        if (this.slotElements[this.selectedIndex]) {
+          this.slotElements[this.selectedIndex].classList.remove('selected')
+        }
+        this.selectedIndex = index
+        if (this.slotElements[this.selectedIndex]) {
+          this.slotElements[this.selectedIndex].classList.add('selected')
+        }
+      }
+      return
+    }
+
+    // Normal tool mode
     if (this.slotElements[this.selectedIndex]) {
+      const oldTool = this.slots[this.selectedIndex]
+      if (oldTool) oldTool.onDeselect?.()
       this.slotElements[this.selectedIndex].classList.remove('selected')
     }
 
     this.selectedIndex = index
 
-    // Add selected class to new slot
     if (this.slotElements[this.selectedIndex]) {
+      const newTool = this.slots[this.selectedIndex]
+      if (newTool) newTool.onSelect?.()
       this.slotElements[this.selectedIndex].classList.add('selected')
     }
   }
 
   /**
-   * Handle keyboard input for slot selection
+   * Clear the current selection (no tool selected).
+   */
+  clearSelection() {
+    if (this.selectedIndex >= 0 && this.slotElements[this.selectedIndex]) {
+      const tool = this.slots[this.selectedIndex]
+      if (tool) tool.onDeselect?.()
+      this.slotElements[this.selectedIndex].classList.remove('selected')
+    }
+    this.selectedIndex = -1
+    if (this.onToolUnselected) {
+      this.onToolUnselected()
+    }
+  }
+
+  /**
+   * Check if any slot/tool is currently selected.
+   * @returns {boolean}
+   */
+  hasSelection() {
+    return this.selectedIndex >= 0
+  }
+
+  /**
+   * Check if currently in voxel mode.
+   * @returns {boolean}
+   */
+  isInVoxelMode() {
+    return this.#mode === 'voxels'
+  }
+
+  /**
+   * Enter voxel selection mode.
+   * Saves current slots and fills hotbar with voxel items.
+   * @param {VoxelItem[]} voxelItems - Array of voxel items to display
+   * @param {import('../tools/CreateVoxelTool.js').CreateVoxelTool} createVoxelTool - The tool to configure
+   */
+  enterVoxelMode(voxelItems, createVoxelTool) {
+    if (this.#mode === 'voxels') return
+    
+    this.#mode = 'voxels'
+    this.#savedSlots = [...this.slots]
+    this.#voxelItems = voxelItems
+    this.#createVoxelTool = createVoxelTool
+    
+    // Fill slots with voxel items
+    this.slots = Array(10).fill(null)
+    voxelItems.forEach((item, i) => {
+      if (i < 10) this.slots[i] = item
+    })
+    
+    // Show back button
+    if (this.#backButton) {
+      this.#backButton.style.display = 'flex'
+    }
+    
+    // Preserve selection if the voxel type matches, otherwise clear
+    const currentVoxelType = createVoxelTool.getVoxelType()
+    const matchingIndex = voxelItems.findIndex(item => item.voxelType === currentVoxelType)
+    this.selectedIndex = matchingIndex >= 0 ? matchingIndex : -1
+    
+    this.render()
+  }
+
+  /**
+   * Exit voxel selection mode and restore original tools.
+   */
+  exitVoxelMode() {
+    if (this.#mode === 'tools') return
+    
+    this.#mode = 'tools'
+    this.slots = [...this.#savedSlots]
+    this.#voxelItems = []
+    this.#createVoxelTool = null
+    
+    // Hide back button
+    if (this.#backButton) {
+      this.#backButton.style.display = 'none'
+    }
+    
+    this.selectedIndex = -1
+    this.render()
+  }
+
+  /**
+   * Handle Q key press to exit voxel mode and/or unselect tool.
+   * @param {KeyboardEvent} [e] - Optional keyboard event to prevent default
+   * @returns {boolean} true if handled
+   */
+  handleQ(e) {
+    if (this.#mode === 'voxels') {
+      this.exitVoxelMode()
+      this.clearSelection()
+      if (e) e.preventDefault()
+      return true
+    }
+    
+    if (this.hasSelection()) {
+      this.clearSelection()
+      if (e) e.preventDefault()
+      return true
+    }
+    
+    return false
+  }
+
+  /**
+   * Handle keyboard input for slot selection.
    * @param {KeyboardEvent} e
    * @returns {boolean} true if the key was handled
    */
@@ -144,10 +315,23 @@ export class Hotbar {
   }
 
   /**
-   * Get the currently selected slot info
+   * Get the currently selected slot info.
+   * In voxel mode, returns the CreateVoxelTool as the tool, not the VoxelItem.
    * @returns {{index: number, tool: Tool|null}}
    */
   getSelectedSlot() {
+    if (this.selectedIndex < 0) {
+      return { index: -1, tool: null }
+    }
+    
+    // In voxel mode, return the CreateVoxelTool, not the VoxelItem
+    if (this.#mode === 'voxels') {
+      return {
+        index: this.selectedIndex,
+        tool: this.#createVoxelTool,
+      }
+    }
+    
     return {
       index: this.selectedIndex,
       tool: this.slots[this.selectedIndex],

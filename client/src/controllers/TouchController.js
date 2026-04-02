@@ -4,6 +4,9 @@ import { InputButton } from '../NetworkProtocol.js'
 
 /**
  * Touch controller with on-screen joysticks and buttons for smartphone play.
+ *
+ * SIMPLIFIED: Mode management moved to BaseController/InputModeManager.
+ * This class now only handles raw input events and movement computation.
  */
 export class TouchController extends BaseController {
   /** @type {HTMLElement|null} */
@@ -52,6 +55,9 @@ export class TouchController extends BaseController {
   /** @type {number} Joystick radius in CSS pixels. */
   #radius = 40
 
+  /** @type {number|null} Touch identifier for the action button. */
+  #actionTouchId = null
+
   /** @type {Function} */
   #boundTouchStart
   /** @type {Function} */
@@ -64,6 +70,10 @@ export class TouchController extends BaseController {
   #tapSequence = []
   /** @type {number} Milliseconds window for tap sequence (600ms for triple) */
   static TAP_WINDOW_MS = 600
+  /** @type {number|null} Slot index of pending hotbar tap */
+  #pendingHotbarTap = null
+  /** @type {number} Number of taps in current sequence */
+  #pendingTapCount = 0
 
   constructor() {
     super()
@@ -142,7 +152,11 @@ export class TouchController extends BaseController {
       if (!target) continue
 
       if (target === this.#actionBtn || this.#actionBtn?.contains(target)) {
-        this.toolActivated = true
+        if (this.#actionTouchId === null) {
+          this.#actionTouchId = touch.identifier
+          this.actionPressStartTime = performance.now()
+          this.actionPressConsumed = false
+        }
         e.preventDefault()
         continue
       }
@@ -211,6 +225,14 @@ export class TouchController extends BaseController {
         this.#moveDx = 0
         this.#moveDy = 0
         this.#updateKnob(this.#moveKnob, 0, 0)
+      } else if (touch.identifier === this.#actionTouchId) {
+        this.#actionTouchId = null
+        if (this.actionPressStartTime !== null && !this.actionPressConsumed) {
+          this.toolActivated = true
+        }
+        this.actionPressStartTime = null
+        this.actionPressConsumed = false
+        this.longPressTriggered = false
       } else {
         const target = /** @type {HTMLElement|null} */ (touch.target)
         if (target === this.#jumpBtn || this.#jumpBtn?.contains(target)) {
@@ -255,56 +277,49 @@ export class TouchController extends BaseController {
 
   /**
    * Called when a hotbar slot is tapped (from Hotbar.js or main.js).
-   * Handles triple-tap detection for bulk builder mode.
+   * Records the tap for processing in processPendingInputs().
    * @param {number} slotIndex
    */
   onHotbarTap(slotIndex) {
     const now = performance.now()
-    
+
     // Clean old taps outside the window
     this.#tapSequence = this.#tapSequence.filter(t => now - t < TouchController.TAP_WINDOW_MS)
-    this.#tapSequence.push(now)
-    
-    const tapCount = this.#tapSequence.length
-    
-    if (tapCount >= 3) {
-      // Triple tap -> bulk builder mode
-      this.bulkBuilderMode = true
-      this.bulkBuilderModeChanged = true
-      this.builderMode = true
-      this.builderModeChanged = !this.builderMode
-      this.entryYaw = this.yaw
-      // Reset phase for new bulk operation
-      this.bulkPhase = 'none'
-      this.bulkStartVoxel = null
-      this.#tapSequence = [] // Reset sequence
-    } else if (tapCount === 2) {
-      // Double tap -> builder mode
-      const oldBulkMode = this.bulkBuilderMode
-      this.bulkBuilderMode = false
-      this.bulkBuilderModeChanged = oldBulkMode !== false
-      if (!this.builderMode) {
-        this.builderMode = true
-        this.builderModeChanged = true
-        this.entryYaw = this.yaw
-      }
-      // Reset bulk state
-      this.bulkPhase = 'none'
-      this.bulkStartVoxel = null
-    } else {
-      // Single tap -> normal mode
-      const oldBuilderMode = this.builderMode
-      const oldBulkMode = this.bulkBuilderMode
-      this.builderMode = false
-      this.builderModeChanged = oldBuilderMode !== false
-      this.bulkBuilderMode = false
-      this.bulkBuilderModeChanged = oldBulkMode !== false
-      // Reset bulk state
-      this.bulkPhase = 'none'
-      this.bulkStartVoxel = null
+
+    // Check if this is a continuation of the same slot
+    if (this.#pendingHotbarTap !== null && this.#pendingHotbarTap !== slotIndex) {
+      // Different slot - reset sequence
+      this.#tapSequence = []
     }
-    
-    this.selectedSlotIndex = slotIndex
+
+    this.#pendingHotbarTap = slotIndex
+    this.#tapSequence.push(now)
+    this.#pendingTapCount = this.#tapSequence.length
+  }
+
+  /**
+   * Process pending hotbar taps.
+   * Called from main loop with access to all dependencies.
+   * @param {import('../ui/Hotbar.js').Hotbar} hotbar
+   * @param {import('../ui/VoxelHighlight.js').VoxelHighlight} highlightSystem
+   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {import('three').PerspectiveCamera} camera
+   */
+  processPendingInputs(hotbar, highlightSystem, chunkRegistry, camera) {
+    if (this.#pendingHotbarTap !== null) {
+      // Cap at 2 taps (double tap) - triple tap is not used anymore
+      const tapCount = Math.min(this.#pendingTapCount, 2)
+      this.handleToolKeyPress(
+        this.#pendingHotbarTap,
+        tapCount,
+        hotbar,
+        highlightSystem,
+        chunkRegistry,
+        camera
+      )
+      this.#pendingHotbarTap = null
+      this.#pendingTapCount = 0
+    }
   }
 
   /**
@@ -331,8 +346,9 @@ export class TouchController extends BaseController {
     this.buttons = b
 
     // Compute builder movement delta when in builder mode
-    if (this.builderMode) {
-      this.builderMoveDelta = this.#computeBuilderMoveDelta(b)
+    if (this.modeManager.isBuilderMode()) {
+      const delta = this.#computeBuilderMoveDelta(b)
+      this.modeManager.setBuilderMoveDelta(delta.x, delta.y, delta.z)
     }
   }
 
@@ -342,8 +358,8 @@ export class TouchController extends BaseController {
    * @returns {{x: number, y: number, z: number}}
    */
   #computeBuilderMoveDelta(buttons) {
-    const cos = Math.cos(this.entryYaw)
-    const sin = Math.sin(this.entryYaw)
+    const cos = Math.cos(this.modeManager.getEntryYaw())
+    const sin = Math.sin(this.modeManager.getEntryYaw())
 
     let dx = 0
     let dz = 0
@@ -375,6 +391,14 @@ export class TouchController extends BaseController {
     if (buttons & InputButton.DESCEND) dy -= 1
 
     return { x: dx, y: dy, z: dz }
+  }
+
+  /**
+   * Trigger ESC/BACK action for touch devices.
+   * Called when the hotbar BACK button is pressed.
+   */
+  triggerEsc() {
+    this.escPressed = true
   }
 
   destroy() {

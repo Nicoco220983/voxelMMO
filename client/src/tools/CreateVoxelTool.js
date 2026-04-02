@@ -3,7 +3,7 @@ import { Tool } from './Tool.js'
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
 
 /**
- * @typedef {import('../systems/VoxelHighlightSystem.js').VoxelHighlightSystem} VoxelHighlightSystem
+ * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
  */
 
 /**
@@ -14,11 +14,27 @@ export class CreateVoxelTool extends Tool {
   #voxelType
 
   /**
-   * @param {number} voxelType - The voxel type to create (defaults to GRASS)
+   * @param {number} voxelType - The voxel type to create (defaults to BASIC)
    */
-  constructor(voxelType = 3) { // 3 = GRASS
+  constructor(voxelType = 4) { // 4 = BASIC
     super('Create Voxel', '➕')
     this.#voxelType = voxelType
+  }
+
+  /**
+   * Set the voxel type to create.
+   * @param {number} voxelType
+   */
+  setVoxelType(voxelType) {
+    this.#voxelType = voxelType
+  }
+
+  /**
+   * Get the current voxel type.
+   * @returns {number}
+   */
+  getVoxelType() {
+    return this.#voxelType
   }
 
   /**
@@ -44,7 +60,7 @@ export class CreateVoxelTool extends Tool {
   }
 
   /**
-   * @param {VoxelHighlightSystem} highlightSystem
+   * @param {VoxelHighlight} highlightSystem
    * @returns {ArrayBuffer|null}
    */
   onClick(highlightSystem) {
@@ -61,6 +77,10 @@ export class CreateVoxelTool extends Tool {
   }
 
   supportsBuilderMode() {
+    return true
+  }
+
+  supportsBulkMode() {
     return true
   }
 

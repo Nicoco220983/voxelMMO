@@ -3,7 +3,7 @@ import { Tool } from './Tool.js'
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
 
 /**
- * @typedef {import('../systems/VoxelHighlightSystem.js').VoxelHighlightSystem} VoxelHighlightSystem
+ * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
  */
 
 /**
@@ -35,7 +35,7 @@ export class DestroyVoxelTool extends Tool {
   }
 
   /**
-   * @param {VoxelHighlightSystem} highlightSystem
+   * @param {VoxelHighlight} highlightSystem
    * @returns {ArrayBuffer|null}
    */
   onClick(highlightSystem) {
@@ -50,6 +50,10 @@ export class DestroyVoxelTool extends Tool {
   }
 
   supportsBuilderMode() {
+    return true
+  }
+
+  supportsBulkMode() {
     return true
   }
 

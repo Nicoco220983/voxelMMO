@@ -1,7 +1,7 @@
 // @ts-check
 
 /**
- * @typedef {import('../systems/VoxelHighlightSystem.js').VoxelHighlightSystem} VoxelHighlightSystem
+ * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
  */
 
 /**
@@ -28,7 +28,7 @@ export class Tool {
 
   /**
    * Called when the tool is selected (player switches to this tool).
-   * @param {VoxelHighlightSystem} highlightSystem
+   * @param {VoxelHighlight} highlightSystem
    */
   onSelect(highlightSystem) {
     // Override in subclass if needed
@@ -36,7 +36,7 @@ export class Tool {
 
   /**
    * Called when the tool is deselected (player switches to another tool).
-   * @param {VoxelHighlightSystem} highlightSystem
+   * @param {VoxelHighlight} highlightSystem
    */
   onDeselect(highlightSystem) {
     // Override in subclass if needed
@@ -46,7 +46,7 @@ export class Tool {
    * Called when the player clicks (left mouse button) while this tool is active.
    * Returns serialized input data, or null if no action should be taken.
    * @abstract
-   * @param {VoxelHighlightSystem} highlightSystem
+   * @param {VoxelHighlight} highlightSystem
    * @returns {ArrayBuffer|null}
    */
   onClick(highlightSystem) {
@@ -66,6 +66,14 @@ export class Tool {
    * @returns {boolean}
    */
   supportsBuilderMode() {
+    return false
+  }
+
+  /**
+   * Returns true if this tool supports bulk mode.
+   * @returns {boolean}
+   */
+  supportsBulkMode() {
     return false
   }
 
@@ -95,7 +103,7 @@ export class EmptyTool extends Tool {
   }
 
   /**
-   * @param {VoxelHighlightSystem} highlightSystem
+   * @param {VoxelHighlight} highlightSystem
    * @returns {null}
    */
   onClick(highlightSystem) {

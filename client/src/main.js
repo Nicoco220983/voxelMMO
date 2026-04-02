@@ -9,9 +9,12 @@ import { Hotbar } from './ui/Hotbar.js'
 import { VoxelType } from './types.js'
 import { DestroyVoxelTool } from './tools/DestroyVoxelTool.js'
 import { CreateVoxelTool } from './tools/CreateVoxelTool.js'
-import { VoxelHighlightSystem } from './systems/VoxelHighlightSystem.js'
+import { VoxelItem } from './tools/VoxelItem.js'
+import { VoxelHighlight } from './ui/VoxelHighlight.js'
+import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
 import { createController } from './controllers/ControllerManager.js'
 import { TouchController } from './controllers/TouchController.js'
+import { KeyboardController } from './controllers/KeyboardController.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -68,24 +71,64 @@ function getLocalPlayer() {
   return client.selfEntity
 }
 
+// ── Voxel Items for CreateVoxelTool ───────────────────────────────────────
+const voxelItems = [
+  new VoxelItem(VoxelType.STONE, 'Stone', '🪨'),
+  new VoxelItem(VoxelType.DIRT, 'Dirt', '🟫'),
+  new VoxelItem(VoxelType.BASIC, 'Basic', '⬜'),
+]
+
 // ── Hotbar ─────────────────────────────────────────────────────────────────
 const hotbar = new Hotbar()
+
+// Create tools
+const destroyVoxelTool = new DestroyVoxelTool()
+const createVoxelTool = new CreateVoxelTool(VoxelType.BASIC)
+
 // Assign tools to slots (slot index 0 = key "1", slot 1 = key "2", etc.)
-hotbar.setSlot(1, new DestroyVoxelTool())   // Key "2"
-hotbar.setSlot(2, new CreateVoxelTool(VoxelType.BASIC))  // Key "3"
+hotbar.setSlot(1, destroyVoxelTool)   // Key "2"
+hotbar.setSlot(2, createVoxelTool)    // Key "3"
+
+// Wire up CreateVoxelTool callbacks for voxel mode
+/** @type {import('./tools/Tool.js').Tool|null} */
+let lastSelectedTool = null
+
+createVoxelTool.onSelect = () => {
+  hotbar.enterVoxelMode(voxelItems, createVoxelTool)
+}
+
+createVoxelTool.onDeselect = () => {
+  hotbar.exitVoxelMode()
+}
+
+// Handle tool unselection (ESC/BACK pressed)
+hotbar.onToolUnselected = () => {
+  lastSelectedTool = null
+}
 
 // ── Voxel Highlight System ────────────────────────────────────────────────
-const voxelHighlight = new VoxelHighlightSystem(scene)
+const voxelHighlight = new VoxelHighlight(scene)
+
+// ── Bulk Voxels Selection ─────────────────────────────────────────────────
+const bulkSelection = new BulkVoxelsSelection(scene)
 
 // ── Controller (keyboard or touch) ────────────────────────────────────────
 const controller = createController(renderer.domElement)
+controller.setBulkSelection(bulkSelection)
 
-// Hook up touch hotbar double-tap detection (must be after controller creation)
+// Hook up touch hotbar tap detection and ESC handling
 if (controller instanceof TouchController) {
+  // Override selectSlot to handle tap detection
   const originalSelectSlot = hotbar.selectSlot.bind(hotbar)
   hotbar.selectSlot = (index) => {
     controller.onHotbarTap(index)
     originalSelectSlot(index)
+  }
+
+  // Wire up back button to trigger ESC
+  hotbar.onToolUnselected = () => {
+    lastSelectedTool = null
+    controller.selectedSlotIndex = null
   }
 }
 
@@ -106,7 +149,7 @@ if (controller instanceof TouchController) {
 function slotToInputType(slotIndex) {
   // For now, all inputs are MOVE type
   // Future logic: different slots may trigger different input types
-  return InputType.MOVE
+  return 0 // InputType.MOVE
 }
 
 /** Send INPUT frame only when state changed. */
@@ -135,19 +178,61 @@ function animate() {
   const yaw     = controller.yaw
   const pitch   = controller.pitch
 
-  // Hotbar selection from controller (keyboard only - touch handled via hook)
+  // Handle Q key to unselect tool (and exit voxel mode if active)
+  if (controller.unselectToolPressed) {
+    hotbar.handleQ()
+    controller.unselectToolPressed = false
+  }
+
+  // Handle hotbar keyboard input
+  if (!(controller instanceof TouchController)) {
+    // Pass key events to hotbar - but we need to hook this up differently
+    // The hotbar's handleKeyDown is called via window event listener
+  }
+
+  // Hotbar selection from controller
   if (controller.selectedSlotIndex !== null && !(controller instanceof TouchController)) {
     hotbar.selectSlot(controller.selectedSlotIndex)
   }
 
-  // Sync controller state (auto-exit builder mode if tool changed, etc.)
-  controller.sync(hotbar)
+  // Detect tool changes to trigger onSelect/onDeselect callbacks
+  const currentSlot = hotbar.getSelectedSlot()
+  const currentTool = currentSlot.tool
+  if (currentTool !== lastSelectedTool) {
+    if (lastSelectedTool && lastSelectedTool.onDeselect) {
+      lastSelectedTool.onDeselect()
+    }
+    if (currentTool && currentTool.onSelect) {
+      currentTool.onSelect()
+    }
+    lastSelectedTool = currentTool
+  }
 
-  // Sync voxel highlight visuals with controller and hotbar state
-  voxelHighlight.sync(camera, hotbar, controller, client.chunkRegistry)
+  // Get current target FIRST (needed for sync's long-press bulk entry)
+  const toolMode = currentTool ? currentTool.getHighlightMode() : 'none'
+  const currentTarget = controller.getCurrentTarget(toolMode, voxelHighlight, camera, client.chunkRegistry)
+
+  // Process pending inputs (tool key presses with mode transitions)
+  if (controller instanceof KeyboardController || controller instanceof TouchController) {
+    controller.processPendingInputs(hotbar, voxelHighlight, client.chunkRegistry, camera)
+  }
+
+  // Sync controller state (auto-exit builder mode if tool changed, handle movement, etc.)
+  // Note: long-press bulk entry happens here, uses currentTarget for start position
+  controller.sync(hotbar, voxelHighlight, client.chunkRegistry, camera, currentTarget)
+
+  // Update voxel highlight visualization
+  voxelHighlight.setTarget(currentTarget, toolMode)
 
   // Send all pending input (tool activation and/or movement)
-  controller.sendInput(client, hotbar, voxelHighlight)
+  controller.sendInput(client, hotbar, voxelHighlight, camera, client.chunkRegistry)
+
+  // Sync bulk selection visuals
+  bulkSelection.setToolMode(toolMode === 'create' ? 'create' : 'destroy')
+  if (controller.modeManager.isBulkActive()) {
+    const bulkTarget = controller.getBulkTarget(toolMode, voxelHighlight, camera, client.chunkRegistry)
+    bulkSelection.updateEnd(bulkTarget)
+  }
 
   // ── Position update: get from local player entity via registry ────────────
   const localPlayer = getLocalPlayer()
@@ -185,18 +270,57 @@ function animate() {
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
   const modeName = _entityType === EntityType.GHOST_PLAYER ? 'ghost' : 'walk'
   let builderIndicator = ''
-  if (controller.bulkBuilderMode) {
-    const phaseText = controller.bulkPhase === 'none' ? 'SELECT START' : 'SELECT END'
+  if (controller.modeManager.isBulkActive()) {
+    const phaseText = controller.modeManager.getBulkPhase() === 'selecting_start' ? 'SELECT START' : 'SELECT END'
     builderIndicator = ` [BULK: ${phaseText}]`
-  } else if (controller.builderMode) {
+  } else if (controller.modeManager.isBuilderMode()) {
     builderIndicator = ' [BUILDER]'
   }
+
+  // Add voxel mode indicator
+  let voxelModeIndicator = ''
+  if (hotbar.isInVoxelMode()) {
+    const voxelTypeName = createVoxelTool.getVoxelType() === VoxelType.STONE ? 'Stone' :
+                          createVoxelTool.getVoxelType() === VoxelType.DIRT ? 'Dirt' : 'Basic'
+    voxelModeIndicator = ` [VOXEL: ${voxelTypeName}]`
+  }
+
   hud.textContent =
-    `[${modeName}]${builderIndicator}  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
+    `[${modeName}]${builderIndicator}${voxelModeIndicator}  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
     `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
 
   // Update controller at end of frame (resets one-shot flags)
   controller.update(dt)
 }
+
+// Hook up keyboard events for hotbar
+window.addEventListener('keydown', (e) => {
+  // Handle Q key for unselecting tool
+  if (e.code === 'KeyQ') {
+    if (hotbar.handleQ(e)) {
+      // Tool was unselected
+      if (!(controller instanceof TouchController)) {
+        controller.selectedSlotIndex = null
+      }
+    }
+    return
+  }
+
+  if (hotbar.handleKeyDown(e)) {
+    // Hotbar handled it, update controller state
+    const slot = hotbar.getSelectedSlot()
+    if (slot.index >= 0) {
+      if (!(controller instanceof TouchController)) {
+        // For keyboard controller, we handle this via selectedSlotIndex
+        // But the hotbar already processed it, so just sync
+      }
+    } else {
+      // Tool was unselected
+      if (!(controller instanceof TouchController)) {
+        controller.selectedSlotIndex = null
+      }
+    }
+  }
+})
 
 animate()

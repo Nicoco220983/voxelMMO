@@ -4,6 +4,9 @@ import { InputButton } from '../NetworkProtocol.js'
 
 /**
  * Keyboard + mouse controller with pointer-lock look.
+ *
+ * SIMPLIFIED: Mode management moved to BaseController/InputModeManager.
+ * This class now only handles raw input events and movement computation.
  */
 export class KeyboardController extends BaseController {
   /** @type {Record<string, boolean>} */
@@ -24,6 +27,8 @@ export class KeyboardController extends BaseController {
   /** @type {Function} */
   #boundMouseDown
   /** @type {Function} */
+  #boundMouseUp
+  /** @type {Function} */
   #boundClick
   /** @type {Function} */
   #boundPointerLockChange
@@ -33,6 +38,10 @@ export class KeyboardController extends BaseController {
   #pressSequence = []
   /** @type {number} Milliseconds window for press sequence (600ms for triple) */
   static PRESS_WINDOW_MS = 600
+  /** @type {number|null} Slot index of pending tool key press */
+  #pendingToolSlot = null
+  /** @type {number} Number of presses in current sequence */
+  #pendingPressCount = 0
 
   // Track which builder-move keys have been processed (for per-keypress movement)
   /** @type {Record<string, boolean>} */
@@ -51,13 +60,20 @@ export class KeyboardController extends BaseController {
     this.#boundKeyUp = this.#onKeyUp.bind(this)
     this.#boundMouseMove = this.#onMouseMove.bind(this)
     this.#boundMouseDown = this.#onMouseDown.bind(this)
+    this.#boundMouseUp = this.#onMouseUp.bind(this)
     this.#boundClick = this.#onClick.bind(this)
     this.#boundPointerLockChange = this.#onPointerLockChange.bind(this)
+
+    /** @type {boolean} True when pointer lock was just released (used for ESC handling) */
+    this.pointerLockJustExited = false
+    /** @type {boolean} True when Q key pressed to unselect tool without exiting pointer lock */
+    this.unselectToolPressed = false
 
     window.addEventListener('keydown', this.#boundKeyDown)
     window.addEventListener('keyup', this.#boundKeyUp)
     document.addEventListener('mousemove', this.#boundMouseMove)
     window.addEventListener('mousedown', this.#boundMouseDown)
+    window.addEventListener('mouseup', this.#boundMouseUp)
     this.#domElement.addEventListener('click', this.#boundClick)
     document.addEventListener('pointerlockchange', this.#boundPointerLockChange)
   }
@@ -70,51 +86,21 @@ export class KeyboardController extends BaseController {
     const toolSlot = this.#keyCodeToSlot(e.code)
     if (toolSlot !== null) {
       const now = performance.now()
-      
+
       // Clean old presses outside the window
       this.#pressSequence = this.#pressSequence.filter(t => now - t < KeyboardController.PRESS_WINDOW_MS)
-      this.#pressSequence.push(now)
-      
-      const pressCount = this.#pressSequence.length
-      
-      if (pressCount >= 3) {
-        // Triple press -> bulk builder mode
-        this.bulkBuilderMode = true
-        this.bulkBuilderModeChanged = true
-        this.builderMode = true
-        this.builderModeChanged = !this.builderMode // true if was not in builder
-        this.entryYaw = this.yaw
-        // Reset phase for new bulk operation
-        this.bulkPhase = 'none'
-        this.bulkStartVoxel = null
-        this.#pressSequence = [] // Reset sequence
-      } else if (pressCount === 2) {
-        // Double press -> builder mode
-        const oldBulkMode = this.bulkBuilderMode
-        this.bulkBuilderMode = false
-        this.bulkBuilderModeChanged = oldBulkMode !== false
-        if (!this.builderMode) {
-          this.builderMode = true
-          this.builderModeChanged = true
-          this.entryYaw = this.yaw
-        }
-        // Reset bulk state
-        this.bulkPhase = 'none'
-        this.bulkStartVoxel = null
-      } else {
-        // Single press -> normal mode
-        const oldBuilderMode = this.builderMode
-        const oldBulkMode = this.bulkBuilderMode
-        this.builderMode = false
-        this.builderModeChanged = oldBuilderMode !== false
-        this.bulkBuilderMode = false
-        this.bulkBuilderModeChanged = oldBulkMode !== false
-        // Reset bulk state
-        this.bulkPhase = 'none'
-        this.bulkStartVoxel = null
+
+      // Check if this is a continuation of the same slot
+      if (this.#pendingToolSlot !== null && this.#pendingToolSlot !== toolSlot) {
+        // Different slot - reset sequence
+        this.#pressSequence = []
+        this.#pendingPressCount = 0
       }
-      
-      this.selectedSlotIndex = toolSlot
+
+      this.#pendingToolSlot = toolSlot
+      this.#pressSequence.push(now)
+      this.#pendingPressCount = this.#pressSequence.length
+
       e.preventDefault()
       return
     }
@@ -127,24 +113,18 @@ export class KeyboardController extends BaseController {
       case 'Space': this.#keys.space = true; e.preventDefault(); break
       case 'ShiftLeft': case 'ShiftRight': this.#keys.shift = true; break
       case 'Escape':
-        // Priority 1: If in batch mode with startPos defined, clear it
-        if (this.bulkBuilderMode && this.bulkStartVoxel !== null) {
-          this.bulkStartVoxel = null
-          this.bulkPhase = 'none'
-          e.preventDefault()
-        }
-        // Priority 2: If in builder mode, exit it (go to associated non-builder mode)
-        else if (this.builderMode) {
-          const wasBulk = this.bulkBuilderMode
-          this.builderMode = false
-          this.builderModeChanged = true
-          this.bulkBuilderMode = false
-          this.bulkBuilderModeChanged = wasBulk
-          this.bulkPhase = 'none'
-          this.bulkStartVoxel = null
-          e.preventDefault()
-        }
-        // Priority 3: Otherwise, do not impede propagation (no preventDefault)
+        // ESC handling is now delegated to Hotbar via handleKeyDown
+        // We don't handle it here to allow Hotbar to manage tool unselection
+        break
+      case 'KeyQ':
+        // Q key unselects tool without exiting pointer lock
+        this.unselectToolPressed = true
+        e.preventDefault()
+        break
+      case 'KeyB':
+        // B key toggles builder mode - mark for processing in update()
+        this.#toggleBuilderModeRequested = true
+        e.preventDefault()
         break
       default: return
     }
@@ -204,6 +184,9 @@ export class KeyboardController extends BaseController {
     }
   }
 
+  /** @type {boolean} */
+  #toggleBuilderModeRequested = false
+
   /**
    * @param {MouseEvent} e
    */
@@ -221,7 +204,23 @@ export class KeyboardController extends BaseController {
    */
   #onMouseDown(e) {
     if (e.button !== 0) return
-    this.toolActivated = true
+    this.actionPressStartTime = performance.now()
+    this.actionPressConsumed = false
+  }
+
+  /**
+   * @param {MouseEvent} e
+   */
+  #onMouseUp(e) {
+    if (e.button !== 0) return
+    if (this.actionPressStartTime !== null) {
+      if (!this.actionPressConsumed) {
+        this.toolActivated = true
+      }
+      this.actionPressStartTime = null
+      this.actionPressConsumed = false
+      this.longPressTriggered = false
+    }
   }
 
   #onClick() {
@@ -229,11 +228,53 @@ export class KeyboardController extends BaseController {
   }
 
   #onPointerLockChange() {
+    const wasLocked = this.#pointerLocked
     this.#pointerLocked = document.pointerLockElement === this.#domElement
+    // Detect when pointer lock was just released (user pressed ESC)
+    if (wasLocked && !this.#pointerLocked) {
+      this.pointerLockJustExited = true
+    }
+  }
+
+  /**
+   * Process pending tool key presses and builder mode toggle.
+   * Called from main loop with access to all dependencies.
+   * @param {import('../ui/Hotbar.js').Hotbar} hotbar
+   * @param {import('../ui/VoxelHighlight.js').VoxelHighlight} highlightSystem
+   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {import('three').PerspectiveCamera} camera
+   */
+  processPendingInputs(hotbar, highlightSystem, chunkRegistry, camera) {
+    // Process tool key press
+    if (this.#pendingToolSlot !== null) {
+      // Cap at 2 presses (double press) - triple press is not used anymore
+      const pressCount = Math.min(this.#pendingPressCount, 2)
+      this.handleToolKeyPress(
+        this.#pendingToolSlot,
+        pressCount,
+        hotbar,
+        highlightSystem,
+        chunkRegistry,
+        camera
+      )
+      this.#pendingToolSlot = null
+      this.#pendingPressCount = 0
+    }
+
+    // Process builder mode toggle
+    if (this.#toggleBuilderModeRequested) {
+      this.toggleBuilderMode(hotbar, highlightSystem, chunkRegistry, camera)
+      this.#toggleBuilderModeRequested = false
+    }
   }
 
   update(dt) {
     super.update(dt)
+
+    // Reset pointer lock exit flag (consumed by main.js before update)
+    this.pointerLockJustExited = false
+    this.unselectToolPressed = false
+
     let b = 0
     if (this.#keys.w) b |= InputButton.FORWARD
     if (this.#keys.s) b |= InputButton.BACKWARD
@@ -244,8 +285,9 @@ export class KeyboardController extends BaseController {
     this.buttons = b
 
     // Compute builder movement delta when in builder mode (per-keypress, not continuous)
-    if (this.builderMode) {
-      this.builderMoveDelta = this.#computeBuilderMoveDeltaPerKeypress()
+    if (this.modeManager.isBuilderMode()) {
+      const delta = this.#computeBuilderMoveDeltaPerKeypress()
+      this.modeManager.setBuilderMoveDelta(delta.x, delta.y, delta.z)
     } else {
       // Reset processed flags when not in builder mode to ensure clean state on entry
       this.#resetBuilderKeyProcessed()
@@ -271,8 +313,8 @@ export class KeyboardController extends BaseController {
    * @returns {{x: number, y: number, z: number}}
    */
   #computeBuilderMoveDeltaPerKeypress() {
-    const cos = Math.cos(this.entryYaw)
-    const sin = Math.sin(this.entryYaw)
+    const cos = Math.cos(this.modeManager.getEntryYaw())
+    const sin = Math.sin(this.modeManager.getEntryYaw())
 
     let dx = 0
     let dz = 0
@@ -321,6 +363,7 @@ export class KeyboardController extends BaseController {
     window.removeEventListener('keyup', this.#boundKeyUp)
     document.removeEventListener('mousemove', this.#boundMouseMove)
     window.removeEventListener('mousedown', this.#boundMouseDown)
+    window.removeEventListener('mouseup', this.#boundMouseUp)
     this.#domElement.removeEventListener('click', this.#boundClick)
     document.removeEventListener('pointerlockchange', this.#boundPointerLockChange)
     if (document.pointerLockElement === this.#domElement) {
