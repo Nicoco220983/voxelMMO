@@ -29,6 +29,12 @@ export class VoxelHighlight {
   /** @type {boolean} */
   #isVisible = false
 
+  /** @type {boolean} */
+  #isBuilderMode = false
+
+  /** @type {THREE.Group|null} */
+  #builderGizmo = null
+
   /** Current highlighted voxel (for destroy mode)
    * @type {{x: number, y: number, z: number}|null}
    */
@@ -48,6 +54,7 @@ export class VoxelHighlight {
   constructor(scene) {
     this.#scene = scene
     this.#createHighlightMesh()
+    this.#createBuilderGizmo()
   }
 
   /**
@@ -79,6 +86,11 @@ export class VoxelHighlight {
     if (!this.#highlightMesh) return
     const material = /** @type {THREE.MeshBasicMaterial} */ (this.#highlightMesh.material)
     material.color.setHex(color)
+    if (this.#builderGizmo) {
+      this.#builderGizmo.children.forEach((child) => {
+        /** @type {THREE.MeshBasicMaterial} */ (child.material).color.setHex(color)
+      })
+    }
   }
 
   /**
@@ -87,13 +99,16 @@ export class VoxelHighlight {
    * @param {{x: number, y: number, z: number}|null} target
    * @param {number} color - Hex color value (0xRRGGBB), 0 to hide
    * @param {'destroy'|'create'} mode - Tool mode for tracking voxel type
+   * @param {boolean} [isBuilderMode=false] - Whether builder mode is active
    */
-  setTarget(target, color, mode) {
+  setTarget(target, color, mode, isBuilderMode = false) {
     // Update color if changed
     if (this.#currentColor !== color) {
       this.#currentColor = color
       this.#updateHighlightColor(color)
     }
+
+    this.#isBuilderMode = isBuilderMode
 
     if (!target || color === 0) {
       this.#hide()
@@ -257,6 +272,29 @@ export class VoxelHighlight {
   }
 
   /**
+   * Create the builder mode axis-aligned gizmo (hidden by default).
+   * @private
+   */
+  #createBuilderGizmo() {
+    const geometryX = new THREE.BoxGeometry(16, 0.05, 0.05)
+    const geometryY = new THREE.BoxGeometry(0.05, 16, 0.05)
+    const geometryZ = new THREE.BoxGeometry(0.05, 0.05, 16)
+
+    const material = new THREE.MeshBasicMaterial({ color: this.#currentColor, transparent: true, opacity: 0.5, depthWrite: false })
+
+    const meshX = new THREE.Mesh(geometryX, material)
+    const meshY = new THREE.Mesh(geometryY, material)
+    const meshZ = new THREE.Mesh(geometryZ, material)
+
+    this.#builderGizmo = new THREE.Group()
+    this.#builderGizmo.add(meshX)
+    this.#builderGizmo.add(meshY)
+    this.#builderGizmo.add(meshZ)
+    this.#builderGizmo.visible = false
+    this.#scene.add(this.#builderGizmo)
+  }
+
+  /**
    * Show highlight at specified voxel coordinates.
    * @private
    * @param {number} vx
@@ -268,6 +306,11 @@ export class VoxelHighlight {
     this.#highlightMesh.position.set(vx + 0.5, vy + 0.5, vz + 0.5)
     this.#highlightMesh.visible = true
     this.#isVisible = true
+
+    if (this.#builderGizmo) {
+      this.#builderGizmo.position.set(vx + 0.5, vy + 0.5, vz + 0.5)
+      this.#builderGizmo.visible = this.#isBuilderMode
+    }
   }
 
   /**
@@ -280,6 +323,9 @@ export class VoxelHighlight {
     this.#isVisible = false
     this.#highlightedVoxel = null
     this.#placementVoxel = null
+    if (this.#builderGizmo) {
+      this.#builderGizmo.visible = false
+    }
   }
 
   /**
@@ -307,6 +353,17 @@ export class VoxelHighlight {
       this.#highlightMesh.geometry.dispose()
       this.#highlightMesh.material.dispose()
       this.#highlightMesh = null
+    }
+    if (this.#builderGizmo) {
+      this.#scene.remove(this.#builderGizmo)
+      this.#builderGizmo.children.forEach((child) => {
+        child.geometry.dispose()
+      })
+      // All children share the same material, dispose once
+      if (this.#builderGizmo.children.length > 0) {
+        this.#builderGizmo.children[0].material.dispose()
+      }
+      this.#builderGizmo = null
     }
   }
 }

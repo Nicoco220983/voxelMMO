@@ -223,7 +223,7 @@ function animate() {
   controller.sync(hotbar, voxelHighlight, client.chunkRegistry, camera, currentTarget)
 
   // Update voxel highlight visualization
-  voxelHighlight.setTarget(currentTarget, toolColor, toolMode)
+  voxelHighlight.setTarget(currentTarget, toolColor, toolMode, controller.isBuilderMode())
 
   // Send all pending input (tool activation and/or movement)
   controller.sendInput(client, hotbar, voxelHighlight, camera, client.chunkRegistry)
