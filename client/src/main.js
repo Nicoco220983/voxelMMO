@@ -242,27 +242,9 @@ function animate() {
 
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
   const modeName = _entityType === EntityType.GHOST_PLAYER ? 'ghost' : 'walk'
-  let builderIndicator = ''
-  if (controller.isBulkActive()) {
-    const phaseText = controller.getBulkPhase() === 'selecting_start' ? 'SELECT START' : 'SELECT END'
-    builderIndicator = ` [BULK: ${phaseText}]`
-  } else if (controller.isBuilderMode()) {
-    builderIndicator = ' [BUILDER]'
-  }
-
-  // Add voxel mode indicator
-  let voxelModeIndicator = ''
-  if (hotbar.isInVoxelMode()) {
-    const createVoxelTool = hotbar.getCreateVoxelTool()
-    if (createVoxelTool) {
-      const item = hotbar.voxelItems.find(i => i.type === createVoxelTool.getVoxelType())
-      const voxelTypeName = item ? item.name : 'Unknown'
-      voxelModeIndicator = ` [VOXEL: ${voxelTypeName}]`
-    }
-  }
 
   hud.textContent =
-    `[${modeName}]${builderIndicator}${voxelModeIndicator}  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
+    `[${modeName}]  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
     `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
 
   // Update controller at end of frame (resets one-shot flags)

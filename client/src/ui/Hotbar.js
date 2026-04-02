@@ -426,12 +426,4 @@ export class Hotbar {
       tool: this.slots[this.selectedIndex],
     }
   }
-
-  /**
-   * Get the CreateVoxelTool instance.
-   * @returns {import('../tools/CreateVoxelTool.js').CreateVoxelTool|null}
-   */
-  getCreateVoxelTool() {
-    return this.#createVoxelTool
-  }
 }
