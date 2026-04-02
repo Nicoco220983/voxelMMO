@@ -99,19 +99,8 @@ export function stringToEntityType(str) {
 /** @type {number} */ export const CHUNK_VOXEL_COUNT = CHUNK_SIZE_X * CHUNK_SIZE_Y * CHUNK_SIZE_Z
 
 // ── VoxelType (must stay in sync with server common/VoxelTypes.hpp) ─────────
-
-/**
- * Known voxel type values (uint8). 0 = air, never rendered.
- * @readonly
- * @enum {number}
- */
-export const VoxelType = Object.freeze({
-  AIR:   0,
-  STONE: 1,
-  DIRT:  2,
-  GRASS: 3,  // deprecated
-  BASIC: 4,
-})
+// NOTE: VoxelType enum moved to VoxelTypes.js for cleaner structure (mirrors server).
+// Import from there: import { VoxelType } from './VoxelTypes.js'
 
 // ── Sub-voxel constants (must match server Types.hpp) ────────────────────────
 

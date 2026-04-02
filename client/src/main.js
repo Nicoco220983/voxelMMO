@@ -6,7 +6,7 @@ import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
 import { Hotbar } from './ui/Hotbar.js'
-import { VoxelType } from './types.js'
+import { VoxelType } from './VoxelTypes.js'
 import { DestroyVoxelTool } from './tools/DestroyVoxelTool.js'
 import { CreateVoxelTool } from './tools/CreateVoxelTool.js'
 import { VoxelItem } from './tools/VoxelItem.js'
@@ -72,10 +72,11 @@ function getLocalPlayer() {
 }
 
 // ── Voxel Items for CreateVoxelTool ───────────────────────────────────────
+// Ordered by VoxelType value: BASIC (1), STONE (2), DIRT (3)
 const voxelItems = [
+  new VoxelItem(VoxelType.BASIC, 'Basic', '⬜'),
   new VoxelItem(VoxelType.STONE, 'Stone', '🪨'),
   new VoxelItem(VoxelType.DIRT, 'Dirt', '🟫'),
-  new VoxelItem(VoxelType.BASIC, 'Basic', '⬜'),
 ]
 
 // ── Hotbar ─────────────────────────────────────────────────────────────────
@@ -281,8 +282,8 @@ function animate() {
   // Add voxel mode indicator
   let voxelModeIndicator = ''
   if (hotbar.isInVoxelMode()) {
-    const voxelTypeName = createVoxelTool.getVoxelType() === VoxelType.STONE ? 'Stone' :
-                          createVoxelTool.getVoxelType() === VoxelType.DIRT ? 'Dirt' : 'Basic'
+    const voxelTypeName = createVoxelTool.getVoxelType() === VoxelType.BASIC ? 'Basic' :
+                          createVoxelTool.getVoxelType() === VoxelType.STONE ? 'Stone' : 'Dirt'
     voxelModeIndicator = ` [VOXEL: ${voxelTypeName}]`
   }
 

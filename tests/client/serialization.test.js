@@ -40,8 +40,9 @@ vi.mock('../../client/src/utils.js', () => ({
 import { Chunk } from '../../client/src/Chunk.js'
 import {
   CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT,
-  VoxelType, voxelIndexFromPos, getVoxelIndexPos,
+  voxelIndexFromPos, getVoxelIndexPos,
 } from '../../client/src/types.js'
+import { VoxelType } from '../../client/src/VoxelTypes.js'
 import { ServerMessageType } from '../../client/src/NetworkProtocol.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -167,13 +168,13 @@ describe('Chunk.applySnapshot', () => {
 
   it('populates voxels correctly', () => {
     const voxels = new Uint8Array(CHUNK_VOXEL_COUNT)
-    voxels[5 * CHUNK_SIZE_X * CHUNK_SIZE_Z + 10 * CHUNK_SIZE_Z + 20] = VoxelType.GRASS
+    voxels[5 * CHUNK_SIZE_X * CHUNK_SIZE_Z + 10 * CHUNK_SIZE_Z + 20] = VoxelType.BASIC
     voxels[3 * CHUNK_SIZE_X * CHUNK_SIZE_Z +  7 * CHUNK_SIZE_Z +  7] = VoxelType.STONE
 
     const chunk = new Chunk(chunkId)
     chunk.applySnapshot(buildSnapshotMsg(chunkId, 42, voxels), 42)
 
-    expect(chunk.getVoxel(10, 5, 20)).toBe(VoxelType.GRASS)
+    expect(chunk.getVoxel(10, 5, 20)).toBe(VoxelType.BASIC)
     expect(chunk.getVoxel(7,  3,  7)).toBe(VoxelType.STONE)
     expect(chunk.getVoxel(0,  0,  0)).toBe(VoxelType.AIR)
   })
@@ -220,10 +221,10 @@ describe('Chunk.applyVoxelDelta', () => {
   })
 
   it('applies single voxel change', () => {
-    const view = buildDeltaMsg(chunkId, 7, [{ vy: 5, vx: 10, vz: 20, vtype: VoxelType.GRASS }])
+    const view = buildDeltaMsg(chunkId, 7, [{ vy: 5, vx: 10, vz: 20, vtype: VoxelType.BASIC }])
     const chunk = new Chunk(chunkId)
     chunk.applyVoxelDelta(view, false, 7)
-    expect(chunk.getVoxel(10, 5, 20)).toBe(VoxelType.GRASS)
+    expect(chunk.getVoxel(10, 5, 20)).toBe(VoxelType.BASIC)
     expect(chunk.getVoxel(0, 0, 0)).toBe(VoxelType.AIR)
   })
 
@@ -231,22 +232,22 @@ describe('Chunk.applyVoxelDelta', () => {
     const mods = [
       { vy: 0, vx: 0,  vz: 0,  vtype: VoxelType.STONE },
       { vy: 5, vx: 31, vz: 31, vtype: VoxelType.DIRT  },
-      { vy: 9, vx: 16, vz: 16, vtype: VoxelType.GRASS },
+      { vy: 9, vx: 16, vz: 16, vtype: VoxelType.BASIC },
     ]
     const chunk = new Chunk(chunkId)
     chunk.applyVoxelDelta(buildDeltaMsg(chunkId, 10, mods), false, 10)
 
     expect(chunk.getVoxel(0,  0, 0 )).toBe(VoxelType.STONE)
     expect(chunk.getVoxel(31, 5, 31)).toBe(VoxelType.DIRT)
-    expect(chunk.getVoxel(16, 9, 16)).toBe(VoxelType.GRASS)
+    expect(chunk.getVoxel(16, 9, 16)).toBe(VoxelType.BASIC)
   })
 
   it('overwrites a previously set voxel', () => {
     const cid = packChunkId(0, 0, 0)
     const chunk = new Chunk(cid)
 
-    chunk.applyVoxelDelta(buildDeltaMsg(cid, 1, [{ vy: 2, vx: 4, vz: 8, vtype: VoxelType.GRASS }]), false, 1)
-    expect(chunk.getVoxel(4, 2, 8)).toBe(VoxelType.GRASS)
+    chunk.applyVoxelDelta(buildDeltaMsg(cid, 1, [{ vy: 2, vx: 4, vz: 8, vtype: VoxelType.BASIC }]), false, 1)
+    expect(chunk.getVoxel(4, 2, 8)).toBe(VoxelType.BASIC)
 
     chunk.applyVoxelDelta(buildDeltaMsg(cid, 2, [{ vy: 2, vx: 4, vz: 8, vtype: VoxelType.AIR }]), false, 2)
     expect(chunk.getVoxel(4, 2, 8)).toBe(VoxelType.AIR)
@@ -266,7 +267,7 @@ describe('batch framing (length-prefixed messages)', () => {
   it('correctly splits two concatenated deltas', () => {
     const cid = packChunkId(0, 0, 0)
     const v1 = buildDeltaMsg(cid, 1, [{ vy: 1, vx: 1, vz: 1, vtype: VoxelType.STONE }])
-    const v2 = buildDeltaMsg(cid, 2, [{ vy: 2, vx: 2, vz: 2, vtype: VoxelType.GRASS }])
+    const v2 = buildDeltaMsg(cid, 2, [{ vy: 2, vx: 2, vz: 2, vtype: VoxelType.BASIC }])
 
     const len1 = v1.byteLength
     const len2 = v2.byteLength
@@ -289,7 +290,7 @@ describe('batch framing (length-prefixed messages)', () => {
     }
 
     expect(chunk.getVoxel(1, 1, 1)).toBe(VoxelType.STONE)
-    expect(chunk.getVoxel(2, 2, 2)).toBe(VoxelType.GRASS)
+    expect(chunk.getVoxel(2, 2, 2)).toBe(VoxelType.BASIC)
   })
 })
 

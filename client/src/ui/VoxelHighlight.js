@@ -1,6 +1,7 @@
 // @ts-check
 import * as THREE from 'three'
-import { VoxelType, chunkIdFromVoxelPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, getChunkPos } from '../types.js'
+import { VoxelType } from '../VoxelTypes.js'
+import { chunkIdFromVoxelPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, getChunkPos } from '../types.js'
 
 /** @typedef {import('../types.js').ChunkId} ChunkId */
 /** @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry */

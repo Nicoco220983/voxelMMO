@@ -6,14 +6,14 @@ namespace voxelmmo {
 /**
  * @brief Named constants for every known VoxelType value.
  *
- * Must stay in sync with client/src/types.js VoxelType enum.
+ * Must stay in sync with client/src/VoxelTypes.js.
+ * @note GRASS has been removed. BASIC is now the first solid voxel type (1).
  */
 namespace VoxelTypes {
     inline constexpr VoxelType AIR   = 0;
-    inline constexpr VoxelType STONE = 1;
-    inline constexpr VoxelType DIRT  = 2;
-    inline constexpr VoxelType GRASS = 3;  // deprecated
-    inline constexpr VoxelType BASIC = 4;
+    inline constexpr VoxelType BASIC = 1;
+    inline constexpr VoxelType STONE = 2;
+    inline constexpr VoxelType DIRT  = 3;
 } // namespace VoxelTypes
 
 } // namespace voxelmmo

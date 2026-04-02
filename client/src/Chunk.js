@@ -1,6 +1,7 @@
 // @ts-check
 import * as THREE from 'three'
-import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, VoxelType, getChunkPos } from './types.js'
+import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, getChunkPos } from './types.js'
+import { VoxelType } from './VoxelTypes.js'
 import { lz4Decompress, BufReader } from './utils.js'
 import { voxelTextureAtlas, getVoxelUvs } from './VoxelTextures.js'
 
