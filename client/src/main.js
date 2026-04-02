@@ -210,6 +210,7 @@ function animate() {
 
   // Get current target FIRST (needed for sync's long-press bulk entry)
   const toolMode = currentTool ? currentTool.getHighlightMode() : 'none'
+  const toolColor = currentTool ? currentTool.getHighlightColor() : 0
   const currentTarget = controller.getCurrentTarget(toolMode, voxelHighlight, camera, client.chunkRegistry)
 
   // Process pending inputs (tool key presses with mode transitions)
@@ -222,14 +223,14 @@ function animate() {
   controller.sync(hotbar, voxelHighlight, client.chunkRegistry, camera, currentTarget)
 
   // Update voxel highlight visualization
-  voxelHighlight.setTarget(currentTarget, toolMode)
+  voxelHighlight.setTarget(currentTarget, toolColor, toolMode)
 
   // Send all pending input (tool activation and/or movement)
   controller.sendInput(client, hotbar, voxelHighlight, camera, client.chunkRegistry)
 
   // Sync bulk selection visuals
-  bulkSelection.setToolMode(toolMode === 'create' ? 'create' : 'destroy')
-  if (controller.modeManager.isBulkActive()) {
+  bulkSelection.setColor(toolColor)
+  if (controller.isBulkActive()) {
     const bulkTarget = controller.getBulkTarget(toolMode, voxelHighlight, camera, client.chunkRegistry)
     bulkSelection.updateEnd(bulkTarget)
   }
@@ -270,10 +271,10 @@ function animate() {
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
   const modeName = _entityType === EntityType.GHOST_PLAYER ? 'ghost' : 'walk'
   let builderIndicator = ''
-  if (controller.modeManager.isBulkActive()) {
-    const phaseText = controller.modeManager.getBulkPhase() === 'selecting_start' ? 'SELECT START' : 'SELECT END'
+  if (controller.isBulkActive()) {
+    const phaseText = controller.getBulkPhase() === 'selecting_start' ? 'SELECT START' : 'SELECT END'
     builderIndicator = ` [BULK: ${phaseText}]`
-  } else if (controller.modeManager.isBuilderMode()) {
+  } else if (controller.isBuilderMode()) {
     builderIndicator = ' [BUILDER]'
   }
 

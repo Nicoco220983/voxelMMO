@@ -4,9 +4,7 @@ import { InputButton } from '../NetworkProtocol.js'
 
 /**
  * Keyboard + mouse controller with pointer-lock look.
- *
- * SIMPLIFIED: Mode management moved to BaseController/InputModeManager.
- * This class now only handles raw input events and movement computation.
+ * Handles raw input events and movement computation.
  */
 export class KeyboardController extends BaseController {
   /** @type {Record<string, boolean>} */
@@ -285,9 +283,9 @@ export class KeyboardController extends BaseController {
     this.buttons = b
 
     // Compute builder movement delta when in builder mode (per-keypress, not continuous)
-    if (this.modeManager.isBuilderMode()) {
+    if (this.isBuilderMode()) {
       const delta = this.#computeBuilderMoveDeltaPerKeypress()
-      this.modeManager.setBuilderMoveDelta(delta.x, delta.y, delta.z)
+      this.setBuilderMoveDelta(delta.x, delta.y, delta.z)
     } else {
       // Reset processed flags when not in builder mode to ensure clean state on entry
       this.#resetBuilderKeyProcessed()
@@ -313,8 +311,8 @@ export class KeyboardController extends BaseController {
    * @returns {{x: number, y: number, z: number}}
    */
   #computeBuilderMoveDeltaPerKeypress() {
-    const cos = Math.cos(this.modeManager.getEntryYaw())
-    const sin = Math.sin(this.modeManager.getEntryYaw())
+    const cos = Math.cos(this.getEntryYaw())
+    const sin = Math.sin(this.getEntryYaw())
 
     let dx = 0
     let dz = 0

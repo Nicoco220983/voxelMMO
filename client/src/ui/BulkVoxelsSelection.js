@@ -1,11 +1,6 @@
 // @ts-check
 import * as THREE from 'three'
 
-/** Highlight color - red for destroy */
-const HIGHLIGHT_COLOR_DESTROY = 0xFF0000
-/** Highlight color - green for create */
-const HIGHLIGHT_COLOR_CREATE = 0x00FF00
-
 /**
  * Encapsulates the state, logic and visuals of a bulk voxel selection.
  * Owns its own Three.js mesh and handles the start/end state machine.
@@ -23,8 +18,8 @@ export class BulkVoxelsSelection {
   /** @type {{x: number, y: number, z: number}|null} */
   #start = null
 
-  /** @type {'destroy'|'create'} */
-  #toolMode = 'destroy'
+  /** @type {number} Current highlight color */
+  #color = 0xFFFFFF
 
   /**
    * @param {THREE.Scene} scene
@@ -40,7 +35,7 @@ export class BulkVoxelsSelection {
   #createMesh() {
     const geometry = new THREE.BoxGeometry(1, 1, 1)
     const material = new THREE.MeshBasicMaterial({
-      color: HIGHLIGHT_COLOR_CREATE,
+      color: this.#color,
       transparent: true,
       opacity: 0.25,
       depthWrite: false
@@ -59,7 +54,7 @@ export class BulkVoxelsSelection {
   }
 
   /**
-   * Current bulk phase matching InputModeManager semantics.
+   * Current bulk phase matching BaseController semantics.
    * @returns {'idle'|'selecting_start'|'selecting_end'}
    */
   getBulkPhase() {
@@ -76,24 +71,24 @@ export class BulkVoxelsSelection {
 
   /**
    * Activate bulk mode without setting a start voxel yet (e.g. triple-tap).
-   * @param {'destroy'|'create'} [toolMode='destroy']
+   * @param {number} [color=0xFF0000] - Hex color value (0xRRGGBB)
    */
-  activate(toolMode = 'destroy') {
+  activate(color = 0xFF0000) {
     this.#active = true
     this.#start = null
-    this.setToolMode(toolMode)
+    this.setColor(color)
     if (this.#mesh) this.#mesh.visible = false
   }
 
   /**
    * Activate bulk mode and immediately set the start voxel (e.g. long-press).
    * @param {{x: number, y: number, z: number}} startPos
-   * @param {'destroy'|'create'} [toolMode='destroy']
+   * @param {number} [color=0xFF0000] - Hex color value (0xRRGGBB)
    */
-  start(startPos, toolMode = 'destroy') {
+  start(startPos, color = 0xFF0000) {
     this.#active = true
     this.#start = { x: startPos.x, y: startPos.y, z: startPos.z }
-    this.setToolMode(toolMode)
+    this.setColor(color)
     this.#updateMesh(this.#start, this.#start)
   }
 
@@ -143,14 +138,14 @@ export class BulkVoxelsSelection {
   }
 
   /**
-   * Update the tool mode (affects preview color).
-   * @param {'destroy'|'create'} toolMode
+   * Update the highlight color.
+   * @param {number} color - Hex color value (0xRRGGBB)
    */
-  setToolMode(toolMode) {
-    this.#toolMode = toolMode
+  setColor(color) {
+    this.#color = color
     if (this.#mesh) {
       const material = /** @type {THREE.MeshBasicMaterial} */ (this.#mesh.material)
-      material.color.setHex(toolMode === 'create' ? HIGHLIGHT_COLOR_CREATE : HIGHLIGHT_COLOR_DESTROY)
+      material.color.setHex(color)
     }
   }
 

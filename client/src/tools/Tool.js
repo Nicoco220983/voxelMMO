@@ -62,6 +62,14 @@ export class Tool {
   }
 
   /**
+   * Get the highlight color for this tool.
+   * @returns {number} Hex color value (0xRRGGBB)
+   */
+  getHighlightColor() {
+    return 0xFFFFFF  // Default white
+  }
+
+  /**
    * Returns true if this tool supports builder mode.
    * @returns {boolean}
    */

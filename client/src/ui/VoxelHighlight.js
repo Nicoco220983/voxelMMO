@@ -5,23 +5,19 @@ import { VoxelType, chunkIdFromVoxelPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_
 /** @typedef {import('../types.js').ChunkId} ChunkId */
 /** @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
 /** @typedef {import('../ui/Hotbar.js').Hotbar} Hotbar */
-/** @typedef {import('../controllers/InputModeManager.js').InputModeManager} InputModeManager */
 
 /** Maximum reach distance for voxel highlighting (in voxels) */
 const MAX_REACH_DISTANCE = 8
 
-/** Highlight color - red for destroy (in both normal and builder/batch mode) */
-const HIGHLIGHT_COLOR_DESTROY = 0xFF0000
-/** Highlight color - green for create (in both normal and builder/batch mode) */
-const HIGHLIGHT_COLOR_CREATE = 0x00FF00
+
 
 /**
  * @class VoxelHighlight
  * @description Manages the semi-transparent highlight box for voxel selection.
  * Casts a ray from camera center and highlights the first non-air voxel within reach.
  * 
- * SIMPLIFIED: This class now only handles visualization. Mode state and target
- * selection logic moved to InputModeManager. Use setTarget() to update visuals.
+ * This class only handles visualization. Mode state and target selection logic
+ * is in BaseController. Use setTarget() to update visuals.
  */
 export class VoxelHighlight {
   /** @type {THREE.Scene} */
@@ -43,8 +39,8 @@ export class VoxelHighlight {
    */
   #placementVoxel = null
 
-  /** @type {'destroy'|'create'|'none'} */
-  #currentMode = 'none'
+  /** @type {number} Current highlight color */
+  #currentColor = 0xFFFFFF
 
   /**
    * @param {THREE.Scene} scene
@@ -63,7 +59,7 @@ export class VoxelHighlight {
     // Create a slightly larger box (1.05x) to avoid z-fighting
     const geometry = new THREE.BoxGeometry(1.05, 1.05, 1.05)
     const material = new THREE.MeshBasicMaterial({
-      color: HIGHLIGHT_COLOR_DESTROY,
+      color: this.#currentColor,
       transparent: true,
       opacity: 0.5,
       depthWrite: false
@@ -75,35 +71,31 @@ export class VoxelHighlight {
   }
 
   /**
-   * Update highlight color based on tool mode.
-   * Uses green for create, red for destroy.
+   * Update highlight color.
    * @private
-   * @param {'destroy'|'create'|'none'} mode
+   * @param {number} color - Hex color value (0xRRGGBB)
    */
-  #updateHighlightColor(mode) {
+  #updateHighlightColor(color) {
     if (!this.#highlightMesh) return
     const material = /** @type {THREE.MeshBasicMaterial} */ (this.#highlightMesh.material)
-    if (mode === 'create') {
-      material.color.setHex(HIGHLIGHT_COLOR_CREATE)
-    } else {
-      material.color.setHex(HIGHLIGHT_COLOR_DESTROY)
-    }
+    material.color.setHex(color)
   }
 
   /**
    * Set the current target for visualization.
-   * Called by main loop with target from InputModeManager.
+   * Called by main loop with target from BaseController.
    * @param {{x: number, y: number, z: number}|null} target
-   * @param {'destroy'|'create'|'none'} mode
+   * @param {number} color - Hex color value (0xRRGGBB), 0 to hide
+   * @param {'destroy'|'create'} mode - Tool mode for tracking voxel type
    */
-  setTarget(target, mode) {
-    // Update color if mode changed
-    if (this.#currentMode !== mode) {
-      this.#currentMode = mode
-      this.#updateHighlightColor(mode)
+  setTarget(target, color, mode) {
+    // Update color if changed
+    if (this.#currentColor !== color) {
+      this.#currentColor = color
+      this.#updateHighlightColor(color)
     }
 
-    if (!target || mode === 'none') {
+    if (!target || color === 0) {
       this.#hide()
       return
     }
@@ -124,7 +116,7 @@ export class VoxelHighlight {
 
   /**
    * Perform raycast to find target voxel.
-   * Used by InputModeManager to determine initial targets on mode entry.
+   * Used by BaseController to determine initial targets on mode entry.
    * @param {THREE.PerspectiveCamera} camera
    * @param {ChunkRegistry} chunkRegistry
    * @param {'destroy'|'create'|'none'} toolMode

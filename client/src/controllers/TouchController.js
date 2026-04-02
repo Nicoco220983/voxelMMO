@@ -4,9 +4,7 @@ import { InputButton } from '../NetworkProtocol.js'
 
 /**
  * Touch controller with on-screen joysticks and buttons for smartphone play.
- *
- * SIMPLIFIED: Mode management moved to BaseController/InputModeManager.
- * This class now only handles raw input events and movement computation.
+ * Handles raw input events and movement computation.
  */
 export class TouchController extends BaseController {
   /** @type {HTMLElement|null} */
@@ -346,9 +344,9 @@ export class TouchController extends BaseController {
     this.buttons = b
 
     // Compute builder movement delta when in builder mode
-    if (this.modeManager.isBuilderMode()) {
+    if (this.isBuilderMode()) {
       const delta = this.#computeBuilderMoveDelta(b)
-      this.modeManager.setBuilderMoveDelta(delta.x, delta.y, delta.z)
+      this.setBuilderMoveDelta(delta.x, delta.y, delta.z)
     }
   }
 
@@ -358,8 +356,8 @@ export class TouchController extends BaseController {
    * @returns {{x: number, y: number, z: number}}
    */
   #computeBuilderMoveDelta(buttons) {
-    const cos = Math.cos(this.modeManager.getEntryYaw())
-    const sin = Math.sin(this.modeManager.getEntryYaw())
+    const cos = Math.cos(this.getEntryYaw())
+    const sin = Math.sin(this.getEntryYaw())
 
     let dx = 0
     let dz = 0

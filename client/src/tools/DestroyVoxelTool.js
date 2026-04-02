@@ -49,6 +49,10 @@ export class DestroyVoxelTool extends Tool {
     return 'destroy'
   }
 
+  getHighlightColor() {
+    return 0xFF0000  // Red for destroy
+  }
+
   supportsBuilderMode() {
     return true
   }

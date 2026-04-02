@@ -76,6 +76,10 @@ export class CreateVoxelTool extends Tool {
     return 'create'
   }
 
+  getHighlightColor() {
+    return 0x00FF00  // Green for create
+  }
+
   supportsBuilderMode() {
     return true
   }

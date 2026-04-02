@@ -4,17 +4,16 @@
  * @typedef {import('../ui/Hotbar.js').Hotbar} Hotbar
  * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
  * @typedef {import('../GameClient.js').GameClient} GameClient
+ * @typedef {import('../ui/BulkVoxelsSelection.js').BulkVoxelsSelection} BulkVoxelsSelection
  */
 
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
-import { InputModeManager } from './InputModeManager.js'
 
 /**
  * Abstract base class for input controllers (keyboard/mouse or touch).
  * Provides a unified interface so main.js doesn't care about the input source.
  *
- * SIMPLIFIED: Mode state (builder/bulk) is now managed by InputModeManager.
- * Controllers only report raw input events; mode transitions handled centrally.
+ * Manages input modes: NORMAL → BUILDER → BULK transitions and target management.
  *
  * @abstract
  */
@@ -42,20 +41,6 @@ export class BaseController {
   selectedSlotIndex = null
 
   /**
-   * Unified mode state manager.
-   * @type {InputModeManager}
-   */
-  modeManager = new InputModeManager()
-
-  /**
-   * Set the bulk selection visuals/state manager.
-   * @param {import('../ui/BulkVoxelsSelection.js').BulkVoxelsSelection|null} bulkSelection
-   */
-  setBulkSelection(bulkSelection) {
-    this.modeManager.setBulkSelection(bulkSelection)
-  }
-
-  /**
    * Threshold in ms for a long press to trigger bulk mode entry.
    * @type {number}
    */
@@ -70,6 +55,44 @@ export class BaseController {
   /** @type {boolean} True if the current press was already consumed as a long press. */
   actionPressConsumed = false
 
+  // ── Mode state (merged from InputModeManager) ─────────────────────────────
+
+  /** Normal mode: raycast-based targeting */
+  static NORMAL = 'normal'
+  /** Builder mode: keyboard-controlled voxel target */
+  static BUILDER = 'builder'
+
+  /** @type {'normal'|'builder'} */
+  #mode = BaseController.NORMAL
+
+  /** Player yaw at builder mode entry time (for movement orientation)
+   * @type {number}
+   */
+  #entryYaw = 0
+
+  /** Builder mode target (keyboard-controlled voxel position)
+   * @type {{x: number, y: number, z: number}|null}
+   */
+  #builderTarget = null
+
+  /** Bulk voxel selection state/visual manager
+   * @type {BulkVoxelsSelection|null}
+   */
+  #bulkSelection = null
+
+  /**
+   * True for one frame when mode changes (in either direction).
+   * @type {boolean}
+   */
+  modeChanged = false
+
+  /**
+   * Builder movement delta for this frame (-1, 0, or 1 per axis).
+   * Only set when in builder mode.
+   * @type {{x: number, y: number, z: number}}
+   */
+  builderMoveDelta = { x: 0, y: 0, z: 0 }
+
   // ── Movement input state (for delta compression) ─────────────────────────
   /** @type {number} Last sent buttons bitmask */
   #lastButtons = -1
@@ -79,6 +102,214 @@ export class BaseController {
   #lastPitch = NaN
   /** @type {number} Last sent input type */
   #lastInputType = -1
+
+  /**
+   * Set the bulk selection visuals/state manager.
+   * @param {BulkVoxelsSelection|null} bulkSelection
+   */
+  setBulkSelection(bulkSelection) {
+    this.#bulkSelection = bulkSelection
+  }
+
+  // ── Mode management methods ──────────────────────────────────────────────
+
+  /**
+   * Get current mode.
+   * @returns {'normal'|'builder'}
+   */
+  getMode() {
+    return this.#mode
+  }
+
+  /**
+   * Get current bulk phase.
+   * @returns {'idle'|'selecting_start'|'selecting_end'}
+   */
+  getBulkPhase() {
+    return this.#bulkSelection?.getBulkPhase() ?? 'idle'
+  }
+
+  /**
+   * Check if currently in builder mode.
+   * @returns {boolean}
+   */
+  isBuilderMode() {
+    return this.#mode === BaseController.BUILDER
+  }
+
+  /**
+   * Check if bulk mode is active (any phase).
+   * @returns {boolean}
+   */
+  isBulkActive() {
+    return this.#bulkSelection?.isActive() ?? false
+  }
+
+  /**
+   * Get entry yaw (for builder mode movement orientation).
+   * @returns {number}
+   */
+  getEntryYaw() {
+    return this.#entryYaw
+  }
+
+  /**
+   * Get builder target position.
+   * @returns {{x: number, y: number, z: number}|null}
+   */
+  getBuilderTarget() {
+    return this.#builderTarget
+  }
+
+  /**
+   * Get bulk selection start position.
+   * @returns {{x: number, y: number, z: number}|null}
+   */
+  getBulkStart() {
+    return this.#bulkSelection?.getStartPos() ?? null
+  }
+
+  /**
+   * Enter builder mode.
+   * @param {number} entryYaw - Player yaw at entry time
+   * @param {{x: number, y: number, z: number}|null} initialTarget - Initial target from raycast
+   * @returns {boolean} true if mode changed
+   */
+  enterBuilderMode(entryYaw, initialTarget) {
+    if (this.#mode === BaseController.BUILDER) return false
+
+    this.#mode = BaseController.BUILDER
+    this.#entryYaw = entryYaw
+    this.#builderTarget = initialTarget
+    this.modeChanged = true
+    return true
+  }
+
+  /**
+   * Exit builder mode (return to normal).
+   * Also exits bulk mode if active.
+   * @returns {boolean} true if mode changed
+   */
+  exitBuilderMode() {
+    const wasBuilder = this.#mode === BaseController.BUILDER
+    this.#mode = BaseController.NORMAL
+    this.#builderTarget = null
+    this.exitBulkMode()
+
+    if (wasBuilder) {
+      this.modeChanged = true
+      return true
+    }
+    return false
+  }
+
+  /**
+   * Activate bulk mode without setting start (triple-tap entry).
+   * Can be used from either normal or builder mode.
+   * @param {number} [color=0xFF0000] - Hex color value (0xRRGGBB)
+   * @returns {boolean} true if activated
+   */
+  activateBulkMode(color = 0xFF0000) {
+    this.#bulkSelection?.activate(color)
+    return true
+  }
+
+  /**
+   * Enter bulk mode and immediately set start position (long-press entry).
+   * Can be used from either normal or builder mode.
+   * @param {{x: number, y: number, z: number}} startPos
+   * @param {number} [color=0xFF0000] - Hex color value (0xRRGGBB)
+   * @returns {boolean} true if activated
+   */
+  enterBulkModeWithStart(startPos, color = 0xFF0000) {
+    this.#bulkSelection?.start(startPos, color)
+    return true
+  }
+
+  /**
+   * Exit bulk mode (clear all bulk state).
+   */
+  exitBulkMode() {
+    this.#bulkSelection?.exit()
+  }
+
+  /**
+   * Handle bulk action click.
+   * Delegates to BulkVoxelsSelection state machine.
+   * @param {{x: number, y: number, z: number}|null} targetPos
+   * @returns {{consumed: boolean, complete: boolean, start: {x: number, y: number, z: number}|null, end: {x: number, y: number, z: number}|null}}
+   */
+  onBulkAction(targetPos) {
+    return this.#bulkSelection?.onAction(targetPos) ?? { consumed: false, complete: false, start: null, end: null }
+  }
+
+  /**
+   * Move builder target by delta.
+   * @param {number} dx
+   * @param {number} dy
+   * @param {number} dz
+   */
+  moveBuilderTarget(dx, dy, dz) {
+    if (!this.#builderTarget) return
+    this.#builderTarget.x += dx
+    this.#builderTarget.y += dy
+    this.#builderTarget.z += dz
+  }
+
+  /**
+   * Set builder target directly (e.g., from raycast on mode entry).
+   * @param {{x: number, y: number, z: number}|null} target
+   */
+  setBuilderTarget(target) {
+    this.#builderTarget = target
+  }
+
+  /**
+   * Get the current target based on mode.
+   * Unified API - callers don't need to know which mode is active.
+   * @param {'destroy'|'create'} toolMode
+   * @param {VoxelHighlight} highlightSystem
+   * @param {import('three').PerspectiveCamera} camera
+   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @returns {{x: number, y: number, z: number}|null}
+   */
+  getTarget(toolMode, highlightSystem, camera, chunkRegistry) {
+    if (this.#mode === BaseController.BUILDER) {
+      return this.#builderTarget
+    }
+
+    // Normal mode: do raycast to get target
+    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode)
+  }
+
+  /**
+   * Get current target for bulk selection preview.
+   * @param {'destroy'|'create'} toolMode
+   * @param {VoxelHighlight} highlightSystem
+   * @param {import('three').PerspectiveCamera} camera
+   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @returns {{x: number, y: number, z: number}|null}
+   */
+  getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry) {
+    if (this.#mode === BaseController.BUILDER) {
+      return this.#builderTarget
+    }
+
+    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode)
+  }
+
+  /**
+   * Set builder movement delta.
+   * Called by controllers when in builder mode.
+   * @param {number} dx
+   * @param {number} dy
+   * @param {number} dz
+   */
+  setBuilderMoveDelta(dx, dy, dz) {
+    this.builderMoveDelta = { x: dx, y: dy, z: dz }
+  }
+
+  // ── BaseController methods ───────────────────────────────────────────────
 
   /**
    * Sync controller state with hotbar.
@@ -94,33 +325,32 @@ export class BaseController {
     const currentTool = hotbar.getSelectedSlot().tool
 
     // Auto-exit builder mode if tool doesn't support it
-    if (this.modeManager.isBuilderMode() && (!currentTool || !currentTool.supportsBuilderMode())) {
-      this.modeManager.exitBuilderMode()
+    if (this.isBuilderMode() && (!currentTool || !currentTool.supportsBuilderMode())) {
+      this.exitBuilderMode()
     }
 
     // Auto-exit bulk mode if tool doesn't support it
-    if (this.modeManager.isBulkActive() && (!currentTool || !currentTool.supportsBulkMode())) {
-      this.modeManager.exitBulkMode()
-      if (this.modeManager.isBuilderMode()) {
-        this.modeManager.exitBuilderMode()
+    if (this.isBulkActive() && (!currentTool || !currentTool.supportsBulkMode())) {
+      this.exitBulkMode()
+      if (this.isBuilderMode()) {
+        this.exitBuilderMode()
       }
     }
 
     // Handle builder mode voxel movement
-    if (this.modeManager.isBuilderMode()) {
-      const delta = this.modeManager.builderMoveDelta
+    if (this.isBuilderMode()) {
+      const delta = this.builderMoveDelta
       if (delta.x !== 0 || delta.y !== 0 || delta.z !== 0) {
-        this.modeManager.moveBuilderTarget(delta.x, delta.y, delta.z)
+        this.moveBuilderTarget(delta.x, delta.y, delta.z)
       }
     }
 
     // Handle long-press bulk entry (start is always at current highlight voxel)
     this.#checkLongPress()
     if (this.longPressTriggered && currentTool && currentTool.supportsBulkMode()) {
-      const mode = currentTool.getHighlightMode()
-
       if (currentTarget) {
-        this.modeManager.enterBulkModeWithStart(currentTarget, mode === 'create' ? 'create' : 'destroy')
+        const toolColor = currentTool?.getHighlightColor() ?? 0xFF0000
+        this.enterBulkModeWithStart(currentTarget, toolColor)
       }
       this.longPressTriggered = false
     }
@@ -135,7 +365,9 @@ export class BaseController {
     this.toolActivated = false
     this.selectedSlotIndex = null
     this.longPressTriggered = false
-    this.modeManager.update()
+    // Reset mode change flag
+    this.modeChanged = false
+    this.builderMoveDelta = { x: 0, y: 0, z: 0 }
   }
 
   /**
@@ -160,17 +392,17 @@ export class BaseController {
 
     if (pressCount === 1) {
       // Single press: normal mode
-      this.modeManager.exitBuilderMode()
+      this.exitBuilderMode()
     } else if (pressCount >= 2) {
       // Double press: builder mode
       // Note: Triple press no longer triggers bulk mode - use long-press instead
-      this.modeManager.exitBulkMode()
+      this.exitBulkMode()
 
       if (currentTool?.supportsBuilderMode()) {
         const mode = currentTool.getHighlightMode()
         const target = highlightSystem.raycastTarget(camera, chunkRegistry, mode)
-        this.modeManager.enterBuilderMode(this.yaw, target)
-        this.modeManager.exitBulkMode()
+        this.enterBuilderMode(this.yaw, target)
+        this.exitBulkMode()
       }
     }
 
@@ -187,16 +419,16 @@ export class BaseController {
   toggleBuilderMode(hotbar, highlightSystem, chunkRegistry, camera) {
     const currentTool = hotbar.getSelectedSlot().tool
 
-    if (this.modeManager.isBuilderMode()) {
+    if (this.isBuilderMode()) {
       // Exit builder mode
-      this.modeManager.exitBuilderMode()
+      this.exitBuilderMode()
     } else {
       // Enter builder mode
       if (currentTool?.supportsBuilderMode()) {
         const mode = currentTool.getHighlightMode()
         const target = highlightSystem.raycastTarget(camera, chunkRegistry, mode)
-        this.modeManager.enterBuilderMode(this.yaw, target)
-        this.modeManager.exitBulkMode()
+        this.enterBuilderMode(this.yaw, target)
+        this.exitBulkMode()
       }
     }
   }
@@ -218,7 +450,7 @@ export class BaseController {
     }
 
     // Send movement input only when not in builder mode
-    if (!this.modeManager.isBuilderMode()) {
+    if (!this.isBuilderMode()) {
       this.#sendMovementInputInternal(client, hotbar.selectedIndex)
     }
   }
@@ -234,12 +466,12 @@ export class BaseController {
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    */
   #sendToolInputInternal(client, tool, mode, highlightSystem, camera, chunkRegistry) {
-    if (this.modeManager.isBulkActive()) {
+    if (this.isBulkActive()) {
       // Bulk mode: state machine for start/end selection
-      const target = this.modeManager.getBulkTarget(mode, highlightSystem, camera, chunkRegistry)
+      const target = this.getBulkTarget(mode, highlightSystem, camera, chunkRegistry)
       if (!target) return
 
-      const result = this.modeManager.onBulkAction(target)
+      const result = this.onBulkAction(target)
 
       if (result.complete && result.start && result.end) {
         const inputData = tool.serializeBulkInput(
@@ -252,9 +484,9 @@ export class BaseController {
         )
         client.sendInput(inputData)
       }
-    } else if (this.modeManager.isBuilderMode()) {
+    } else if (this.isBuilderMode()) {
       // Regular builder mode: use builder target
-      const target = this.modeManager.getBuilderTarget()
+      const target = this.getBuilderTarget()
       if (target) {
         const inputData = tool.serializeBuilderInput?.(target) ??
           this.#defaultSerializeBuilderInput(tool, target)
@@ -346,19 +578,7 @@ export class BaseController {
    * @returns {{x: number, y: number, z: number}|null}
    */
   getCurrentTarget(toolMode, highlightSystem, camera, chunkRegistry) {
-    return this.modeManager.getTarget(toolMode, highlightSystem, camera, chunkRegistry)
-  }
-
-  /**
-   * Get current target for bulk selection preview.
-   * @param {'destroy'|'create'} toolMode
-   * @param {VoxelHighlight} highlightSystem
-   * @param {import('three').PerspectiveCamera} camera
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
-   * @returns {{x: number, y: number, z: number}|null}
-   */
-  getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry) {
-    return this.modeManager.getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry)
+    return this.getTarget(toolMode, highlightSystem, camera, chunkRegistry)
   }
 
   /**
@@ -366,14 +586,6 @@ export class BaseController {
    * @returns {boolean}
    */
   get builderMode() {
-    return this.modeManager.isBuilderMode()
-  }
-
-  /**
-   * Check if builder mode just changed this frame.
-   * @returns {boolean}
-   */
-  get builderModeChanged() {
-    return this.modeManager.modeChanged
+    return this.isBuilderMode()
   }
 }
