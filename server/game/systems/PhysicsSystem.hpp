@@ -3,8 +3,10 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/BoundingBoxComponent.hpp"
 #include "game/components/PhysicsModeComponent.hpp"
+#include "game/components/GroundContactComponent.hpp"
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
+#include "common/VoxelPhysicProps.hpp"
 #include <entt/entt.hpp>
 
 namespace voxelmmo {
@@ -17,8 +19,10 @@ namespace PhysicsSystem {
  *
  * Iterates chunk-first so that the VoxelContext cache is pre-warmed with each
  * chunk, avoiding redundant hash-map lookups for entities near their chunk centre.
+ *
+ * @param currentTick Current game tick (for jump cooldown tracking)
  */
-void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry);
+void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry, uint32_t currentTick);
 
 } // namespace PhysicsSystem
 

@@ -424,6 +424,7 @@ public:
 private:
     GlobalEntityId nextEntityId_ = 1;
     int32_t groundY_;
+    uint32_t tickCount_ = 0;
 };
 
 } // namespace voxelmmo

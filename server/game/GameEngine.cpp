@@ -213,7 +213,7 @@ void GameEngine::serializeChunks() {
 // ── Physics ───────────────────────────────────────────────────────────────
 
 void GameEngine::stepPhysics() {
-    PhysicsSystem::apply(registry, chunkRegistry);
+    PhysicsSystem::apply(registry, chunkRegistry, static_cast<uint32_t>(tickCount));
 }
 
 // ── Chunk lookup ──────────────────────────────────────────────────────────

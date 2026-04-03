@@ -31,6 +31,8 @@ add_executable(voxelmmo
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp
     server/game/systems/SheepAISystem.cpp
+    server/game/components/GroundContactComponent.cpp
+    server/game/components/WalkComponent.cpp
 )
 
 target_include_directories(voxelmmo PRIVATE server/)
@@ -79,6 +81,8 @@ add_executable(voxelmmo_tests
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp
     server/game/systems/SheepAISystem.cpp
+    server/game/components/GroundContactComponent.cpp
+    server/game/components/WalkComponent.cpp
 )
 
 target_include_directories(voxelmmo_tests PRIVATE server/ tests/server/)

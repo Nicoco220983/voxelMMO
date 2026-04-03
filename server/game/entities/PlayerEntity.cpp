@@ -1,5 +1,7 @@
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/EntityFactory.hpp"
+#include "game/components/JumpComponent.hpp"
+#include "game/components/WalkComponent.hpp"
 
 namespace voxelmmo::PlayerEntity {
 
@@ -19,6 +21,8 @@ entt::entity spawn(entt::registry& reg,
     reg.emplace<PlayerComponent>(ent, playerId);
     reg.emplace<BoundingBoxComponent>(ent, PLAYER_BBOX_HX, PLAYER_BBOX_HY, PLAYER_BBOX_HZ);
     reg.emplace<PhysicsModeComponent>(ent, PhysicsMode::FULL);
+    reg.emplace<JumpComponent>(ent);
+    reg.emplace<WalkComponent>(ent);
 
     return ent;
 }

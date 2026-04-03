@@ -1,5 +1,9 @@
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/Chunk.hpp"
+#include "game/components/GroundContactComponent.hpp"
+#include "game/components/JumpComponent.hpp"
+#include "game/entities/PlayerEntity.hpp"
+#include "common/VoxelPhysicProps.hpp"
 #include <algorithm>
 
 namespace voxelmmo {
@@ -28,17 +32,42 @@ struct VoxelContext {
         if (!lastChunk) return VoxelTypes::AIR;
         return lastChunk->world.getVoxel(vx, vy, vz);
     }
+
+    /**
+     * @brief Get cached physics type at voxel coordinates.
+     * Direct array access to WorldChunk's cached voxelPhysicTypes (O(1)).
+     */
+    VoxelPhysicType getPhysicTypeAtVoxel(int32_t vx, int32_t vy, int32_t vz) {
+        const ChunkId cid = ChunkId::fromVoxelPos(vx, vy, vz);
+        if (cid != lastChunkId) {
+            lastChunkId = cid;
+            lastChunk   = registry.getChunk(cid);
+        }
+        if (!lastChunk) return VoxelPhysicTypes::AIR;
+        // Use cached physic type array (fast O(1) access)
+        const uint32_t localX = static_cast<uint32_t>(vx) & 0x1F;  // vx % 32
+        const uint32_t localY = static_cast<uint32_t>(vy) & 0x1F;  // vy % 32
+        const uint32_t localZ = static_cast<uint32_t>(vz) & 0x1F;  // vz % 32
+        return lastChunk->world.getVoxelPhysicType(localX, localY, localZ);
+    }
 };
 
 bool isSolid(VoxelType vt) { return vt != VoxelTypes::AIR; }
 
-int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx) {
+/**
+ * @brief Sweep AABB along Y axis and return resolved delta.
+ * Also optionally returns the physics type of the surface that was hit (for landing detection).
+ */
+int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx, VoxelPhysicType* outHitSurfaceType = nullptr) {
     if (dy == 0) return 0;
 
     const int32_t vxMin = aabb.minX >> SUBVOXEL_BITS;
     const int32_t vxMax = (aabb.maxX - 1) >> SUBVOXEL_BITS;
     const int32_t vzMin = aabb.minZ >> SUBVOXEL_BITS;
     const int32_t vzMax = (aabb.maxZ - 1) >> SUBVOXEL_BITS;
+
+    // Track the surface type of the collision (for bounce effects)
+    VoxelPhysicType hitSurfaceType = VoxelPhysicTypes::AIR;
 
     if (dy < 0) {
         const int32_t vyFrom = (aabb.minY + dy) >> SUBVOXEL_BITS;
@@ -48,7 +77,11 @@ int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
                     if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
                         const int32_t push = (vy + 1) * SUBVOXEL_SIZE - aabb.minY;
-                        if (push > dy) dy = push;
+                        if (push > dy) {
+                            dy = push;
+                            // Record the surface we hit (for downward sweep, it's the top of this voxel)
+                            hitSurfaceType = ctx.getPhysicTypeAtVoxel(vx, vy, vz);
+                        }
                     }
                 }
             }
@@ -66,6 +99,10 @@ int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx) {
                 }
             }
         }
+    }
+    
+    if (outHitSurfaceType) {
+        *outHitSurfaceType = hitSurfaceType;
     }
     return dy;
 }
@@ -150,7 +187,7 @@ int32_t sweepZ(AABB aabb, int32_t dz, VoxelContext& ctx) {
 
 namespace PhysicsSystem {
 
-void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry)
+void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry, uint32_t currentTick)
 {
     Physics::VoxelContext ctx{chunkRegistry};
 
@@ -203,9 +240,13 @@ void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry)
                 continue;
             }
 
+            // FULL physics mode (gravity + collision)
             const int32_t gravVy = std::max(dyn.vy - GRAVITY_DECREMENT, -TERMINAL_VELOCITY);
 
-            const int32_t resolvedDy = Physics::sweepY(aabb, gravVy, ctx);
+            // Sweep Y and capture the surface type we landed on
+            VoxelPhysicType hitSurfaceType = VoxelPhysicTypes::AIR;
+            const int32_t resolvedDy = Physics::sweepY(aabb, gravVy, ctx, &hitSurfaceType);
+            
             const bool    grounded   = (gravVy < 0 && resolvedDy > gravVy);
             aabb.minY += resolvedDy; aabb.maxY += resolvedDy;
 
@@ -214,15 +255,67 @@ void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry)
 
             const int32_t resolvedDz = Physics::sweepZ(aabb, dyn.vz, ctx);
 
-            const int32_t nvx = (resolvedDx == 0 && dyn.vx != 0) ? 0 : dyn.vx;
-            const int32_t nvz = (resolvedDz == 0 && dyn.vz != 0) ? 0 : dyn.vz;
-            const int32_t nvy = grounded ? 0 : resolvedDy;
+            // Track velocity modifications for surface effects
+            int32_t nvx = (resolvedDx == 0 && dyn.vx != 0) ? 0 : dyn.vx;
+            int32_t nvz = (resolvedDz == 0 && dyn.vz != 0) ? 0 : dyn.vz;
+            int32_t nvy = grounded ? 0 : resolvedDy;
 
-            const bool collided = (grounded != dyn.grounded)
-                               || (nvx != dyn.vx)
-                               || (nvz != dyn.vz)
-                               || (nvy < 0 && resolvedDy != gravVy);
+            // Detect landing and wall collisions
+            const bool landed      = grounded && !dyn.grounded;
+            const bool hitWallX    = (resolvedDx == 0 && dyn.vx != 0);
+            const bool hitWallZ    = (resolvedDz == 0 && dyn.vz != 0);
+            const bool hitCeiling  = (resolvedDy == 0 && gravVy > 0);
+            
+            const bool collided    = (grounded != dyn.grounded)
+                                  || hitWallX || hitWallZ
+                                  || (nvy < 0 && resolvedDy != gravVy);
 
+            // Use the surface type from the sweep (the actual voxel we collided with)
+            VoxelPhysicType groundType = VoxelPhysicTypes::AIR;
+            if (grounded) {
+                // If we landed, use the surface type from the sweep collision
+                // This is more accurate than sampling center point (which might be over air)
+                groundType = hitSurfaceType;
+            }
+
+            // Apply surface effects (bounce on slime, etc)
+            if (grounded && groundType != VoxelPhysicTypes::AIR) {
+                const auto& props = getVoxelPhysicProps(groundType);
+
+                // SLIME: Bounce on landing (apply restitution)
+                if (landed && props.restitution > 0) {
+                    // Bounce based on impact velocity (gravVy), not start-of-tick velocity (dyn.vy)
+                    int32_t impactVy = gravVy;
+                    int32_t bounceVy = static_cast<int32_t>(-impactVy * static_cast<int32_t>(props.restitution) / 255);
+                    
+                    // Minimum bounce threshold
+                    const int32_t threshold = (props.restitution >= 255) ? 1 : 10;
+                    
+                    // Delegate to JumpComponent for bounce + jump logic
+                    auto* jump = registry.try_get<JumpComponent>(ent);
+                    if (jump) {
+                        nvy = jump->tryBounceJump(currentTick, bounceVy, PlayerEntity::PLAYER_JUMP_VY, threshold);
+                    } else if (std::abs(bounceVy) >= threshold) {
+                        nvy = bounceVy;
+                    }
+                }
+            }
+
+            // Auto-jump on non-bouncy surfaces when holding jump
+            auto* jump = registry.try_get<JumpComponent>(ent);
+            if (jump) {
+                nvy = jump->tryAutoJump(currentTick, grounded, nvy, PlayerEntity::PLAYER_JUMP_VY);
+            }
+
+            // Update GroundContactComponent for InputSystem to read
+            auto* contact = registry.try_get<GroundContactComponent>(ent);
+            if (contact) {
+                contact->groundType = groundType;
+            } else if (grounded) {
+                // Only add component if on ground (avoid bloat for airborne entities)
+                registry.emplace<GroundContactComponent>(ent, groundType);
+            }
+            
             DynamicPositionComponent::modify(registry, ent,
                 dyn.x + resolvedDx, dyn.y + resolvedDy, dyn.z + resolvedDz,
                 nvx, nvy, nvz, grounded, collided);

@@ -29,6 +29,9 @@ Chunk* ChunkRegistry::generate(WorldGenerator& generator, ChunkId id, SaveSystem
         generator.generate(chunk->world.voxels, id.x(), id.y(), id.z());
     }
     
+    // Build the cached physics type array (parallel to voxels)
+    chunk->world.rebuildPhysicTypeCache();
+    
     Chunk* ptr = chunk.get();
     chunks_[id] = std::move(chunk);
     

@@ -17,4 +17,6 @@ export const VoxelType = Object.freeze({
   DIRT:  3,
   PLANKS:  4,
   BRICKS:  5,
+  SLIME: 6,  // Bouncy surface
+  MUD:   7,  // Slow movement
 })

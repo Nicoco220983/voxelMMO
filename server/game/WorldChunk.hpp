@@ -1,6 +1,7 @@
 #pragma once
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
+#include "common/VoxelPhysicProps.hpp"
 #include <vector>
 #include <utility>
 #include <cstdint>
@@ -23,6 +24,11 @@ public:
      *         Use voxelIndexFromPos(x, y, z) to compute the index. */
     std::vector<VoxelType> voxels;
 
+    /** @brief Cached physics types for fast lookup. Parallel to voxels[].
+     *         Updated automatically when voxels change via setVoxel().
+     *         Size = CHUNK_VOXEL_COUNT (32KB). */
+    std::vector<VoxelPhysicType> voxelPhysicTypes;
+
     /** @brief Voxel changes in the current tick only. */
     std::vector<std::pair<VoxelIndex, VoxelType>> voxelsDeltas;
 
@@ -36,14 +42,27 @@ public:
         return voxels[voxelIndexFromPos(voxelX, voxelY, voxelZ)];
     }
 
-    /** @brief Set voxel type at local chunk coordinates and record as delta. */
+    /** @brief Set voxel type at local chunk coordinates and record as delta.
+     *         Also updates the cached voxelPhysicTypes array. */
     void setVoxel(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ, VoxelType type);
+
+    /** @brief Get voxel physics type at local chunk coordinates. O(1) cached access. */
+    VoxelPhysicType getVoxelPhysicType(uint32_t voxelX, uint32_t voxelY, uint32_t voxelZ) const {
+        return voxelPhysicTypes[voxelIndexFromPos(voxelX, voxelY, voxelZ)];
+    }
 
     /**
      * @brief Apply a batch of voxel modifications (via packed indices) and record as deltas.
+     *         Also updates the cached voxelPhysicTypes array.
      * @param mods  List of (VoxelIndex, VoxelType) pairs.
      */
     void modifyVoxels(const std::vector<std::pair<VoxelIndex, VoxelType>>& mods);
+
+    /**
+     * @brief Rebuild the entire voxelPhysicTypes cache from voxels.
+     *         Call after loading voxels from save or generating new terrain.
+     */
+    void rebuildPhysicTypeCache();
 
     /**
      * @brief Write the full voxel snapshot into buf.

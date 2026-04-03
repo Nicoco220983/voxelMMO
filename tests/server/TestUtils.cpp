@@ -289,7 +289,8 @@ entt::entity PhysicsTestEnv::spawnEntity(int32_t x, int32_t y, int32_t z, Physic
 
 void PhysicsTestEnv::tick(int n) {
     for (int i = 0; i < n; ++i) {
-        PhysicsSystem::apply(registry, chunks);
+        PhysicsSystem::apply(registry, chunks, tickCount_);
+        ++tickCount_;
         updateEntityChunks(chunks, registry);
     }
 }
