@@ -96,7 +96,7 @@ export class Hotbar {
     this.#backButton.style.display = 'none'
     this.#backButton.addEventListener('pointerdown', (e) => {
       e.preventDefault()
-      this.handleEsc()
+      this.handleQ()
     })
     this.container.appendChild(this.#backButton)
   }
