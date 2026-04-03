@@ -4,6 +4,7 @@
 #include "SaveSystem.hpp"
 #include "ChunkSerializer.hpp"
 #include "game/systems/PhysicsSystem.hpp"
+#include "game/systems/JumpSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
 
 #include "game/systems/SheepAISystem.hpp"
@@ -430,6 +431,12 @@ private:
      * @brief Step physics simulation for all entities.
      */
     void stepPhysics();
+    
+    /**
+     * @brief Step jump logic for all entities with JumpComponent.
+     * Must run after stepPhysics() so GroundContactComponent is updated.
+     */
+    void stepJump();
 
     /**
      * @brief Get the chunk containing the given world position.

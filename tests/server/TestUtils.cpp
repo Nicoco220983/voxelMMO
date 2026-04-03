@@ -3,6 +3,7 @@
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/systems/InputSystem.hpp"
 #include "game/systems/PhysicsSystem.hpp"
+#include "game/systems/JumpSystem.hpp"
 #include "game/systems/ChunkMembershipSystem.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
 
@@ -289,7 +290,8 @@ entt::entity PhysicsTestEnv::spawnEntity(int32_t x, int32_t y, int32_t z, Physic
 
 void PhysicsTestEnv::tick(int n) {
     for (int i = 0; i < n; ++i) {
-        PhysicsSystem::apply(registry, chunks, tickCount_);
+        PhysicsSystem::apply(registry, chunks);
+        JumpSystem::apply(registry, tickCount_, PlayerEntity::PLAYER_JUMP_VY);
         ++tickCount_;
         updateEntityChunks(chunks, registry);
     }

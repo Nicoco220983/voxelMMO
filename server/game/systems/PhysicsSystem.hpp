@@ -19,10 +19,11 @@ namespace PhysicsSystem {
  *
  * Iterates chunk-first so that the VoxelContext cache is pre-warmed with each
  * chunk, avoiding redundant hash-map lookups for entities near their chunk centre.
- *
- * @param currentTick Current game tick (for jump cooldown tracking)
+ * 
+ * Note: Jump handling is performed by JumpSystem, which should run after PhysicsSystem.
+ * PhysicsSystem only handles physics simulation (gravity, collision, bounce).
  */
-void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry, uint32_t currentTick);
+void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry);
 
 } // namespace PhysicsSystem
 

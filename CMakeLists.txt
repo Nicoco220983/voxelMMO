@@ -30,6 +30,7 @@ add_executable(voxelmmo
     server/game/systems/DisconnectedPlayerSystem.cpp
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp
+    server/game/systems/JumpSystem.cpp
     server/game/systems/SheepAISystem.cpp
     server/game/components/GroundContactComponent.cpp
     server/game/components/WalkComponent.cpp
@@ -80,6 +81,7 @@ add_executable(voxelmmo_tests
     server/game/systems/DisconnectedPlayerSystem.cpp
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp
+    server/game/systems/JumpSystem.cpp
     server/game/systems/SheepAISystem.cpp
     server/game/components/GroundContactComponent.cpp
     server/game/components/WalkComponent.cpp

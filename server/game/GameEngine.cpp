@@ -213,7 +213,13 @@ void GameEngine::serializeChunks() {
 // ── Physics ───────────────────────────────────────────────────────────────
 
 void GameEngine::stepPhysics() {
-    PhysicsSystem::apply(registry, chunkRegistry, static_cast<uint32_t>(tickCount));
+    PhysicsSystem::apply(registry, chunkRegistry);
+}
+
+// ── Jump ──────────────────────────────────────────────────────────────────
+
+void GameEngine::stepJump() {
+    JumpSystem::apply(registry, static_cast<uint32_t>(tickCount), PlayerEntity::PLAYER_JUMP_VY);
 }
 
 // ── Chunk lookup ──────────────────────────────────────────────────────────
@@ -251,6 +257,7 @@ void GameEngine::tick() {
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
     stepPhysics();
+    stepJump();
 
     // Process disconnected players once per second (before chunk membership update)
     if (tick - lastDisconnectCheckTick >= TICK_RATE) {
