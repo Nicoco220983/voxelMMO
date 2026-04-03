@@ -216,9 +216,8 @@ export class GameClient {
    * the last call. Call once per animation frame.
    */
   rebuildDirtyChunks() {
-    let built = 0
     for (const chunk of this.#chunkRegistry.values()) {
-      if (chunk.dirty) { chunk.rebuildMesh(this.#scene); if (++built >= 2) break }
+      if (chunk.dirty) { chunk.rebuildMesh(this.#scene) }
     }
   }
 
