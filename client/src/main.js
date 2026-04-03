@@ -138,6 +138,11 @@ const hud = /** @type {HTMLElement} */ (document.getElementById('hud'))
 // ── Render loop ───────────────────────────────────────────────────────────
 let lastTime = performance.now()
 
+// ── FPS tracking ───────────────────────────────────────────────────────────
+let frameCount = 0
+let lastFpsTime = performance.now()
+let currentFps = 0
+
 function animate() {
   requestAnimationFrame(animate)
 
@@ -240,12 +245,20 @@ function animate() {
 
   composer.render()
 
+  // ── FPS calculation ───────────────────────────────────────────────────────
+  frameCount++
+  const fpsNow = performance.now()
+  const fpsDt = fpsNow - lastFpsTime
+  if (fpsDt >= 1000) {
+    currentFps = Math.round((frameCount * 1000) / fpsDt)
+    frameCount = 0
+    lastFpsTime = fpsNow
+  }
+
   const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
-  const modeName = _entityType === EntityType.GHOST_PLAYER ? 'ghost' : 'walk'
 
   hud.textContent =
-    `[${modeName}]  pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}` +
-    `   yaw ${(yaw * 180 / Math.PI).toFixed(0)}°`
+    `pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}   fps ${currentFps}`
 
   // Update controller at end of frame (resets one-shot flags)
   controller.update(dt)
