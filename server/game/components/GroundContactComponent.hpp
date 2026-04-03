@@ -25,6 +25,9 @@ struct GroundContactComponent {
     /// Bounce velocity applied this tick (0 if no bounce). Used by JumpSystem to add jump boost.
     int32_t bounceVelocity = 0;
     
+    /// True when entity center is inside a climbable voxel (ladder)
+    bool isClimbing = false;
+    
     /**
      * @brief Helper to get the max speed cap for the current ground surface.
      * @return Max speed in sub-voxels/tick, or 0 if no limit.

@@ -13,11 +13,12 @@ namespace voxelmmo {
 using VoxelPhysicType = uint8_t;
 
 namespace VoxelPhysicTypes {
-    constexpr VoxelPhysicType AIR   = 0;  ///< Non-solid, no physics effects
-    constexpr VoxelPhysicType SOLID = 1;  ///< Default solid block
-    constexpr VoxelPhysicType SLIME = 2;  ///< Bouncy surface
-    constexpr VoxelPhysicType MUD   = 3;  ///< Slow movement (speed cap)
-    // Reserved: 4-255 for future physics types
+    constexpr VoxelPhysicType AIR    = 0;  ///< Non-solid, no physics effects
+    constexpr VoxelPhysicType SOLID  = 1;  ///< Default solid block
+    constexpr VoxelPhysicType SLIME  = 2;  ///< Bouncy surface
+    constexpr VoxelPhysicType MUD    = 3;  ///< Slow movement (speed cap)
+    constexpr VoxelPhysicType LADDER = 4;  ///< Climbable, no gravity when inside
+    // Reserved: 5-255 for future physics types
 } // namespace VoxelPhysicTypes
 
 } // namespace voxelmmo

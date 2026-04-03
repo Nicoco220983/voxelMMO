@@ -12,14 +12,15 @@ namespace voxelmmo {
  * @note GRASS has been removed. BASIC is now the first solid voxel type (1).
  */
 namespace VoxelTypes {
-    inline constexpr VoxelType AIR   = 0;
-    inline constexpr VoxelType BASIC = 1;
-    inline constexpr VoxelType STONE = 2;
-    inline constexpr VoxelType DIRT  = 3;
-    inline constexpr VoxelType PLANKS  = 4;
-    inline constexpr VoxelType BRICKS  = 5;
-    inline constexpr VoxelType SLIME = 6;  ///< Bouncy surface
-    inline constexpr VoxelType MUD   = 7;  ///< Slow movement
+    inline constexpr VoxelType AIR    = 0;
+    inline constexpr VoxelType BASIC  = 1;
+    inline constexpr VoxelType STONE  = 2;
+    inline constexpr VoxelType DIRT   = 3;
+    inline constexpr VoxelType PLANKS = 4;
+    inline constexpr VoxelType BRICKS = 5;
+    inline constexpr VoxelType SLIME  = 6;  ///< Bouncy surface
+    inline constexpr VoxelType MUD    = 7;  ///< Slow movement
+    inline constexpr VoxelType LADDER = 8;  ///< Climbable
 } // namespace VoxelTypes
 
 /**
@@ -32,9 +33,10 @@ inline constexpr std::array<VoxelPhysicType, 256> makeVoxelToPhysicTable() {
     std::array<VoxelPhysicType, 256> table{};
     table.fill(VoxelPhysicTypes::SOLID);  // default
     
-    table[VoxelTypes::AIR]   = VoxelPhysicTypes::AIR;
-    table[VoxelTypes::SLIME] = VoxelPhysicTypes::SLIME;
-    table[VoxelTypes::MUD]   = VoxelPhysicTypes::MUD;
+    table[VoxelTypes::AIR]    = VoxelPhysicTypes::AIR;
+    table[VoxelTypes::SLIME]  = VoxelPhysicTypes::SLIME;
+    table[VoxelTypes::MUD]    = VoxelPhysicTypes::MUD;
+    table[VoxelTypes::LADDER] = VoxelPhysicTypes::LADDER;
     
     return table;
 }

@@ -257,6 +257,9 @@ PhysicsTestEnv::PhysicsTestEnv(int32_t groundY) : groundY_(groundY) {
                         }
                     }
                 }
+                
+                // Rebuild physics type cache after filling voxels
+                chunk->world.rebuildPhysicTypeCache();
             }
         }
     }

@@ -3,7 +3,7 @@
 import { DestroyVoxelTool } from '../tools/DestroyVoxelTool.js'
 import { CreateVoxelTool } from '../tools/CreateVoxelTool.js'
 import { VoxelType } from '../VoxelTypes.js'
-import { StoneVoxel, DirtVoxel, BasicVoxel, PlanksVoxel, BricksVoxel, MudVoxel, SlimeVoxel } from '../voxels/index.js'
+import { StoneVoxel, DirtVoxel, BasicVoxel, PlanksVoxel, BricksVoxel, MudVoxel, SlimeVoxel, LadderVoxel } from '../voxels/index.js'
 
 /** @typedef {import('../tools/Tool.js').Tool} Tool */
 /** @typedef {import('../voxels/index.js').VoxelDef} VoxelDef */
@@ -71,6 +71,7 @@ export class Hotbar {
       BricksVoxel,
       MudVoxel,
       SlimeVoxel,
+      LadderVoxel,
     ]
 
     this.container = document.createElement('div')

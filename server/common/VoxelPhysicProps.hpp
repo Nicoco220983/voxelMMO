@@ -26,10 +26,11 @@ struct VoxelPhysicProps {
     /// Restitution (bounce) on collision: 0-255. Applied only on collision.
     uint8_t restitution;
     
-    /// Flags: SOLID, etc.
+    /// Flags: SOLID, CLIMBABLE, etc.
     uint8_t flags;
     
-    static constexpr uint8_t FLAG_SOLID = 1 << 0;
+    static constexpr uint8_t FLAG_SOLID     = 1 << 0;
+    static constexpr uint8_t FLAG_CLIMBABLE = 1 << 1;  ///< Entity can climb (no gravity)
 };
 
 /**
@@ -53,6 +54,9 @@ inline constexpr std::array<VoxelPhysicProps, 256> makeVoxelPhysicPropsTable() {
     // MUD: slow movement (half normal speed)
     // Normal player speed ~77 sub-voxels/tick, mud caps at ~30
     table[VoxelPhysicTypes::MUD] = VoxelPhysicProps{30, 0, 0, VoxelPhysicProps::FLAG_SOLID};
+    
+    // LADDER: climbable, non-solid, no speed limits
+    table[VoxelPhysicTypes::LADDER] = VoxelPhysicProps{0, 0, 0, VoxelPhysicProps::FLAG_CLIMBABLE};
     
     return table;
 }

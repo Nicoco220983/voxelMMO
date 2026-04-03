@@ -13,6 +13,10 @@ struct AABB {
     int32_t maxX, maxY, maxZ;
 };
 
+inline bool isClimbable(VoxelPhysicType type) {
+    return (getVoxelPhysicProps(type).flags & VoxelPhysicProps::FLAG_CLIMBABLE) != 0;
+}
+
 /**
  * @brief Thin wrapper around the chunk registry that caches the last-used chunk.
  */
@@ -47,9 +51,53 @@ struct VoxelContext {
         const uint32_t localZ = static_cast<uint32_t>(vz) & 0x1F;  // vz % 32
         return lastChunk->world.getVoxelPhysicType(localX, localY, localZ);
     }
+
+    /**
+     * @brief Check if entity is touching a climbable voxel.
+     * Requires: center X,Z within voxel's X,Z bounds (horizontally aligned)
+     * AND: entity Y bounds overlap with voxel's Y bounds (vertically touching)
+     */
+    bool isTouchingClimbable(const AABB& aabb, int32_t centerX, int32_t centerY, int32_t centerZ) {
+        // Check horizontal center alignment: entity center X,Z must be within voxel's X,Z
+        const int32_t vx = centerX >> SUBVOXEL_BITS;
+        const int32_t vz = centerZ >> SUBVOXEL_BITS;
+        
+        const int32_t voxelMinX = vx * SUBVOXEL_SIZE;
+        const int32_t voxelMaxX = voxelMinX + SUBVOXEL_SIZE;
+        const int32_t voxelMinZ = vz * SUBVOXEL_SIZE;
+        const int32_t voxelMaxZ = voxelMinZ + SUBVOXEL_SIZE;
+        
+        // Center must be within voxel's X,Z bounds
+        if (centerX < voxelMinX || centerX >= voxelMaxX) return false;
+        if (centerZ < voxelMinZ || centerZ >= voxelMaxZ) return false;
+        
+        // Check vertical overlap: entity Y bounds must overlap with some voxel's Y bounds
+        // Check all voxels that entity's Y range could touch
+        const int32_t vyMin = aabb.minY >> SUBVOXEL_BITS;
+        const int32_t vyMax = (aabb.maxY - 1) >> SUBVOXEL_BITS;
+        
+        for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
+            if (isClimbable(getPhysicTypeAtVoxel(vx, vy, vz))) {
+                // Entity overlaps with this climbable voxel on Y axis
+                const int32_t voxelMinY = vy * SUBVOXEL_SIZE;
+                const int32_t voxelMaxY = voxelMinY + SUBVOXEL_SIZE;
+                if (aabb.maxY > voxelMinY && aabb.minY < voxelMaxY) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
 };
 
 bool isSolid(VoxelType vt) { return vt != VoxelTypes::AIR; }
+
+/**
+ * @brief Check if a voxel physics type is solid (has FLAG_SOLID).
+ */
+inline bool isPhysicTypeSolid(VoxelPhysicType pt) {
+    return (getVoxelPhysicProps(pt).flags & VoxelPhysicProps::FLAG_SOLID) != 0;
+}
 
 /**
  * @brief Sweep AABB along Y axis and return resolved delta.
@@ -71,11 +119,12 @@ int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx, VoxelPhysicType* outHit
         for (int32_t vy = vyFrom; vy <= vyTo; ++vy) {
             for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
+                    const VoxelPhysicType pt = ctx.getPhysicTypeAtVoxel(vx, vy, vz);
+                    if (isPhysicTypeSolid(pt)) {
                         const int32_t push = (vy + 1) * SUBVOXEL_SIZE - aabb.minY;
                         if (push > dy) {
                             dy = push;
-                            hitSurfaceType = ctx.getPhysicTypeAtVoxel(vx, vy, vz);
+                            hitSurfaceType = pt;
                         }
                     }
                 }
@@ -87,7 +136,7 @@ int32_t sweepY(AABB aabb, int32_t dy, VoxelContext& ctx, VoxelPhysicType* outHit
         for (int32_t vy = vyFrom; vy <= vyTo; ++vy) {
             for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
+                    if (isPhysicTypeSolid(ctx.getPhysicTypeAtVoxel(vx, vy, vz))) {
                         const int32_t push = vy * SUBVOXEL_SIZE - aabb.maxY;
                         if (push < dy) dy = push;
                     }
@@ -116,7 +165,7 @@ int32_t sweepX(AABB aabb, int32_t dx, VoxelContext& ctx) {
         for (int32_t vx = vxFrom; vx <= vxTo; ++vx) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
+                    if (isPhysicTypeSolid(ctx.getPhysicTypeAtVoxel(vx, vy, vz))) {
                         const int32_t push = (vx + 1) * SUBVOXEL_SIZE - aabb.minX;
                         if (push > dx) dx = push;
                     }
@@ -129,7 +178,7 @@ int32_t sweepX(AABB aabb, int32_t dx, VoxelContext& ctx) {
         for (int32_t vx = vxFrom; vx <= vxTo; ++vx) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vz = vzMin; vz <= vzMax; ++vz) {
-                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
+                    if (isPhysicTypeSolid(ctx.getPhysicTypeAtVoxel(vx, vy, vz))) {
                         const int32_t push = vx * SUBVOXEL_SIZE - aabb.maxX;
                         if (push < dx) dx = push;
                     }
@@ -154,7 +203,7 @@ int32_t sweepZ(AABB aabb, int32_t dz, VoxelContext& ctx) {
         for (int32_t vz = vzFrom; vz <= vzTo; ++vz) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
-                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
+                    if (isPhysicTypeSolid(ctx.getPhysicTypeAtVoxel(vx, vy, vz))) {
                         const int32_t push = (vz + 1) * SUBVOXEL_SIZE - aabb.minZ;
                         if (push > dz) dz = push;
                     }
@@ -167,7 +216,7 @@ int32_t sweepZ(AABB aabb, int32_t dz, VoxelContext& ctx) {
         for (int32_t vz = vzFrom; vz <= vzTo; ++vz) {
             for (int32_t vy = vyMin; vy <= vyMax; ++vy) {
                 for (int32_t vx = vxMin; vx <= vxMax; ++vx) {
-                    if (isSolid(ctx.getAtVoxel(vx, vy, vz))) {
+                    if (isPhysicTypeSolid(ctx.getPhysicTypeAtVoxel(vx, vy, vz))) {
                         const int32_t push = vz * SUBVOXEL_SIZE - aabb.maxZ;
                         if (push < dz) dz = push;
                     }
@@ -291,26 +340,75 @@ int32_t calculateBounceVelocity(int32_t impactVy, uint8_t restitution) {
  * 
  * PhysicsSystem writes ground state here; JumpSystem reads it to decide jumps.
  * This separates physics simulation from jump game logic.
+ * 
+ * @param isClimbing When true, entity center is in climbable voxel (ladder)
  */
 void updateGroundContact(entt::registry& registry, entt::entity ent,
                          const CollisionState& collision,
                          VoxelPhysicType groundType,
-                         int32_t bounceVelocity) {
+                         int32_t bounceVelocity,
+                         bool isClimbing = false) {
     auto* contact = registry.try_get<GroundContactComponent>(ent);
     if (contact) {
         contact->groundType = groundType;
         contact->justLanded = collision.landed;
         contact->bounceVelocity = bounceVelocity;
-    } else if (collision.grounded) {
+        contact->isClimbing = isClimbing;
+    } else if (collision.grounded || isClimbing) {
         registry.emplace<GroundContactComponent>(ent, 
             GroundContactComponent{
-                groundType,           // groundType
+                groundType,            // groundType
                 VoxelPhysicTypes::AIR, // wallTypeX
                 VoxelPhysicTypes::AIR, // wallTypeZ
                 collision.landed,      // justLanded
-                bounceVelocity         // bounceVelocity
+                bounceVelocity,        // bounceVelocity
+                isClimbing             // isClimbing
             });
     }
+}
+
+/**
+ * @brief Process entity climbing a ladder (center inside climbable voxel).
+ * No gravity, collision enabled, grounded=false to allow vertical input.
+ */
+void processClimbingEntity(entt::registry& registry, entt::entity ent,
+                           const DynamicPositionComponent& dyn,
+                           AABB aabb, VoxelContext& ctx) {
+    // No gravity when climbing - velocity preserved for input-controlled movement
+    // Process collision on all axes like flying mode
+    const int32_t resolvedDy = sweepY(aabb, dyn.vy, ctx);
+    aabb.minY += resolvedDy; aabb.maxY += resolvedDy;
+    
+    const int32_t resolvedDx = sweepX(aabb, dyn.vx, ctx);
+    aabb.minX += resolvedDx; aabb.maxX += resolvedDx;
+    
+    const int32_t resolvedDz = sweepZ(aabb, dyn.vz, ctx);
+
+    int32_t nvx, nvy, nvz;
+    resolveVelocityAfterCollision(nvx, nvy, nvz, dyn, resolvedDx, resolvedDy, resolvedDz);
+    const bool collided = (nvx != dyn.vx) || (nvy != dyn.vy) || (nvz != dyn.vz);
+
+    // Update ground contact to indicate climbing state
+    if (auto* contact = registry.try_get<GroundContactComponent>(ent)) {
+        contact->isClimbing = true;
+    } else {
+        registry.emplace<GroundContactComponent>(ent, 
+            GroundContactComponent{
+                VoxelPhysicTypes::AIR,  // groundType
+                VoxelPhysicTypes::AIR,  // wallTypeX
+                VoxelPhysicTypes::AIR,  // wallTypeZ
+                false,                  // justLanded
+                0,                      // bounceVelocity
+                true                    // isClimbing
+            });
+    }
+
+    // grounded=true tells client not to apply gravity (we're climbing, not falling)
+    // InputSystem uses isClimbing flag to handle climb up/down with JUMP/DESCEND
+    DynamicPositionComponent::modify(registry, ent,
+        dyn.x + resolvedDx, dyn.y + resolvedDy, dyn.z + resolvedDz,
+        nvx, nvy, nvz,
+        /*grounded=*/ true, collided);
 }
 
 /**
@@ -322,6 +420,13 @@ void updateGroundContact(entt::registry& registry, entt::entity ent,
 void processFullPhysicsEntity(entt::registry& registry, entt::entity ent,
                               const DynamicPositionComponent& dyn,
                               AABB aabb, VoxelContext& ctx) {
+    // Check if entity is touching a climbable voxel (ladder)
+    // Requires: center X,Z within voxel bounds, AND Y overlap with climbable voxel
+    if (ctx.isTouchingClimbable(aabb, dyn.x, dyn.y, dyn.z)) {
+        processClimbingEntity(registry, ent, dyn, aabb, ctx);
+        return;
+    }
+
     // Apply gravity
     const int32_t gravVy = std::max(dyn.vy - GRAVITY_DECREMENT, -TERMINAL_VELOCITY);
 
@@ -358,7 +463,7 @@ void processFullPhysicsEntity(entt::registry& registry, entt::entity ent,
     int32_t nvy = grounded ? bounceVelocity : resolvedDy;
 
     // Update ground contact component for JumpSystem to read
-    updateGroundContact(registry, ent, collision, groundType, bounceVelocity);
+    updateGroundContact(registry, ent, collision, groundType, bounceVelocity, /*isClimbing=*/false);
 
     // Apply final position and velocity
     DynamicPositionComponent::modify(registry, ent,

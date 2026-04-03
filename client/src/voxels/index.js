@@ -1,6 +1,26 @@
 // @ts-check
 
 /**
+ * @typedef {Object} RenderContext
+ * @property {number} x - Voxel X position (local chunk coords)
+ * @property {number} y - Voxel Y position
+ * @property {number} z - Voxel Z position
+ * @property {number} vtype - Voxel type value
+ * @property {number} jitter - Brightness jitter for this voxel
+ * @property {number[]} positions - Vertex positions array to push to
+ * @property {number[]} colors - Vertex colors array to push to
+ * @property {number[]} uvs - UV coordinates array to push to
+ * @property {number[]} normals - Normals array to push to
+ * @property {number[]} indices - Triangle indices array to push to
+ * @property {function(number,number,number): boolean} isSolid - Check if neighbor is solid
+ * @property {function(number,number): {u0:number,v0:number,u1:number,v1:number}} getVoxelUvs - Get UVs
+ * @property {Array<[number,number,number]>} FACE_DIRS - Face direction offsets
+ * @property {number[]} FACE_SHADE - Face shading multipliers
+ * @property {Array<[number,number,number]>} FACE_NORMALS - Face normals
+ * @property {Array<Array<[number,number,number]>>} FACE_VERTS - Face vertex positions
+ */
+
+/**
  * @typedef {Object} VoxelDef
  * @property {number} type - VoxelType value
  * @property {string} name - Human-readable name
@@ -8,6 +28,9 @@
  *   - If string, used for all 6 faces.
  *   - If object, keys are face indices (0-5) or "default" fallback.
  *   Face order: +X(0), -X(1), +Y(2), -Y(3), +Z(4), -Z(5).
+ * @property {boolean} [isSolid=true] - Whether this voxel is solid (blocks movement, can attach to).
+ *   Non-solid voxels (like ladders) render differently.
+ * @property {function(RenderContext): void} [renderCustom] - Custom render function (if provided, used instead of default cube faces).
  */
 
 import { BasicVoxel } from './BasicVoxel.js'
@@ -17,8 +40,9 @@ import { PlanksVoxel } from './PlanksVoxel.js'
 import { BricksVoxel } from './BricksVoxel.js'
 import { SlimeVoxel } from './SlimeVoxel.js'
 import { MudVoxel } from './MudVoxel.js'
+import { LadderVoxel } from './LadderVoxel.js'
 
-export { BasicVoxel, StoneVoxel, DirtVoxel, PlanksVoxel, BricksVoxel, SlimeVoxel, MudVoxel }
+export { BasicVoxel, StoneVoxel, DirtVoxel, PlanksVoxel, BricksVoxel, SlimeVoxel, MudVoxel, LadderVoxel }
 
 /** @type {VoxelDef[]} */
 export const VOXEL_DEFS = [
@@ -29,6 +53,7 @@ export const VOXEL_DEFS = [
   BricksVoxel,
   SlimeVoxel,
   MudVoxel,
+  LadderVoxel,
 ]
 
 /** @type {Map<number, VoxelDef>} */

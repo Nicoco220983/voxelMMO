@@ -7,6 +7,9 @@
 namespace voxelmmo {
 namespace InputSystem {
 
+/// Climbing speed on ladders (sub-voxels/tick) - slightly slower than walking
+inline constexpr int32_t CLIMB_SPEED = 50;
+
 void apply(entt::registry& reg) {
     auto view = reg.view<InputComponent, DynamicPositionComponent, EntityTypeComponent>();
     view.each([&](entt::entity ent,
@@ -15,6 +18,12 @@ void apply(entt::registry& reg) {
                   const EntityTypeComponent& et)
     {
         int32_t nvx = dyn.vx, nvy = dyn.vy, nvz = dyn.vz;
+
+        // Check if entity is climbing (center inside ladder)
+        bool isClimbing = false;
+        if (auto* contact = reg.try_get<GroundContactComponent>(ent)) {
+            isClimbing = contact->isClimbing;
+        }
 
         // Update JumpComponent wantsToJump based on button state
         if (auto* jump = reg.try_get<JumpComponent>(ent)) {
@@ -33,17 +42,40 @@ void apply(entt::registry& reg) {
         if (et.type == EntityType::GHOST_PLAYER) {
             GhostPlayerEntity::computeVelocity(inp, nvx, nvy, nvz);
         } else if (et.type == EntityType::PLAYER) {
-            // Use WalkComponent for horizontal movement if available
-            if (auto* walk = reg.try_get<WalkComponent>(ent)) {
-                walk->computeVelocity(inp, nvx, nvz, maxSpeedXZ);
+            if (isClimbing) {
+                // On ladder: horizontal movement normal, vertical controlled by JUMP/DESCEND
+                // Use WalkComponent for horizontal only
+                if (auto* walk = reg.try_get<WalkComponent>(ent)) {
+                    walk->computeVelocity(inp, nvx, nvz, maxSpeedXZ);
+                } else {
+                    PlayerEntity::computeVelocity(inp, dyn, nvx, nvy, nvz, maxSpeedXZ);
+                }
+                
+                // Vertical: JUMP = climb up, DESCEND = climb down
+                const bool wantsUp   = (inp.buttons & static_cast<uint8_t>(InputButton::JUMP)) != 0;
+                const bool wantsDown = (inp.buttons & static_cast<uint8_t>(InputButton::DESCEND)) != 0;
+                
+                if (wantsUp && !wantsDown) {
+                    nvy = CLIMB_SPEED;
+                } else if (wantsDown && !wantsUp) {
+                    nvy = -CLIMB_SPEED;
+                } else {
+                    nvy = 0; // No vertical movement if both/neither pressed
+                }
+                
+                // Disable normal jump processing while climbing
+                if (auto* jump = reg.try_get<JumpComponent>(ent)) {
+                    jump->wantsToJump = false;
+                }
             } else {
-                // Fallback to legacy method for entities without WalkComponent
-                PlayerEntity::computeVelocity(inp, dyn, nvx, nvy, nvz, maxSpeedXZ);
+                // Normal movement (not climbing)
+                if (auto* walk = reg.try_get<WalkComponent>(ent)) {
+                    walk->computeVelocity(inp, nvx, nvz, maxSpeedXZ);
+                } else {
+                    PlayerEntity::computeVelocity(inp, dyn, nvx, nvy, nvz, maxSpeedXZ);
+                }
             }
         }
-
-        // Note: Jump is now handled in PhysicsSystem (auto-jump)
-        // We don't set nvy here anymore - PhysicsSystem handles it when grounded + wantsToJump
 
         const bool dirty = (nvx != dyn.vx || nvy != dyn.vy || nvz != dyn.vz);
         DynamicPositionComponent::modify(reg, ent,

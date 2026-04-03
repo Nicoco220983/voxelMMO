@@ -1,9 +1,9 @@
 // @ts-check
 import * as THREE from 'three'
 import { CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z, CHUNK_VOXEL_COUNT, getChunkPos } from './types.js'
-import { VoxelType } from './VoxelTypes.js'
 import { lz4Decompress, BufReader } from './utils.js'
 import { voxelTextureAtlas, getVoxelUvs } from './VoxelTextures.js'
+import { getVoxelDef } from './voxels/index.js'
 
 /** @typedef {import('./types.js').ChunkId} ChunkId */
 /** @typedef {import('./types.js').ChunkCoord} ChunkCoord */
@@ -148,40 +148,68 @@ export class Chunk {
       return this.#voxels[y * CHUNK_SIZE_X * CHUNK_SIZE_Z + x * CHUNK_SIZE_Z + z]
     }
 
+    // Helper to check if a voxel is solid (for ladder attachment)
+    const isSolid = (/** @type {number} */ vx, /** @type {number} */ vy, /** @type {number} */ vz) => {
+      const vt = get(vx, vy, vz)
+      if (vt === 0) return false
+      const def = getVoxelDef(vt)
+      return def?.isSolid !== false  // default to solid if not specified
+    }
+
     for (let y = 0; y < CHUNK_SIZE_Y; y++) {
       for (let x = 0; x < CHUNK_SIZE_X; x++) {
         for (let z = 0; z < CHUNK_SIZE_Z; z++) {
           const vtype = get(x, y, z)
           if (vtype === 0) continue
 
+          const def = getVoxelDef(vtype)
+          const isVoxelSolid = def?.isSolid !== false
+
           // Per-voxel brightness jitter [0.88 .. 1.12] from world position hash
           const jitter = 0.88 + 0.24 * voxelHash(cx * CHUNK_SIZE_X + x,
                                                    cy * CHUNK_SIZE_Y + y,
                                                    cz * CHUNK_SIZE_Z + z)
 
-          for (let face = 0; face < 6; face++) {
-            const [dx, dy, dz] = FACE_DIRS[face]
-            if (get(x + dx, y + dy, z + dz) !== 0) continue
+          if (def?.renderCustom) {
+            // Use custom render function instead of default cube faces
+            def.renderCustom({
+              x, y, z, vtype, jitter,
+              positions, colors, uvs, normals, indices,
+              isSolid, getVoxelUvs,
+              FACE_DIRS, FACE_SHADE, FACE_NORMALS, FACE_VERTS
+            })
+          } else {
+            // Normal solid voxel: render faces where neighbor is air/non-solid
+            for (let face = 0; face < 6; face++) {
+              const [dx, dy, dz] = FACE_DIRS[face]
+              const neighborType = get(x + dx, y + dy, z + dz)
+              if (neighborType !== 0) {
+                // Neighbor exists — check if it's solid
+                const neighborDef = getVoxelDef(neighborType)
+                if (neighborDef?.isSolid !== false) continue
+                // Neighbor is non-solid, render this face
+              }
 
-            const { u0, v0, u1, v1 } = getVoxelUvs(vtype, face)
-            const faceUvs = [
-              [u0, v1], [u0, v0], [u1, v0], [u1, v1],
-            ]
+              const { u0, v0, u1, v1 } = getVoxelUvs(vtype, face)
+              const faceUvs = [
+                [u0, v1], [u0, v0], [u1, v0], [u1, v1],
+              ]
 
-            const shade = FACE_SHADE[face] * jitter
-            const r = shade, g = shade, b = shade
+              const shade = FACE_SHADE[face] * jitter
+              const r = shade, g = shade, b = shade
 
-            const base = positions.length / 3
-            const [nx, ny, nz] = FACE_NORMALS[face]
-            for (let vi = 0; vi < 4; vi++) {
-              const [fx, fy, fz] = FACE_VERTS[face][vi]
-              positions.push(x + fx, y + fy, z + fz)
-              colors.push(r, g, b)
-              normals.push(nx, ny, nz)
-              const [fu, fv] = faceUvs[vi]
-              uvs.push(fu, fv)
+              const base = positions.length / 3
+              const [nx, ny, nz] = FACE_NORMALS[face]
+              for (let vi = 0; vi < 4; vi++) {
+                const [fx, fy, fz] = FACE_VERTS[face][vi]
+                positions.push(x + fx, y + fy, z + fz)
+                colors.push(r, g, b)
+                normals.push(nx, ny, nz)
+                const [fu, fv] = faceUvs[vi]
+                uvs.push(fu, fv)
+              }
+              indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
             }
-            indices.push(base, base + 1, base + 2, base, base + 2, base + 3)
           }
         }
       }

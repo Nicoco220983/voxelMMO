@@ -217,6 +217,7 @@ TEST_CASE("Entity collides with ceiling", "[physics]") {
             chunk->world.voxels[20 * CHUNK_SIZE_X * CHUNK_SIZE_Z + x * CHUNK_SIZE_Z + z] = VoxelTypes::STONE;
         }
     }
+    chunk->world.rebuildPhysicTypeCache();
     
     env.setVelocity(ent, 0, 500, 0);  // Moving up fast
     int32_t startY = env.getPosition(ent)->y;
