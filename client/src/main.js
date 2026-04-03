@@ -11,8 +11,16 @@ import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
 import { createController } from './controllers/ControllerManager.js'
 import { TouchController } from './controllers/TouchController.js'
 import { KeyboardController } from './controllers/KeyboardController.js'
+import { voxelTexturesReady } from './VoxelTextures.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
+
+// ── Texture Loading Guard ───────────────────────────────────────────────────
+let texturesReady = false
+voxelTexturesReady.then(() => {
+  texturesReady = true
+  console.info('[main] Voxel textures loaded')
+})
 
 // ── Graphics ──────────────────────────────────────────────────────────────
 const rm = new RenderManager()
@@ -241,7 +249,9 @@ function animate() {
   client.updateEntities(dt)
 
   client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
-  client.rebuildDirtyChunks()
+  if (texturesReady) {
+    client.rebuildDirtyChunks()
+  }
 
   composer.render()
 
