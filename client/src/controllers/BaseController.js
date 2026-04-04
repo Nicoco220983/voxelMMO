@@ -304,35 +304,37 @@ export class BaseController {
   /**
    * Get the current target based on mode.
    * Unified API - callers don't need to know which mode is active.
-   * @param {'destroy'|'create'} toolMode
+   * @param {'destroy'|'create'|'select'} toolMode
    * @param {VoxelHighlight} highlightSystem
    * @param {import('three').PerspectiveCamera} camera
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
    * @returns {{x: number, y: number, z: number}|null}
    */
-  getTarget(toolMode, highlightSystem, camera, chunkRegistry) {
+  getTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode = null) {
     if (this.#mode === BaseController.BUILDER) {
       return this.#builderTarget
     }
 
     // Normal mode: do raycast to get target
-    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode)
+    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode, subMode)
   }
 
   /**
    * Get current target for bulk selection preview.
-   * @param {'destroy'|'create'} toolMode
+   * @param {'destroy'|'create'|'select'} toolMode
    * @param {VoxelHighlight} highlightSystem
    * @param {import('three').PerspectiveCamera} camera
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
    * @returns {{x: number, y: number, z: number}|null}
    */
-  getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry) {
+  getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode = null) {
     if (this.#mode === BaseController.BUILDER) {
       return this.#builderTarget
     }
 
-    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode)
+    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode, subMode)
   }
 
   /**
@@ -497,29 +499,34 @@ export class BaseController {
    * @private
    * @param {GameClient} client
    * @param {import('../tools/Tool.js').Tool} tool
-   * @param {'destroy'|'create'} mode
+   * @param {'destroy'|'create'|'select'} mode
    * @param {VoxelHighlight} highlightSystem
    * @param {import('three').PerspectiveCamera} camera
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    */
   #sendToolInputInternal(client, tool, mode, highlightSystem, camera, chunkRegistry) {
     if (this.isBulkActive()) {
+      // Get sub-mode from tool if available (for select tool)
+      const subMode = tool?.getMode ? tool.getMode() : null
       // Bulk mode: state machine for start/end selection
-      const target = this.getBulkTarget(mode, highlightSystem, camera, chunkRegistry)
+      const target = this.getBulkTarget(mode, highlightSystem, camera, chunkRegistry, subMode)
       if (!target) return
 
       const result = this.onBulkAction(target)
 
       if (result.complete && result.start && result.end) {
-        const inputData = tool.serializeBulkInput(
-          result.start.x,
-          result.start.y,
-          result.start.z,
-          result.end.x,
-          result.end.y,
-          result.end.z
-        )
-        client.sendInput(inputData)
+        // Use onBulkComplete abstraction for custom bulk behavior
+        const inputData = tool.onBulkComplete?.(result.start, result.end)
+        if (inputData) {
+          // Handle both single input and array of inputs (batch)
+          if (Array.isArray(inputData)) {
+            for (const input of inputData) {
+              client.sendInput(input)
+            }
+          } else {
+            client.sendInput(inputData)
+          }
+        }
       }
     } else if (this.isBuilderMode()) {
       // Regular builder mode: use builder target
@@ -528,14 +535,28 @@ export class BaseController {
         const inputData = tool.serializeBuilderInput?.(target) ??
           this.#defaultSerializeBuilderInput(tool, target)
         if (inputData) {
-          client.sendInput(inputData)
+          // Handle both single input and array of inputs (batch)
+          if (Array.isArray(inputData)) {
+            for (const input of inputData) {
+              client.sendInput(input)
+            }
+          } else {
+            client.sendInput(inputData)
+          }
         }
       }
     } else {
       // Normal mode: tool handles the click
       const inputData = tool.onClick(highlightSystem)
       if (inputData) {
-        client.sendInput(inputData)
+        // Handle both single input and array of inputs (batch)
+        if (Array.isArray(inputData)) {
+          for (const input of inputData) {
+            client.sendInput(input)
+          }
+        } else {
+          client.sendInput(inputData)
+        }
       }
     }
   }
@@ -608,14 +629,15 @@ export class BaseController {
   /**
    * Get current target for visualization.
    * Unified API - doesn't require knowing which mode is active.
-   * @param {'destroy'|'create'} toolMode
+   * @param {'destroy'|'create'|'select'} toolMode
    * @param {VoxelHighlight} highlightSystem
    * @param {import('three').PerspectiveCamera} camera
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
    * @returns {{x: number, y: number, z: number}|null}
    */
-  getCurrentTarget(toolMode, highlightSystem, camera, chunkRegistry) {
-    return this.getTarget(toolMode, highlightSystem, camera, chunkRegistry)
+  getCurrentTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode = null) {
+    return this.getTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode)
   }
 
   /**

@@ -55,7 +55,7 @@ export class Tool {
 
   /**
    * Get the highlight mode for this tool.
-   * @returns {'destroy'|'create'|'none'} What kind of highlighting to show
+   * @returns {'destroy'|'create'|'select'|'none'} What kind of highlighting to show
    */
   getHighlightMode() {
     return 'none'
@@ -94,11 +94,19 @@ export class Tool {
   }
 
   /**
+   * Returns true if selecting this tool should switch the hotbar into select mode.
+   * @returns {boolean}
+   */
+  needsSelectMode() {
+    return false
+  }
+
+  /**
    * Serialize input for builder mode activation.
    * Default implementation delegates to onClick with a mock highlight system.
    * Override for tools that need special builder mode handling.
    * @param {{x: number, y: number, z: number}} targetVoxel
-   * @returns {ArrayBuffer|null}
+   * @returns {ArrayBuffer|Array<ArrayBuffer>|null}
    */
   serializeBuilderInput(targetVoxel) {
     // Create a mock highlight system that returns our target
@@ -107,6 +115,18 @@ export class Tool {
       getPlacementVoxel: () => targetVoxel,
     }
     return this.onClick(mockHighlight)
+  }
+
+  /**
+   * Handle bulk action completion (when user selects start and end positions).
+   * Override for tools that need custom bulk behavior.
+   * Default implementation uses serializeBulkInput.
+   * @param {{x: number, y: number, z: number}} start
+   * @param {{x: number, y: number, z: number}} end
+   * @returns {ArrayBuffer|Array<ArrayBuffer>|null} Input(s) to send to server
+   */
+  onBulkComplete(start, end) {
+    return this.serializeBulkInput?.(start.x, start.y, start.z, end.x, end.y, end.z) ?? null
   }
 }
 

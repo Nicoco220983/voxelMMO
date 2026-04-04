@@ -49,6 +49,11 @@ export class VoxelHighlight {
   /** @type {number} Current highlight color */
   #currentColor = 0xFFFFFF
 
+  /** Preview meshes for multi-voxel preview (e.g., paste mode)
+   * @type {THREE.Mesh[]}
+   */
+  #previewMeshes = []
+
   /**
    * @param {THREE.Scene} scene
    */
@@ -99,10 +104,11 @@ export class VoxelHighlight {
    * Called by main loop with target from BaseController.
    * @param {{x: number, y: number, z: number}|null} target
    * @param {number} color - Hex color value (0xRRGGBB), 0 to hide
-   * @param {'destroy'|'create'} mode - Tool mode for tracking voxel type
+   * @param {'destroy'|'create'|'select'} mode - Tool mode for tracking voxel type
    * @param {boolean} [isBuilderMode=false] - Whether builder mode is active
+   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
    */
-  setTarget(target, color, mode, isBuilderMode = false) {
+  setTarget(target, color, mode, isBuilderMode = false, subMode = null) {
     // Update color if changed
     if (this.#currentColor !== color) {
       this.#currentColor = color
@@ -117,8 +123,9 @@ export class VoxelHighlight {
     }
 
     // For create mode, target is the placement position
-    // For destroy mode, target is the highlighted voxel
-    if (mode === 'create') {
+    // For destroy/select mode (except paste), target is the highlighted voxel
+    // For paste mode, target is the placement position (like create)
+    if (mode === 'create' || (mode === 'select' && subMode === 'paste')) {
       this.#placementVoxel = target
       // Highlighted voxel is adjacent, but we don't track it separately
       this.#highlightedVoxel = null
@@ -135,10 +142,11 @@ export class VoxelHighlight {
    * Used by BaseController to determine initial targets on mode entry.
    * @param {THREE.PerspectiveCamera} camera
    * @param {ChunkRegistry} chunkRegistry
-   * @param {'destroy'|'create'|'none'} toolMode
-   * @returns {{x: number, y: number, z: number}|null} Target position (placement for create, hit for destroy)
+   * @param {'destroy'|'create'|'select'|'none'} toolMode
+   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
+   * @returns {{x: number, y: number, z: number}|null} Target position (placement for create/paste, hit for destroy/copy)
    */
-  raycastTarget(camera, chunkRegistry, toolMode) {
+  raycastTarget(camera, chunkRegistry, toolMode, subMode = null) {
     if (toolMode === 'none' || !camera) return null
 
     // Get camera direction from yaw (Y) and pitch (X) rotation
@@ -154,12 +162,13 @@ export class VoxelHighlight {
     const originY = camera.position.y
     const originZ = camera.position.z
 
-    const hit = this.#castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry, toolMode)
+    const hit = this.#castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry, toolMode, subMode)
 
     if (!hit) return null
 
     // Return appropriate target based on mode
-    if (toolMode === 'create') {
+    // For create mode or paste sub-mode, return placement position (empty voxel)
+    if (toolMode === 'create' || (toolMode === 'select' && subMode === 'paste')) {
       return { x: hit.placementX, y: hit.placementY, z: hit.placementZ }
     } else {
       return { x: hit.x, y: hit.y, z: hit.z }
@@ -168,8 +177,8 @@ export class VoxelHighlight {
 
   /**
    * Cast a ray through the voxel grid using 3D DDA algorithm.
-   * For DESTROY tool: returns the first non-air voxel.
-   * For CREATE tool: returns the empty voxel adjacent to the first non-air voxel
+   * For DESTROY/SELECT tool (except paste): returns the first non-air voxel.
+   * For CREATE tool or paste mode: returns the empty voxel adjacent to the first non-air voxel
    * (the one the ray entered from - closest to player along the ray).
    * @private
    * @param {number} originX
@@ -179,10 +188,11 @@ export class VoxelHighlight {
    * @param {number} dirY
    * @param {number} dirZ
    * @param {ChunkRegistry} chunkRegistry
-   * @param {'destroy'|'create'|'none'} toolMode
+   * @param {'destroy'|'create'|'select'|'none'} toolMode
+   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
    * @returns {{x: number, y: number, z: number, placementX: number, placementY: number, placementZ: number}|null}
    */
-  #castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry, toolMode) {
+  #castRay(originX, originY, originZ, dirX, dirY, dirZ, chunkRegistry, toolMode, subMode = null) {
     // Normalize direction
     const len = Math.sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ)
     const dx = dirX / len
@@ -221,15 +231,20 @@ export class VoxelHighlight {
 
       if (voxel !== null && voxel !== VoxelType.AIR) {
         // Found a solid voxel
-        if (toolMode === 'destroy') {
-          // DESTROY tool: highlight the solid voxel itself
+        // For destroy/copy: target the solid voxel itself
+        // For create/paste: target the empty voxel before it (placement)
+        const targetsSolid = (toolMode === 'destroy') || 
+                             (toolMode === 'select' && subMode !== 'paste')
+        
+        if (targetsSolid) {
+          // DESTROY/COPY mode: highlight the solid voxel itself
           return { x: vx, y: vy, z: vz, placementX: vx, placementY: vy, placementZ: vz }
         } else if (hasMoved) {
-          // CREATE tool: highlight the previous (empty) voxel we came from
+          // CREATE/PASTE mode: highlight the previous (empty) voxel we came from
           // Only if we've moved at least one step from the start
           return { x: prevX, y: prevY, z: prevZ, placementX: prevX, placementY: prevY, placementZ: prevZ }
         }
-        // For CREATE mode: if we haven't moved yet, continue stepping to find a valid placement
+        // For CREATE/PASTE mode: if we haven't moved yet, continue stepping to find a valid placement
       }
 
       // Current voxel is empty, remember it as the previous one
@@ -352,6 +367,47 @@ export class VoxelHighlight {
   }
 
   /**
+   * Set preview voxel positions for multi-voxel preview (e.g., paste mode).
+   * Creates/updates semi-transparent boxes at each position.
+   * @param {Array<{x: number, y: number, z: number}>} positions
+   * @param {number} color - Hex color value (0xRRGGBB)
+   */
+  setPreviewVoxels(positions, color) {
+    // Clear existing preview meshes
+    this.#clearPreviewMeshes()
+
+    if (!positions || positions.length === 0) return
+
+    // Create a mesh for each preview position
+    const geometry = new THREE.BoxGeometry(1.05, 1.05, 1.05)
+    const material = new THREE.MeshBasicMaterial({
+      color: color,
+      transparent: true,
+      opacity: 0.3,
+      depthWrite: false
+    })
+
+    for (const pos of positions) {
+      const mesh = new THREE.Mesh(geometry, material)
+      mesh.position.set(pos.x + 0.5, pos.y + 0.5, pos.z + 0.5)
+      this.#scene.add(mesh)
+      this.#previewMeshes.push(mesh)
+    }
+  }
+
+  /**
+   * Clear all preview meshes.
+   * @private
+   */
+  #clearPreviewMeshes() {
+    for (const mesh of this.#previewMeshes) {
+      this.#scene.remove(mesh)
+      mesh.geometry.dispose()
+    }
+    this.#previewMeshes = []
+  }
+
+  /**
    * Dispose of highlight resources.
    */
   dispose() {
@@ -372,5 +428,6 @@ export class VoxelHighlight {
       }
       this.#builderGizmo = null
     }
+    this.#clearPreviewMeshes()
   }
 }

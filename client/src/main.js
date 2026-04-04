@@ -190,13 +190,18 @@ function animate() {
     if (currentTool && currentTool.onSelect) {
       currentTool.onSelect()
     }
+    // Inject ChunkRegistry into SelectVoxelTool for copy operations
+    if (currentTool && currentTool.name === 'Select Voxel') {
+      currentTool.setChunkRegistry(client.chunkRegistry)
+    }
     lastSelectedTool = currentTool
   }
 
   // Get current target FIRST (needed for sync's long-press bulk entry)
   const toolMode = currentTool ? currentTool.getHighlightMode() : 'none'
   const toolColor = currentTool ? currentTool.getHighlightColor() : 0
-  const currentTarget = controller.getCurrentTarget(toolMode, voxelHighlight, camera, client.chunkRegistry)
+  const toolSubMode = currentTool?.getMode ? currentTool.getMode() : null
+  const currentTarget = controller.getCurrentTarget(toolMode, voxelHighlight, camera, client.chunkRegistry, toolSubMode)
 
   // Process pending inputs (tool key presses with mode transitions)
   if (controller instanceof KeyboardController || controller instanceof TouchController) {
@@ -208,7 +213,23 @@ function animate() {
   controller.sync(hotbar, voxelHighlight, client.chunkRegistry, camera, currentTarget)
 
   // Update voxel highlight visualization
-  voxelHighlight.setTarget(currentTarget, toolColor, toolMode, controller.isBuilderMode())
+  voxelHighlight.setTarget(currentTarget, toolColor, toolMode, controller.isBuilderMode(), toolSubMode)
+
+  // Update paste preview visualization (for SelectVoxelTool in paste mode)
+  // In builder mode, use builder target; otherwise use raycast target
+  if (currentTool?.name === 'Select Voxel' && currentTool.getMode() === 'paste') {
+    const pasteTarget = controller.isBuilderMode() 
+      ? controller.getBuilderTarget() 
+      : currentTarget
+    if (pasteTarget) {
+      const previewPositions = currentTool.getPastePreviewPositions(pasteTarget)
+      voxelHighlight.setPreviewVoxels(previewPositions, toolColor)
+    } else {
+      voxelHighlight.setPreviewVoxels([], 0)
+    }
+  } else {
+    voxelHighlight.setPreviewVoxels([], 0)
+  }
 
   // Send all pending input (tool activation and/or movement)
   controller.sendInput(client, hotbar, voxelHighlight, camera, client.chunkRegistry)
@@ -216,7 +237,7 @@ function animate() {
   // Sync bulk selection visuals
   bulkSelection.setColor(toolColor)
   if (controller.isBulkActive()) {
-    const bulkTarget = controller.getBulkTarget(toolMode, voxelHighlight, camera, client.chunkRegistry)
+    const bulkTarget = controller.getBulkTarget(toolMode, voxelHighlight, camera, client.chunkRegistry, toolSubMode)
     bulkSelection.updateEnd(bulkTarget)
   }
 
