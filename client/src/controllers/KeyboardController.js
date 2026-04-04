@@ -46,10 +46,13 @@ export class KeyboardController extends BaseController {
   #builderKeyProcessed = { w: false, a: false, s: false, d: false, space: false, shift: false }
 
   /**
-   * @param {HTMLElement} [domElement] - Element to capture pointer lock on click.
+   * @param {HTMLElement} domElement - Element to capture pointer lock on click.
+   * @param {Object} options
+   * @param {import('../ui/ToolContext.js').ToolContext} options.toolContext - Tool context for dependency access
+   * @param {import('../ui/Hotbar.js').Hotbar} options.hotbar - Hotbar UI component
    */
-  constructor(domElement = document.body) {
-    super()
+  constructor(domElement, { toolContext, hotbar }) {
+    super({ toolContext, hotbar })
     this.yaw = 0
     this.pitch = -0.3
     this.#domElement = domElement
@@ -237,12 +240,11 @@ export class KeyboardController extends BaseController {
   /**
    * Process pending tool key presses and builder mode toggle.
    * Called from main loop with access to all dependencies.
-   * @param {import('../ui/Hotbar.js').Hotbar} hotbar
    * @param {import('../ui/VoxelHighlight.js').VoxelHighlight} highlightSystem
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    */
-  processPendingInputs(hotbar, highlightSystem, chunkRegistry, camera) {
+  processPendingInputs(highlightSystem, chunkRegistry, camera) {
     // Process tool key press
     if (this.#pendingToolSlot !== null) {
       // Cap at 2 presses (double press) - triple press is not used anymore
@@ -250,7 +252,6 @@ export class KeyboardController extends BaseController {
       this.handleToolKeyPress(
         this.#pendingToolSlot,
         pressCount,
-        hotbar,
         highlightSystem,
         chunkRegistry,
         camera
@@ -261,7 +262,7 @@ export class KeyboardController extends BaseController {
 
     // Process builder mode toggle
     if (this.#toggleBuilderModeRequested) {
-      this.toggleBuilderMode(hotbar, highlightSystem, chunkRegistry, camera)
+      this.toggleBuilderMode(highlightSystem, chunkRegistry, camera)
       this.#toggleBuilderModeRequested = false
     }
   }

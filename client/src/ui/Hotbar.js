@@ -7,6 +7,8 @@ import { StoneVoxel, DirtVoxel, BasicVoxel, PlanksVoxel, BricksVoxel, MudVoxel, 
 
 /** @typedef {import('../tools/Tool.js').Tool} Tool */
 /** @typedef {import('../voxels/index.js').VoxelDef} VoxelDef */
+/** @typedef {import('./ToolContext.js').ToolContext} ToolContext */
+/** @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
 
 /**
  * Hotbar UI component - bottom row of selectable slots.
@@ -67,7 +69,20 @@ export class Hotbar {
    */
   voxelItems
 
-  constructor() {
+  /** @type {ToolContext|null} */
+  #toolContext = null
+
+  /** @type {ChunkRegistry|null} */
+  #chunkRegistry = null
+
+  /**
+   * @param {Object} [options]
+   * @param {ToolContext} [options.toolContext] - Tool context to update on selection changes
+   * @param {ChunkRegistry} [options.chunkRegistry] - Chunk registry to inject into tools
+   */
+  constructor({ toolContext = null, chunkRegistry = null } = {}) {
+    this.#toolContext = toolContext
+    this.#chunkRegistry = chunkRegistry
     this.selectedIndex = -1  // -1 means no selection
     this.slotElements = []
     // Initialize with 10 empty slots
@@ -251,6 +266,16 @@ export class Hotbar {
       }
       this.slotElements[this.selectedIndex].classList.add('selected')
     }
+
+    // Update toolContext with the selected tool (handles onSelect/onDeselect lifecycle)
+    const selectedTool = this.getSelectedSlot().tool
+    if (this.#toolContext) {
+      this.#toolContext.selectTool(selectedTool)
+    }
+    // Inject ChunkRegistry into tools that need it (duck typing)
+    if (selectedTool?.setChunkRegistry && this.#chunkRegistry) {
+      selectedTool.setChunkRegistry(this.#chunkRegistry)
+    }
   }
 
   /**
@@ -271,6 +296,12 @@ export class Hotbar {
       this.slotElements[this.selectedIndex].classList.remove('selected')
     }
     this.selectedIndex = -1
+
+    // Update toolContext - no tool selected (handles onDeselect lifecycle)
+    if (this.#toolContext) {
+      this.#toolContext.selectTool(null)
+    }
+
     if (this.onToolUnselected) {
       this.onToolUnselected()
     }

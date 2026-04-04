@@ -211,6 +211,30 @@ export class SelectVoxelTool extends Tool {
   }
 
   /**
+   * Update paste preview visualization.
+   * Called every frame when this tool is active.
+   * @param {VoxelHighlight} highlightSystem
+   * @param {boolean} isBuilderMode
+   * @param {{x: number, y: number, z: number}|null} builderTarget
+   * @param {{x: number, y: number, z: number}|null} currentTarget
+   * @param {number} toolColor
+   */
+  update(highlightSystem, isBuilderMode, builderTarget, currentTarget, toolColor) {
+    if (this.#mode !== 'paste') {
+      highlightSystem.setPreviewVoxels([], 0)
+      return
+    }
+
+    const pasteTarget = isBuilderMode ? builderTarget : currentTarget
+    if (pasteTarget) {
+      const previewPositions = this.getPastePreviewPositions(pasteTarget)
+      highlightSystem.setPreviewVoxels(previewPositions, toolColor)
+    } else {
+      highlightSystem.setPreviewVoxels([], 0)
+    }
+  }
+
+  /**
    * Get voxel type at world coordinates.
    * @private
    * @param {number} vx

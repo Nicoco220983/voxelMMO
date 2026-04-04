@@ -73,8 +73,13 @@ export class TouchController extends BaseController {
   /** @type {number} Number of taps in current sequence */
   #pendingTapCount = 0
 
-  constructor() {
-    super()
+  /**
+   * @param {Object} options
+   * @param {import('../ui/ToolContext.js').ToolContext} options.toolContext - Tool context for dependency access
+   * @param {import('../ui/Hotbar.js').Hotbar} options.hotbar - Hotbar UI component
+   */
+  constructor({ toolContext, hotbar }) {
+    super({ toolContext, hotbar })
     this.yaw = 0
     this.pitch = -0.3
 
@@ -89,6 +94,29 @@ export class TouchController extends BaseController {
     document.addEventListener('touchmove', this.#boundTouchMove, { passive: false })
     document.addEventListener('touchend', this.#boundTouchEnd)
     document.addEventListener('touchcancel', this.#boundTouchEnd)
+
+    // Configure hotbar for touch interaction
+    this.#setupHotbar(hotbar)
+  }
+
+  /**
+   * Configure hotbar for touch interaction.
+   * Overrides selectSlot to handle tap detection.
+   * @param {import('../ui/Hotbar.js').Hotbar} hotbar
+   * @private
+   */
+  #setupHotbar(hotbar) {
+    // Override selectSlot to handle tap detection
+    const originalSelectSlot = hotbar.selectSlot.bind(hotbar)
+    hotbar.selectSlot = (index) => {
+      this.onHotbarTap(index)
+      originalSelectSlot(index)
+    }
+
+    // Wire up back button to trigger slot unselection
+    hotbar.onToolUnselected = () => {
+      this.selectedSlotIndex = null
+    }
   }
 
   #buildDOM() {
@@ -298,19 +326,17 @@ export class TouchController extends BaseController {
   /**
    * Process pending hotbar taps.
    * Called from main loop with access to all dependencies.
-   * @param {import('../ui/Hotbar.js').Hotbar} hotbar
    * @param {import('../ui/VoxelHighlight.js').VoxelHighlight} highlightSystem
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    */
-  processPendingInputs(hotbar, highlightSystem, chunkRegistry, camera) {
+  processPendingInputs(highlightSystem, chunkRegistry, camera) {
     if (this.#pendingHotbarTap !== null) {
       // Cap at 2 taps (double tap) - triple tap is not used anymore
       const tapCount = Math.min(this.#pendingTapCount, 2)
       this.handleToolKeyPress(
         this.#pendingHotbarTap,
         tapCount,
-        hotbar,
         highlightSystem,
         chunkRegistry,
         camera

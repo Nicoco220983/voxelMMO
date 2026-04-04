@@ -54,6 +54,20 @@ export class Tool {
   }
 
   /**
+   * Called every frame to update tool-specific visuals (e.g., paste preview).
+   * Override in subclass if needed.
+   * @param {VoxelHighlight} highlightSystem
+   * @param {boolean} isBuilderMode
+   * @param {{x: number, y: number, z: number}|null} builderTarget
+   * @param {{x: number, y: number, z: number}|null} currentTarget
+   * @param {number} toolColor
+   */
+  update(highlightSystem, isBuilderMode, builderTarget, currentTarget, toolColor) {
+    // Default: clear any preview
+    highlightSystem.setPreviewVoxels([], 0)
+  }
+
+  /**
    * Get the highlight mode for this tool.
    * @returns {'destroy'|'create'|'select'|'none'} What kind of highlighting to show
    */

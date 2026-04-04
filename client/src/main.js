@@ -8,6 +8,7 @@ import {
 import { Hotbar } from './ui/Hotbar.js'
 import { VoxelHighlight } from './ui/VoxelHighlight.js'
 import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
+import { ToolContext } from './ui/ToolContext.js'
 import { createController } from './controllers/ControllerManager.js'
 import { TouchController } from './controllers/TouchController.js'
 import { KeyboardController } from './controllers/KeyboardController.js'
@@ -75,42 +76,25 @@ function getLocalPlayer() {
   return client.selfEntity
 }
 
-// ── Hotbar ─────────────────────────────────────────────────────────────────
-const hotbar = new Hotbar()
-
-/** @type {import('./tools/Tool.js').Tool|null} */
-let lastSelectedTool = null
-
-// Handle tool unselection (ESC/BACK pressed)
-hotbar.onToolUnselected = () => {
-  lastSelectedTool = null
-}
-
 // ── Voxel Highlight System ────────────────────────────────────────────────
 const voxelHighlight = new VoxelHighlight(scene)
 
 // ── Bulk Voxels Selection ─────────────────────────────────────────────────
 const bulkSelection = new BulkVoxelsSelection(scene)
 
-// ── Controller (keyboard or touch) ────────────────────────────────────────
-const controller = createController(renderer.domElement)
-controller.setBulkSelection(bulkSelection)
+// ── Tool Context (centralized tool state) ─────────────────────────────────
+const toolContext = new ToolContext({ voxelHighlight, bulkSelection })
 
-// Hook up touch hotbar tap detection and ESC handling
-if (controller instanceof TouchController) {
-  // Override selectSlot to handle tap detection
-  const originalSelectSlot = hotbar.selectSlot.bind(hotbar)
-  hotbar.selectSlot = (index) => {
-    controller.onHotbarTap(index)
-    originalSelectSlot(index)
-  }
+// ── Hotbar ─────────────────────────────────────────────────────────────────
+const hotbar = new Hotbar({ toolContext, chunkRegistry: client.chunkRegistry })
 
-  // Wire up back button to trigger ESC
-  hotbar.onToolUnselected = () => {
-    lastSelectedTool = null
-    controller.selectedSlotIndex = null
-  }
+// Handle tool unselection (ESC/BACK pressed)
+hotbar.onToolUnselected = () => {
+  // ToolContext.currentTool is updated by Hotbar
 }
+
+// ── Controller (keyboard or touch) ────────────────────────────────────────
+const controller = createController(renderer.domElement, { toolContext, hotbar })
 
 // ── Input sending ─────────────────────────────────────────────────────────
 
@@ -167,6 +151,7 @@ function animate() {
   if (controller.unselectToolPressed) {
     hotbar.handleQ()
     controller.unselectToolPressed = false
+    // Note: toolContext.currentTool is updated in the tool change detection below
   }
 
   // Handle hotbar keyboard input
@@ -180,59 +165,31 @@ function animate() {
     hotbar.selectSlot(controller.selectedSlotIndex)
   }
 
-  // Detect tool changes to trigger onSelect/onDeselect callbacks
-  const currentSlot = hotbar.getSelectedSlot()
-  const currentTool = currentSlot.tool
-  if (currentTool !== lastSelectedTool) {
-    if (lastSelectedTool && lastSelectedTool.onDeselect) {
-      lastSelectedTool.onDeselect()
-    }
-    if (currentTool && currentTool.onSelect) {
-      currentTool.onSelect()
-    }
-    // Inject ChunkRegistry into SelectVoxelTool for copy operations
-    if (currentTool && currentTool.name === 'Select Voxel') {
-      currentTool.setChunkRegistry(client.chunkRegistry)
-    }
-    lastSelectedTool = currentTool
-  }
+  // Note: ChunkRegistry injection and onSelect/onDeselect are handled by Hotbar
 
   // Get current target FIRST (needed for sync's long-press bulk entry)
-  const toolMode = currentTool ? currentTool.getHighlightMode() : 'none'
-  const toolColor = currentTool ? currentTool.getHighlightColor() : 0
-  const toolSubMode = currentTool?.getMode ? currentTool.getMode() : null
+  const toolMode = toolContext.getHighlightMode()
+  const toolColor = toolContext.getHighlightColor()
+  const toolSubMode = toolContext.getToolMode()
   const currentTarget = controller.getCurrentTarget(toolMode, voxelHighlight, camera, client.chunkRegistry, toolSubMode)
 
   // Process pending inputs (tool key presses with mode transitions)
   if (controller instanceof KeyboardController || controller instanceof TouchController) {
-    controller.processPendingInputs(hotbar, voxelHighlight, client.chunkRegistry, camera)
+    controller.processPendingInputs(voxelHighlight, client.chunkRegistry, camera)
   }
 
   // Sync controller state (auto-exit builder mode if tool changed, handle movement, etc.)
   // Note: long-press bulk entry happens here, uses currentTarget for start position
-  controller.sync(hotbar, voxelHighlight, client.chunkRegistry, camera, currentTarget)
+  controller.sync(voxelHighlight, client.chunkRegistry, camera, currentTarget)
 
   // Update voxel highlight visualization
   voxelHighlight.setTarget(currentTarget, toolColor, toolMode, controller.isBuilderMode(), toolSubMode)
 
-  // Update paste preview visualization (for SelectVoxelTool in paste mode)
-  // In builder mode, use builder target; otherwise use raycast target
-  if (currentTool?.name === 'Select Voxel' && currentTool.getMode() === 'paste') {
-    const pasteTarget = controller.isBuilderMode() 
-      ? controller.getBuilderTarget() 
-      : currentTarget
-    if (pasteTarget) {
-      const previewPositions = currentTool.getPastePreviewPositions(pasteTarget)
-      voxelHighlight.setPreviewVoxels(previewPositions, toolColor)
-    } else {
-      voxelHighlight.setPreviewVoxels([], 0)
-    }
-  } else {
-    voxelHighlight.setPreviewVoxels([], 0)
-  }
+  // Update tool-specific visuals (e.g., paste preview)
+  toolContext.currentTool?.update(voxelHighlight, controller.isBuilderMode(), controller.getBuilderTarget(), currentTarget, toolColor)
 
   // Send all pending input (tool activation and/or movement)
-  controller.sendInput(client, hotbar, voxelHighlight, camera, client.chunkRegistry)
+  controller.sendInput(client, voxelHighlight, camera, client.chunkRegistry, hotbar.selectedIndex)
 
   // Sync bulk selection visuals
   bulkSelection.setColor(toolColor)

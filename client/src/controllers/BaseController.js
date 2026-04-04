@@ -4,7 +4,8 @@
  * @typedef {import('../ui/Hotbar.js').Hotbar} Hotbar
  * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
  * @typedef {import('../GameClient.js').GameClient} GameClient
- * @typedef {import('../ui/BulkVoxelsSelection.js').BulkVoxelsSelection} BulkVoxelsSelection
+ * @typedef {import('../ui/ToolContext.js').ToolContext} ToolContext
+ * @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry
  */
 
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
@@ -41,6 +42,28 @@ export class BaseController {
   selectedSlotIndex = null
 
   /**
+   * Tool context providing access to current tool, voxel highlight, and bulk selection.
+   * @type {ToolContext}
+   */
+  toolContext
+
+  /**
+   * Hotbar UI component for slot selection.
+   * @type {Hotbar}
+   */
+  hotbar
+
+  /**
+   * @param {Object} options
+   * @param {ToolContext} options.toolContext - Tool context for dependency access
+   * @param {Hotbar} options.hotbar - Hotbar UI component
+   */
+  constructor({ toolContext, hotbar }) {
+    this.toolContext = toolContext
+    this.hotbar = hotbar
+  }
+
+  /**
    * Threshold in ms for a long press to trigger bulk mode entry.
    * @type {number}
    */
@@ -75,10 +98,7 @@ export class BaseController {
    */
   #builderTarget = null
 
-  /** Bulk voxel selection state/visual manager
-   * @type {BulkVoxelsSelection|null}
-   */
-  #bulkSelection = null
+
 
   /**
    * True for one frame when mode changes (in either direction).
@@ -103,13 +123,7 @@ export class BaseController {
   /** @type {number} Last sent input type */
   #lastInputType = -1
 
-  /**
-   * Set the bulk selection visuals/state manager.
-   * @param {BulkVoxelsSelection|null} bulkSelection
-   */
-  setBulkSelection(bulkSelection) {
-    this.#bulkSelection = bulkSelection
-  }
+
 
   // ── Mode management methods ──────────────────────────────────────────────
 
@@ -126,7 +140,7 @@ export class BaseController {
    * @returns {'idle'|'selecting_start'|'selecting_end'}
    */
   getBulkPhase() {
-    return this.#bulkSelection?.getBulkPhase() ?? 'idle'
+    return this.toolContext.bulkSelection.getBulkPhase()
   }
 
   /**
@@ -142,7 +156,7 @@ export class BaseController {
    * @returns {boolean}
    */
   isBulkActive() {
-    return this.#bulkSelection?.isActive() ?? false
+    return this.toolContext.bulkSelection.isActive()
   }
 
   /**
@@ -166,7 +180,7 @@ export class BaseController {
    * @returns {{x: number, y: number, z: number}|null}
    */
   getBulkStart() {
-    return this.#bulkSelection?.getStartPos() ?? null
+    return this.toolContext.bulkSelection.getStartPos()
   }
 
   /**
@@ -210,7 +224,7 @@ export class BaseController {
    * @returns {boolean} true if activated
    */
   activateBulkMode(color = 0xFF0000) {
-    this.#bulkSelection?.activate(color)
+    this.toolContext.bulkSelection.activate(color)
     return true
   }
 
@@ -222,7 +236,7 @@ export class BaseController {
    * @returns {boolean} true if activated
    */
   enterBulkModeWithStart(startPos, color = 0xFF0000) {
-    this.#bulkSelection?.start(startPos, color)
+    this.toolContext.bulkSelection.start(startPos, color)
     return true
   }
 
@@ -230,7 +244,7 @@ export class BaseController {
    * Exit bulk mode (clear all bulk state).
    */
   exitBulkMode() {
-    this.#bulkSelection?.exit()
+    this.toolContext.bulkSelection.exit()
   }
 
   /**
@@ -240,7 +254,7 @@ export class BaseController {
    * @returns {{consumed: boolean, complete: boolean, start: {x: number, y: number, z: number}|null, end: {x: number, y: number, z: number}|null}}
    */
   onBulkAction(targetPos) {
-    return this.#bulkSelection?.onAction(targetPos) ?? { consumed: false, complete: false, start: null, end: null }
+    return this.toolContext.bulkSelection.onAction(targetPos)
   }
 
   /**
@@ -351,17 +365,16 @@ export class BaseController {
   // ── BaseController methods ───────────────────────────────────────────────
 
   /**
-   * Sync controller state with hotbar.
+   * Sync controller state with tool context.
    * Checks if current tool supports builder/bulk mode, auto-exits if not.
    * Should be called once per frame.
-   * @param {Hotbar} hotbar
    * @param {VoxelHighlight} highlightSystem
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    * @param {{x: number, y: number, z: number}|null} currentTarget - Current highlight voxel (for bulk start)
    */
-  sync(hotbar, highlightSystem, chunkRegistry, camera, currentTarget) {
-    const currentTool = hotbar.getSelectedSlot().tool
+  sync(highlightSystem, chunkRegistry, camera, currentTarget) {
+    const currentTool = this.toolContext.currentTool
 
     // Auto-exit builder mode if tool doesn't support it
     if (this.isBuilderMode() && (!currentTool || !currentTool.supportsBuilderMode())) {
@@ -421,13 +434,12 @@ export class BaseController {
    * Manages mode transitions: single=normal, double=builder, triple=bulk
    * @param {number} slotIndex - Hotbar slot index
    * @param {number} pressCount - Number of presses (1, 2, or 3)
-   * @param {Hotbar} hotbar
    * @param {VoxelHighlight} highlightSystem
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    */
-  handleToolKeyPress(slotIndex, pressCount, hotbar, highlightSystem, chunkRegistry, camera) {
-    const currentTool = hotbar.getSelectedSlot().tool
+  handleToolKeyPress(slotIndex, pressCount, highlightSystem, chunkRegistry, camera) {
+    const currentTool = this.toolContext.currentTool
 
     if (pressCount === 1) {
       // Single press: normal mode
@@ -450,13 +462,12 @@ export class BaseController {
 
   /**
    * Toggle builder mode on/off (B key).
-   * @param {Hotbar} hotbar
    * @param {VoxelHighlight} highlightSystem
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    */
-  toggleBuilderMode(hotbar, highlightSystem, chunkRegistry, camera) {
-    const currentTool = hotbar.getSelectedSlot().tool
+  toggleBuilderMode(highlightSystem, chunkRegistry, camera) {
+    const currentTool = this.toolContext.currentTool
 
     if (this.isBuilderMode()) {
       // Exit builder mode
@@ -476,11 +487,11 @@ export class BaseController {
    * Send all pending input to the server.
    * This is the central entry point for all input sending.
    * @param {GameClient} client
-   * @param {Hotbar} hotbar
    * @param {VoxelHighlight} highlightSystem
+   * @param {number} selectedSlotIndex - Current hotbar slot (for input type mapping)
    */
-  sendInput(client, hotbar, highlightSystem, camera, chunkRegistry) {
-    const currentTool = hotbar.getSelectedSlot().tool
+  sendInput(client, highlightSystem, camera, chunkRegistry, selectedSlotIndex) {
+    const currentTool = this.toolContext.currentTool
     const mode = currentTool?.getHighlightMode() ?? 'none'
 
     // Handle tool activation (only if tool selected)
@@ -490,7 +501,7 @@ export class BaseController {
 
     // Send movement input only when not in builder mode
     if (!this.isBuilderMode()) {
-      this.#sendMovementInputInternal(client, hotbar.selectedIndex)
+      this.#sendMovementInputInternal(client, selectedSlotIndex)
     }
   }
 
