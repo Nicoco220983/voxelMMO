@@ -87,19 +87,15 @@ export class KeyboardController extends BaseController {
   }
 
   /**
-   * Global keydown handler for hotbar and tool unselection.
+   * Global keydown handler for hotbar number keys.
    * Separated from #onKeyDown to avoid conflicts with pointer lock logic.
+   * Note: Q key handling is done in #onKeyDown via unselectToolPressed flag + sync().
    * @param {KeyboardEvent} e
    */
   #onWindowKeyDown(e) {
-    // Handle Q key for unselecting tool
-    if (e.code === 'KeyQ') {
-      if (this.hotbar.handleQ(e)) {
-        // Tool was unselected, sync controller state
-        this.selectedSlotIndex = null
-      }
-      return
-    }
+    // Note: Q key is handled in #onKeyDown which sets unselectToolPressed flag.
+    // The actual unselection happens in BaseController.sync() -> #syncToolUnselection().
+    // This ensures proper timing with the render loop.
 
     if (this.hotbar.handleKeyDown(e)) {
       // Hotbar handled it, sync selection state if needed
@@ -303,12 +299,13 @@ export class KeyboardController extends BaseController {
    * Update keyboard controller state.
    * Computes button masks and builder movement deltas.
    * Note: resetFrameState() is called separately from main.js at end of frame.
+   * Note: unselectToolPressed is consumed by BaseController.sync() -> #syncToolUnselection()
    * @param {number} dt
    */
   update(dt) {
     // Reset pointer lock exit flag (consumed by main.js before update)
     this.pointerLockJustExited = false
-    this.unselectToolPressed = false
+    // Note: unselectToolPressed is NOT reset here - it's consumed in sync() -> #syncToolUnselection()
 
     let b = 0
     if (this.#keys.w) b |= InputButton.FORWARD

@@ -125,8 +125,7 @@ export class Tool {
   serializeBuilderInput(targetVoxel) {
     // Create a mock highlight system that returns our target
     const mockHighlight = {
-      getHighlightedVoxel: () => targetVoxel,
-      getPlacementVoxel: () => targetVoxel,
+      getCurrentTarget: () => targetVoxel,
     }
     return this.onClick(mockHighlight)
   }

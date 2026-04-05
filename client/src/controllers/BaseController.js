@@ -101,28 +101,6 @@ export class BaseController {
   /** @type {boolean} True if the current press was already consumed as a long press. */
   actionPressConsumed = false
 
-  // ── Mode state (merged from InputModeManager) ─────────────────────────────
-
-  /** Normal mode: raycast-based targeting */
-  static NORMAL = 'normal'
-  /** Builder mode: keyboard-controlled voxel target */
-  static BUILDER = 'builder'
-
-  /** @type {'normal'|'builder'} */
-  #mode = BaseController.NORMAL
-
-  /** Player yaw at builder mode entry time (for movement orientation)
-   * @type {number}
-   */
-  #entryYaw = 0
-
-  /** Builder mode target (keyboard-controlled voxel position)
-   * @type {{x: number, y: number, z: number}|null}
-   */
-  #builderTarget = null
-
-
-
   /**
    * True for one frame when mode changes (in either direction).
    * @type {boolean}
@@ -140,38 +118,23 @@ export class BaseController {
   /** @type {number} Last sent buttons bitmask */
   #lastButtons = -1
   /** @type {number} Last sent yaw */
-  #lastYaw = NaN
+  #lastSentYaw = NaN
   /** @type {number} Last sent pitch */
-  #lastPitch = NaN
+  #lastSentPitch = NaN
   /** @type {number} Last sent input type */
   #lastInputType = -1
 
 
 
-  // ── Mode management methods ──────────────────────────────────────────────
-
-  /**
-   * Get current mode.
-   * @returns {'normal'|'builder'}
-   */
-  getMode() {
-    return this.#mode
-  }
-
-  /**
-   * Get current bulk phase.
-   * @returns {'idle'|'selecting_start'|'selecting_end'}
-   */
-  getBulkPhase() {
-    return this.toolContext.bulkSelection.getBulkPhase()
-  }
+  // ── Mode management (delegates to VoxelHighlight) ─────────────────────────
 
   /**
    * Check if currently in builder mode.
+   * Delegates to VoxelHighlight.
    * @returns {boolean}
    */
   isBuilderMode() {
-    return this.#mode === BaseController.BUILDER
+    return this.toolContext.voxelHighlight?.isBuilderMode() ?? false
   }
 
   /**
@@ -183,19 +146,11 @@ export class BaseController {
   }
 
   /**
-   * Get entry yaw (for builder mode movement orientation).
-   * @returns {number}
-   */
-  getEntryYaw() {
-    return this.#entryYaw
-  }
-
-  /**
-   * Get builder target position.
+   * Get builder target position from VoxelHighlight.
    * @returns {{x: number, y: number, z: number}|null}
    */
   getBuilderTarget() {
-    return this.#builderTarget
+    return this.toolContext.voxelHighlight?.getCurrentTarget() ?? null
   }
 
   /**
@@ -208,16 +163,16 @@ export class BaseController {
 
   /**
    * Enter builder mode.
-   * @param {number} entryYaw - Player yaw at entry time
+   * Sets VoxelHighlight to builder mode and initializes target from current raycast position.
    * @param {{x: number, y: number, z: number}|null} initialTarget - Initial target from raycast
    * @returns {boolean} true if mode changed
    */
-  enterBuilderMode(entryYaw, initialTarget) {
-    if (this.#mode === BaseController.BUILDER) return false
+  enterBuilderMode(initialTarget) {
+    const voxelHighlight = this.toolContext.voxelHighlight
+    if (!voxelHighlight || voxelHighlight.isBuilderMode()) return false
 
-    this.#mode = BaseController.BUILDER
-    this.#entryYaw = entryYaw
-    this.#builderTarget = initialTarget
+    voxelHighlight.setMode(voxelHighlight.constructor.BUILDER)
+    voxelHighlight.initBuilderTarget(initialTarget)
     this.modeChanged = true
     return true
   }
@@ -228,9 +183,11 @@ export class BaseController {
    * @returns {boolean} true if mode changed
    */
   exitBuilderMode() {
-    const wasBuilder = this.#mode === BaseController.BUILDER
-    this.#mode = BaseController.NORMAL
-    this.#builderTarget = null
+    const voxelHighlight = this.toolContext.voxelHighlight
+    if (!voxelHighlight) return false
+
+    const wasBuilder = voxelHighlight.isBuilderMode()
+    voxelHighlight.setMode(voxelHighlight.constructor.NORMAL)
     this.exitBulkMode()
 
     if (wasBuilder) {
@@ -281,43 +238,13 @@ export class BaseController {
   }
 
   /**
-   * Move builder target by delta.
-   * @param {number} dx
-   * @param {number} dy
-   * @param {number} dz
-   */
-  moveBuilderTarget(dx, dy, dz) {
-    if (!this.#builderTarget) return
-    const adx = Math.abs(dx)
-    const ady = Math.abs(dy)
-    const adz = Math.abs(dz)
-    // Builder mode: only move along one axis at a time. Priority: Y > Z > X.
-    if (ady >= adx && ady >= adz) {
-      this.#builderTarget.y += Math.sign(dy)
-    } else if (adz >= adx && adz >= ady) {
-      this.#builderTarget.z += Math.sign(dz)
-    } else if (adx > 0) {
-      this.#builderTarget.x += Math.sign(dx)
-    }
-  }
-
-  /**
-   * Set builder target directly (e.g., from raycast on mode entry).
-   * @param {{x: number, y: number, z: number}|null} target
-   */
-  setBuilderTarget(target) {
-    this.#builderTarget = target
-  }
-
-  /**
-   * Get cardinal builder directions based on entry yaw.
+   * Get cardinal builder directions based on current yaw.
    * Forward is locked to one of the 4 world axes (+/-X or +/-Z).
    * Right is always 90° clockwise from forward.
    * @returns {{forward: {x: number, z: number}, right: {x: number, z: number}}}
    */
   getCardinalBuilderDirections() {
-    const yaw = this.getEntryYaw()
-    let normalizedYaw = yaw % (2 * Math.PI)
+    let normalizedYaw = this.yaw % (2 * Math.PI)
     if (normalizedYaw < 0) normalizedYaw += 2 * Math.PI
 
     let fx = 0, fz = 0
@@ -339,42 +266,6 @@ export class BaseController {
   }
 
   /**
-   * Get the current target based on mode.
-   * Unified API - callers don't need to know which mode is active.
-   * @param {'destroy'|'create'|'select'} toolMode
-   * @param {VoxelHighlight} highlightSystem
-   * @param {import('three').PerspectiveCamera} camera
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
-   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
-   * @returns {{x: number, y: number, z: number}|null}
-   */
-  getTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode = null) {
-    if (this.#mode === BaseController.BUILDER) {
-      return this.#builderTarget
-    }
-
-    // Normal mode: do raycast to get target
-    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode, subMode)
-  }
-
-  /**
-   * Get current target for bulk selection preview.
-   * @param {'destroy'|'create'|'select'} toolMode
-   * @param {VoxelHighlight} highlightSystem
-   * @param {import('three').PerspectiveCamera} camera
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
-   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
-   * @returns {{x: number, y: number, z: number}|null}
-   */
-  getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode = null) {
-    if (this.#mode === BaseController.BUILDER) {
-      return this.#builderTarget
-    }
-
-    return highlightSystem.raycastTarget(camera, chunkRegistry, toolMode, subMode)
-  }
-
-  /**
    * Set builder movement delta.
    * Called by controllers when in builder mode.
    * @param {number} dx
@@ -383,6 +274,16 @@ export class BaseController {
    */
   setBuilderMoveDelta(dx, dy, dz) {
     this.builderMoveDelta = { x: dx, y: dy, z: dz }
+  }
+
+  /**
+   * Move builder target by delta (delegates to VoxelHighlight).
+   * @param {number} dx
+   * @param {number} dy
+   * @param {number} dz
+   */
+  moveBuilderTarget(dx, dy, dz) {
+    this.toolContext.voxelHighlight?.moveBuilderTarget(dx, dy, dz)
   }
 
   // ── BaseController methods ───────────────────────────────────────────────
@@ -406,11 +307,11 @@ export class BaseController {
     // ── Hotbar selection from controller ────────────────────────────────────
     this.#syncHotbarSelection()
 
-    // ── Get current target (needed for sync's long-press bulk entry) ────────
+    // ── Get current target from VoxelHighlight (handles both normal and builder modes) ─
     const toolMode = this.toolContext.getHighlightMode()
     const toolColor = this.toolContext.getHighlightColor()
     const toolSubMode = this.toolContext.getToolMode()
-    const currentTarget = this.getCurrentTarget(toolMode, highlightSystem, camera, chunkRegistry, toolSubMode)
+    const currentTarget = highlightSystem.getTarget(camera, chunkRegistry, toolMode, toolSubMode)
 
     // ── Process pending inputs (tool key presses with mode transitions) ─────
     this.processPendingInputs?.(highlightSystem, chunkRegistry, camera)
@@ -419,7 +320,7 @@ export class BaseController {
     this.#syncInternal(highlightSystem, chunkRegistry, camera, currentTarget)
 
     // ── Update voxel highlight visualization ────────────────────────────────
-    highlightSystem.setTarget(currentTarget, toolColor, toolMode, this.isBuilderMode(), toolSubMode)
+    highlightSystem.setTarget(currentTarget, toolColor, toolMode, toolSubMode)
     this.toolContext.currentTool?.update(highlightSystem, this.isBuilderMode(), this.getBuilderTarget(), currentTarget, toolColor)
 
     // ── Send all pending input (tool activation and/or movement) ────────────
@@ -428,7 +329,7 @@ export class BaseController {
     // ── Sync bulk selection visuals ─────────────────────────────────────────
     this.toolContext.bulkSelection.setColor(toolColor)
     if (this.isBulkActive()) {
-      const bulkTarget = this.getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry, toolSubMode)
+      const bulkTarget = highlightSystem.getTarget(camera, chunkRegistry, toolMode, toolSubMode)
       this.toolContext.bulkSelection.updateEnd(bulkTarget)
     }
 
@@ -596,7 +497,7 @@ export class BaseController {
       if (currentTool?.supportsBuilderMode()) {
         const mode = currentTool.getHighlightMode()
         const target = highlightSystem.raycastTarget(camera, chunkRegistry, mode)
-        this.enterBuilderMode(this.yaw, target)
+        this.enterBuilderMode(target)
         this.exitBulkMode()
       }
     }
@@ -621,7 +522,7 @@ export class BaseController {
       if (currentTool?.supportsBuilderMode()) {
         const mode = currentTool.getHighlightMode()
         const target = highlightSystem.raycastTarget(camera, chunkRegistry, mode)
-        this.enterBuilderMode(this.yaw, target)
+        this.enterBuilderMode(target)
         this.exitBulkMode()
       }
     }
@@ -664,7 +565,7 @@ export class BaseController {
       // Get sub-mode from tool if available (for select tool)
       const subMode = tool?.getMode ? tool.getMode() : null
       // Bulk mode: state machine for start/end selection
-      const target = this.getBulkTarget(mode, highlightSystem, camera, chunkRegistry, subMode)
+      const target = highlightSystem.getTarget(camera, chunkRegistry, mode, subMode)
       if (!target) return
 
       const result = this.onBulkAction(target)
@@ -726,8 +627,7 @@ export class BaseController {
   #defaultSerializeBuilderInput(tool, target) {
     // Create a mock highlight system that returns our target
     const mockHighlight = {
-      getHighlightedVoxel: () => target,
-      getPlacementVoxel: () => target,
+      getCurrentTarget: () => target,
     }
     return tool.onClick(mockHighlight)
   }
@@ -742,16 +642,16 @@ export class BaseController {
     const inputType = this.#slotToInputType(selectedSlotIndex)
 
     if (this.buttons === this.#lastButtons &&
-        this.yaw === this.#lastYaw &&
-        this.pitch === this.#lastPitch &&
+        this.yaw === this.#lastSentYaw &&
+        this.pitch === this.#lastSentPitch &&
         inputType === this.#lastInputType) {
       return
     }
 
     client.sendInput(NetworkProtocol.serializeInputMove(this.buttons, this.yaw, this.pitch))
     this.#lastButtons = this.buttons
-    this.#lastYaw = this.yaw
-    this.#lastPitch = this.pitch
+    this.#lastSentYaw = this.yaw
+    this.#lastSentPitch = this.pitch
     this.#lastInputType = inputType
   }
 
@@ -779,27 +679,5 @@ export class BaseController {
         this.actionPressConsumed = true
       }
     }
-  }
-
-  /**
-   * Get current target for visualization.
-   * Unified API - doesn't require knowing which mode is active.
-   * @param {'destroy'|'create'|'select'} toolMode
-   * @param {VoxelHighlight} highlightSystem
-   * @param {import('three').PerspectiveCamera} camera
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
-   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
-   * @returns {{x: number, y: number, z: number}|null}
-   */
-  getCurrentTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode = null) {
-    return this.getTarget(toolMode, highlightSystem, camera, chunkRegistry, subMode)
-  }
-
-  /**
-   * Check if currently in builder mode.
-   * @returns {boolean}
-   */
-  get builderMode() {
-    return this.isBuilderMode()
   }
 }

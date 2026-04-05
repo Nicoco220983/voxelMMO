@@ -119,10 +119,6 @@ function animate() {
   const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
   lastTime  = now
 
-  // Read controller state before resetFrameState() clears one-shot flags
-  const yaw   = controller.yaw
-  const pitch = controller.pitch
-
   // ── Controller update (compute button masks, movement deltas) ───────────
   controller.update(dt)
 
@@ -136,9 +132,7 @@ function animate() {
   client.updateEntities(dt)
 
   client.pruneDistantChunks(posInfo.vposX, posInfo.vposZ)
-  if (texturesReady) {
-    client.rebuildDirtyChunks()
-  }
+  if (texturesReady) client.rebuildDirtyChunks()
 
   composer.render()
 

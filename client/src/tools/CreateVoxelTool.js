@@ -64,11 +64,11 @@ export class CreateVoxelTool extends Tool {
    * @returns {ArrayBuffer|null}
    */
   onClick(highlightSystem) {
-    const placementVoxel = highlightSystem.getPlacementVoxel()
-    if (!placementVoxel) return null
+    const target = highlightSystem.getCurrentTarget()
+    if (!target) return null
     
     return CreateVoxelTool.serializeInput(
-      placementVoxel.x, placementVoxel.y, placementVoxel.z, this.#voxelType
+      target.x, target.y, target.z, this.#voxelType
     )
   }
 

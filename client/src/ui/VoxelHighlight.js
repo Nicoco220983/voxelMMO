@@ -17,8 +17,11 @@ const MAX_REACH_DISTANCE = 8
  * @description Manages the semi-transparent highlight box for voxel selection.
  * Casts a ray from camera center and highlights the first non-air voxel within reach.
  * 
- * This class only handles visualization. Mode state and target selection logic
- * is in BaseController. Use setTarget() to update visuals.
+ * Now also manages mode state:
+ * - NORMAL mode: raycast-based targeting from camera center
+ * - BUILDER mode: keyboard-controlled voxel target at fixed position
+ * 
+ * Use setMode() to switch modes, and getTarget() to get the current target.
  */
 export class VoxelHighlight {
   /** @type {THREE.Scene} */
@@ -30,21 +33,18 @@ export class VoxelHighlight {
   /** @type {boolean} */
   #isVisible = false
 
-  /** @type {boolean} */
-  #isBuilderMode = false
-
   /** @type {THREE.Group|null} */
   #builderGizmo = null
 
-  /** Current highlighted voxel (for destroy mode)
+  /** Current target voxel position
    * @type {{x: number, y: number, z: number}|null}
    */
-  #highlightedVoxel = null
+  #target = null
 
-  /** Current placement voxel (for create mode - empty voxel adjacent to hit)
-   * @type {{x: number, y: number, z: number}|null}
+  /** Target type: 'surface' = hit voxel (for destroy/copy), 'adjacent' = empty voxel next to hit (for create/paste)
+   * @type {'surface'|'adjacent'|null}
    */
-  #placementVoxel = null
+  #targetType = null
 
   /** @type {number} Current highlight color */
   #currentColor = 0xFFFFFF
@@ -54,6 +54,18 @@ export class VoxelHighlight {
    */
   #previewMeshes = []
 
+  // ── Mode state ────────────────────────────────────────────────────────────
+
+  /** Normal mode: raycast-based targeting */
+  static NORMAL = 'normal'
+  /** Builder mode: keyboard-controlled voxel target */
+  static BUILDER = 'builder'
+
+  /** @type {'normal'|'builder'} */
+  #mode = VoxelHighlight.NORMAL
+
+
+
   /**
    * @param {THREE.Scene} scene
    */
@@ -61,6 +73,53 @@ export class VoxelHighlight {
     this.#scene = scene
     this.#createHighlightMesh()
     this.#createBuilderGizmo()
+  }
+
+  // ── Mode management ───────────────────────────────────────────────────────
+
+  /**
+   * Set the targeting mode.
+   * @param {'normal'|'builder'} mode
+   */
+  setMode(mode) {
+    this.#mode = mode
+  }
+
+  /**
+   * Get the current targeting mode.
+   * @returns {'normal'|'builder'}
+   */
+  getMode() {
+    return this.#mode
+  }
+
+  /**
+   * Check if currently in builder mode.
+   * @returns {boolean}
+   */
+  isBuilderMode() {
+    return this.#mode === VoxelHighlight.BUILDER
+  }
+
+  /**
+   * Move builder target by delta (builder mode only).
+   * @param {number} dx
+   * @param {number} dy
+   * @param {number} dz
+   */
+  moveBuilderTarget(dx, dy, dz) {
+    if (!this.#target) return
+    const adx = Math.abs(dx)
+    const ady = Math.abs(dy)
+    const adz = Math.abs(dz)
+    // Builder mode: only move along one axis at a time. Priority: Y > Z > X.
+    if (ady >= adx && ady >= adz) {
+      this.#target.y += Math.sign(dy)
+    } else if (adz >= adx && adz >= ady) {
+      this.#target.z += Math.sign(dz)
+    } else if (adx > 0) {
+      this.#target.x += Math.sign(dx)
+    }
   }
 
   /**
@@ -100,39 +159,79 @@ export class VoxelHighlight {
   }
 
   /**
+   * Get the current target based on mode.
+   * In builder mode: returns the builder target (moved via keyboard).
+   * In normal mode: performs raycast from camera.
+   * @param {import('three').PerspectiveCamera} camera
+   * @param {ChunkRegistry} chunkRegistry
+   * @param {'destroy'|'create'|'select'|'none'} toolMode
+   * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
+   * @returns {{x: number, y: number, z: number}|null}
+   */
+  getTarget(camera, chunkRegistry, toolMode, subMode = null) {
+    // No tool selected - return null even in builder mode
+    if (toolMode === 'none') {
+      return null
+    }
+
+    if (this.#mode === VoxelHighlight.BUILDER) {
+      // Builder mode: return the current target (keyboard-controlled)
+      return this.#target
+    }
+
+    // Normal mode: do raycast to get target
+    return this.raycastTarget(camera, chunkRegistry, toolMode, subMode)
+  }
+
+  /**
+   * Initialize builder mode with a starting position.
+   * Called when entering builder mode - uses current raycast result as starting point.
+   * @param {{x: number, y: number, z: number}|null} startPosition
+   */
+  initBuilderTarget(startPosition) {
+    if (startPosition) {
+      this.#target = startPosition
+    }
+  }
+
+  /**
+   * Get the current target type ('surface' = hit voxel, 'adjacent' = empty voxel next to hit).
+   * @returns {'surface'|'adjacent'|null}
+   */
+  getTargetType() {
+    return this.#targetType
+  }
+
+  /**
    * Set the current target for visualization.
-   * Called by main loop with target from BaseController.
+   * Called by main loop with target from getTarget().
    * @param {{x: number, y: number, z: number}|null} target
    * @param {number} color - Hex color value (0xRRGGBB), 0 to hide
-   * @param {'destroy'|'create'|'select'} mode - Tool mode for tracking voxel type
-   * @param {boolean} [isBuilderMode=false] - Whether builder mode is active
+   * @param {'destroy'|'create'|'select'} toolMode - Tool mode for tracking voxel type
    * @param {'destroy'|'copy'|'paste'|null} [subMode=null] - Sub-mode for select tool
    */
-  setTarget(target, color, mode, isBuilderMode = false, subMode = null) {
+  setTarget(target, color, toolMode, subMode = null) {
     // Update color if changed
     if (this.#currentColor !== color) {
       this.#currentColor = color
       this.#updateHighlightColor(color)
     }
 
-    this.#isBuilderMode = isBuilderMode
-
     if (!target || color === 0) {
       this.#hide()
       return
     }
 
-    // For create mode, target is the placement position
-    // For destroy/select mode (except paste), target is the highlighted voxel
-    // For paste mode, target is the placement position (like create)
-    if (mode === 'create' || (mode === 'select' && subMode === 'paste')) {
-      this.#placementVoxel = target
-      // Highlighted voxel is adjacent, but we don't track it separately
-      this.#highlightedVoxel = null
+    // Track target type based on tool mode:
+    // - 'adjacent': create mode, paste sub-mode (empty voxel next to hit)
+    // - 'surface': destroy, copy, and other modes (the hit voxel itself)
+    if (toolMode === 'create' || (toolMode === 'select' && subMode === 'paste')) {
+      this.#targetType = 'adjacent'
     } else {
-      this.#highlightedVoxel = target
-      this.#placementVoxel = null
+      this.#targetType = 'surface'
     }
+    
+    this.#target = target
 
     this.#showAt(target.x, target.y, target.z)
   }
@@ -331,7 +430,7 @@ export class VoxelHighlight {
 
     if (this.#builderGizmo) {
       this.#builderGizmo.position.set(vx + 0.5, vy + 0.5, vz + 0.5)
-      this.#builderGizmo.visible = this.#isBuilderMode
+      this.#builderGizmo.visible = this.isBuilderMode()
     }
   }
 
@@ -343,27 +442,23 @@ export class VoxelHighlight {
     if (!this.#highlightMesh) return
     this.#highlightMesh.visible = false
     this.#isVisible = false
-    this.#highlightedVoxel = null
-    this.#placementVoxel = null
+    this.#target = null
+    this.#targetType = null
     if (this.#builderGizmo) {
       this.#builderGizmo.visible = false
     }
+    this.#clearPreviewMeshes()
   }
 
   /**
-   * Get the currently highlighted voxel coordinates (for destroy mode).
-   * @returns {{x: number, y: number, z: number}|null} Null if no voxel is highlighted.
+   * Get the current target position.
+   * The target is always the correct position for the current tool mode:
+   * - 'surface' type: the hit voxel itself (for destroy/copy)
+   * - 'adjacent' type: empty voxel adjacent to hit (for create/paste)
+   * @returns {{x: number, y: number, z: number}|null}
    */
-  getHighlightedVoxel() {
-    return this.#highlightedVoxel
-  }
-
-  /**
-   * Get the placement voxel coordinates (for CREATE tool, this is where the voxel will be placed).
-   * @returns {{x: number, y: number, z: number}|null} Null if no placement position available.
-   */
-  getPlacementVoxel() {
-    return this.#placementVoxel
+  getCurrentTarget() {
+    return this.#target
   }
 
   /**

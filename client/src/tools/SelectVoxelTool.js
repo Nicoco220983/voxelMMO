@@ -111,15 +111,11 @@ export class SelectVoxelTool extends Tool {
    * @returns {ArrayBuffer|Array<ArrayBuffer>|null}
    */
   onClick(highlightSystem) {
-    // For paste mode, use placement voxel (empty space); otherwise use highlighted voxel
-    const targetVoxel = this.#mode === 'paste' 
-      ? highlightSystem.getPlacementVoxel()
-      : highlightSystem.getHighlightedVoxel()
-    
-    if (!targetVoxel) return null
+    const target = highlightSystem.getCurrentTarget()
+    if (!target) return null
 
     // Treat single click as a 1x1x1 batch at the target position
-    return this.onBulkComplete(targetVoxel, targetVoxel)
+    return this.onBulkComplete(target, target)
   }
 
   /**
