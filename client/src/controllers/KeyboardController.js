@@ -51,6 +51,9 @@ export class KeyboardController extends BaseController {
    * @param {import('../ui/ToolContext.js').ToolContext} options.toolContext - Tool context for dependency access
    * @param {import('../ui/Hotbar.js').Hotbar} options.hotbar - Hotbar UI component
    */
+  /** @type {Function} */
+  #boundWindowKeyDown
+
   constructor(domElement, { toolContext, hotbar }) {
     super({ toolContext, hotbar })
     this.yaw = 0
@@ -64,6 +67,7 @@ export class KeyboardController extends BaseController {
     this.#boundMouseUp = this.#onMouseUp.bind(this)
     this.#boundClick = this.#onClick.bind(this)
     this.#boundPointerLockChange = this.#onPointerLockChange.bind(this)
+    this.#boundWindowKeyDown = this.#onWindowKeyDown.bind(this)
 
     /** @type {boolean} True when pointer lock was just released (used for ESC handling) */
     this.pointerLockJustExited = false
@@ -77,6 +81,34 @@ export class KeyboardController extends BaseController {
     window.addEventListener('mouseup', this.#boundMouseUp)
     this.#domElement.addEventListener('click', this.#boundClick)
     document.addEventListener('pointerlockchange', this.#boundPointerLockChange)
+    
+    // Global keyboard handler for hotbar (from main.js)
+    window.addEventListener('keydown', this.#boundWindowKeyDown)
+  }
+
+  /**
+   * Global keydown handler for hotbar and tool unselection.
+   * Separated from #onKeyDown to avoid conflicts with pointer lock logic.
+   * @param {KeyboardEvent} e
+   */
+  #onWindowKeyDown(e) {
+    // Handle Q key for unselecting tool
+    if (e.code === 'KeyQ') {
+      if (this.hotbar.handleQ(e)) {
+        // Tool was unselected, sync controller state
+        this.selectedSlotIndex = null
+      }
+      return
+    }
+
+    if (this.hotbar.handleKeyDown(e)) {
+      // Hotbar handled it, sync selection state if needed
+      const slot = this.hotbar.getSelectedSlot()
+      if (slot.index < 0) {
+        // Tool was unselected
+        this.selectedSlotIndex = null
+      }
+    }
   }
 
   /**
@@ -267,9 +299,13 @@ export class KeyboardController extends BaseController {
     }
   }
 
+  /**
+   * Update keyboard controller state.
+   * Computes button masks and builder movement deltas.
+   * Note: resetFrameState() is called separately from main.js at end of frame.
+   * @param {number} dt
+   */
   update(dt) {
-    super.update(dt)
-
     // Reset pointer lock exit flag (consumed by main.js before update)
     this.pointerLockJustExited = false
     this.unselectToolPressed = false
@@ -365,6 +401,7 @@ export class KeyboardController extends BaseController {
     window.removeEventListener('mouseup', this.#boundMouseUp)
     this.#domElement.removeEventListener('click', this.#boundClick)
     document.removeEventListener('pointerlockchange', this.#boundPointerLockChange)
+    window.removeEventListener('keydown', this.#boundWindowKeyDown)
     if (document.pointerLockElement === this.#domElement) {
       document.exitPointerLock()
     }

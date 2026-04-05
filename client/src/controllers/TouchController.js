@@ -80,6 +80,7 @@ export class TouchController extends BaseController {
    */
   constructor({ toolContext, hotbar }) {
     super({ toolContext, hotbar })
+    this._isTouchController = true
     this.yaw = 0
     this.pitch = -0.3
 
@@ -347,11 +348,12 @@ export class TouchController extends BaseController {
   }
 
   /**
+   * Update touch controller state.
+   * Computes yaw/pitch from look stick, button masks from move stick.
+   * Note: resetFrameState() is called separately from main.js at end of frame.
    * @param {number} dt
    */
   update(dt) {
-    super.update(dt)
-
     // Look stick drives yaw/pitch continuously while held.
     const lookSpeed = 2.0 // radians per second at full deflection
     this.yaw -= this.#lookDx * lookSpeed * dt

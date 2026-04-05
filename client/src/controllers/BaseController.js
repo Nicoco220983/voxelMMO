@@ -9,6 +9,7 @@
  */
 
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
+import { SUBVOXEL_SIZE } from '../types.js'
 
 /**
  * Abstract base class for input controllers (keyboard/mouse or touch).
@@ -61,6 +62,28 @@ export class BaseController {
   constructor({ toolContext, hotbar }) {
     this.toolContext = toolContext
     this.hotbar = hotbar
+  }
+
+  /**
+   * Flag to identify touch controller (avoids circular import).
+   * Override in TouchController to return true.
+   * @type {boolean}
+   */
+  _isTouchController = false
+
+  /**
+   * Reference to the game client for accessing player entity and chunks.
+   * Set by main.js after client creation.
+   * @type {GameClient|null}
+   */
+  gameClient = null
+
+  /**
+   * Set the game client reference.
+   * @param {GameClient} client
+   */
+  setGameClient(client) {
+    this.gameClient = client
   }
 
   /**
@@ -365,15 +388,59 @@ export class BaseController {
   // ── BaseController methods ───────────────────────────────────────────────
 
   /**
-   * Sync controller state with tool context.
-   * Checks if current tool supports builder/bulk mode, auto-exits if not.
-   * Should be called once per frame.
+   * Comprehensive sync that handles all controller-related state updates.
+   * This is the central entry point called once per frame from main.js.
+   * Includes: tool unselection, hotbar selection, pending inputs, targeting,
+   * voxel highlighting, bulk selection, input sending, and camera sync.
+   * 
    * @param {VoxelHighlight} highlightSystem
    * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
-   * @param {{x: number, y: number, z: number}|null} currentTarget - Current highlight voxel (for bulk start)
+   * @param {number} dt - Delta time in seconds
+   * @returns {{posX: number, posY: number, posZ: number, vposX: number, vposY: number, vposZ: number}} Player position info
    */
-  sync(highlightSystem, chunkRegistry, camera, currentTarget) {
+  sync(highlightSystem, chunkRegistry, camera, dt) {
+    // ── Tool unselection (Q key) ────────────────────────────────────────────
+    this.#syncToolUnselection()
+
+    // ── Hotbar selection from controller ────────────────────────────────────
+    this.#syncHotbarSelection()
+
+    // ── Get current target (needed for sync's long-press bulk entry) ────────
+    const toolMode = this.toolContext.getHighlightMode()
+    const toolColor = this.toolContext.getHighlightColor()
+    const toolSubMode = this.toolContext.getToolMode()
+    const currentTarget = this.getCurrentTarget(toolMode, highlightSystem, camera, chunkRegistry, toolSubMode)
+
+    // ── Process pending inputs (tool key presses with mode transitions) ─────
+    this.processPendingInputs?.(highlightSystem, chunkRegistry, camera)
+
+    // ── Sync base controller state (auto-exit modes, builder movement, etc.) ─
+    this.#syncInternal(highlightSystem, chunkRegistry, camera, currentTarget)
+
+    // ── Update voxel highlight visualization ────────────────────────────────
+    highlightSystem.setTarget(currentTarget, toolColor, toolMode, this.isBuilderMode(), toolSubMode)
+    this.toolContext.currentTool?.update(highlightSystem, this.isBuilderMode(), this.getBuilderTarget(), currentTarget, toolColor)
+
+    // ── Send all pending input (tool activation and/or movement) ────────────
+    this.sendInput(this.gameClient, highlightSystem, camera, chunkRegistry, this.hotbar.selectedIndex)
+
+    // ── Sync bulk selection visuals ─────────────────────────────────────────
+    this.toolContext.bulkSelection.setColor(toolColor)
+    if (this.isBulkActive()) {
+      const bulkTarget = this.getBulkTarget(toolMode, highlightSystem, camera, chunkRegistry, toolSubMode)
+      this.toolContext.bulkSelection.updateEnd(bulkTarget)
+    }
+
+    // ── Get player position and sync camera ─────────────────────────────────
+    return this.#syncCamera(camera, this.yaw, this.pitch)
+  }
+
+  /**
+   * Internal sync - handles auto-exit modes, builder movement, long-press.
+   * @private
+   */
+  #syncInternal(highlightSystem, chunkRegistry, camera, currentTarget) {
     const currentTool = this.toolContext.currentTool
 
     // Auto-exit builder mode if tool doesn't support it
@@ -409,11 +476,88 @@ export class BaseController {
   }
 
   /**
-   * Called once per animation frame before reading state.
-   * Resets one-shot flags.
+   * Sync tool unselection (Q key pressed).
+   * @private
+   */
+  #syncToolUnselection() {
+    if (this.unselectToolPressed) {
+      this.hotbar.handleQ()
+      this.unselectToolPressed = false
+    }
+  }
+
+  /**
+   * Sync hotbar selection from controller.
+   * @private
+   */
+  #syncHotbarSelection() {
+    if (this.selectedSlotIndex !== null && !(this instanceof /** @type {any} */ (import('./TouchController.js').TouchController))) {
+      this.hotbar.selectSlot(this.selectedSlotIndex)
+    }
+  }
+
+  /**
+   * Get local player position from entity registry.
+   * @private
+   * @returns {{posX: number, posY: number, posZ: number, predGrounded: boolean}}
+   */
+  #getPlayerPosition() {
+    const localPlayer = this.gameClient?.selfEntity
+    let posX = 32 * SUBVOXEL_SIZE   // 8192 - default spawn X
+    let posY = 22 * SUBVOXEL_SIZE   // 5632 - default spawn Y (approx surface + 2)
+    let posZ = 32 * SUBVOXEL_SIZE   // 8192 - default spawn Z
+    let predGrounded = false
+
+    if (localPlayer) {
+      const pos = localPlayer.currentPos
+      posX = pos.x
+      posY = pos.y
+      posZ = pos.z
+      predGrounded = localPlayer.motion.receivedGrounded
+    }
+
+    return { posX, posY, posZ, predGrounded }
+  }
+
+  /**
+   * Sync camera position and rotation with player position.
+   * @private
+   * @param {import('three').PerspectiveCamera} camera
+   * @param {number} yaw
+   * @param {number} pitch
+   * @returns {{posX: number, posY: number, posZ: number, vposX: number, vposY: number, vposZ: number}}
+   */
+  #syncCamera(camera, yaw, pitch) {
+    const { posX, posY, posZ } = this.#getPlayerPosition()
+
+    // Divide by SUBVOXEL_SIZE to get voxel coordinates for Three.js
+    camera.position.set(posX / SUBVOXEL_SIZE, posY / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
+    camera.rotation.y = yaw
+    camera.rotation.x = pitch
+
+    return {
+      posX, posY, posZ,
+      vposX: posX / SUBVOXEL_SIZE,
+      vposY: posY / SUBVOXEL_SIZE,
+      vposZ: posZ / SUBVOXEL_SIZE,
+    }
+  }
+
+  /**
+   * Called once per animation frame to update controller state.
+   * Override in subclass to compute button masks, movement deltas, etc.
    * @param {number} dt - Delta time in seconds.
    */
   update(dt) {
+    // Override in subclass - compute button masks, update yaw/pitch, etc.
+  }
+
+  /**
+   * Called once per animation frame at the end to reset one-shot flags.
+   * Resets: toolActivated, selectedSlotIndex, longPressTriggered, modeChanged, builderMoveDelta.
+   * @param {number} dt - Delta time in seconds.
+   */
+  resetFrameState(dt) {
     this.toolActivated = false
     this.selectedSlotIndex = null
     this.longPressTriggered = false

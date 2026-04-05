@@ -1,7 +1,6 @@
 // @ts-check
 import { RenderManager } from './RenderManager.js'
 import { GameClient } from './GameClient.js'
-import { NetworkProtocol } from './NetworkProtocol.js'
 import {
   SUBVOXEL_SIZE, TICK_RATE, EntityType,
 } from './types.js'
@@ -10,8 +9,6 @@ import { VoxelHighlight } from './ui/VoxelHighlight.js'
 import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
 import { ToolContext } from './ui/ToolContext.js'
 import { createController } from './controllers/ControllerManager.js'
-import { TouchController } from './controllers/TouchController.js'
-import { KeyboardController } from './controllers/KeyboardController.js'
 import { voxelTexturesReady } from './VoxelTextures.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
@@ -66,16 +63,6 @@ client.connect().then(() => {
   console.error('[main] Failed to connect to server', err)
 })
 
-// ── Get local player from entity registry via client.selfEntity ───────────
-/**
- * Get the local player entity from the entity registry.
- * Returns null until SELF_ENTITY message has been received.
- * @returns {import('./entities/BaseEntity.js').BaseEntity|null}
- */
-function getLocalPlayer() {
-  return client.selfEntity
-}
-
 // ── Voxel Highlight System ────────────────────────────────────────────────
 const voxelHighlight = new VoxelHighlight(scene)
 
@@ -96,44 +83,34 @@ hotbar.onToolUnselected = () => {
 // ── Controller (keyboard or touch) ────────────────────────────────────────
 const controller = createController(renderer.domElement, { toolContext, hotbar })
 
-// ── Input sending ─────────────────────────────────────────────────────────
-
-/** @type {number} */ let lastButtons = -1  // force first send (NaN-like)
-/** @type {number} */ let lastYaw     = NaN
-/** @type {number} */ let lastPitch   = NaN
-/** @type {number} */ let lastInputType = -1
-
-/**
- * Map hotbar slot index (0-9) to InputType value.
- * For now, all slots default to MOVE (standard movement).
- * Future: slot selection will determine action mode.
- * @param {number} slotIndex
- * @returns {number} InputType value
- */
-function slotToInputType(slotIndex) {
-  // For now, all inputs are MOVE type
-  // Future logic: different slots may trigger different input types
-  return 0 // InputType.MOVE
-}
-
-/** Send INPUT frame only when state changed. */
-function sendInputIfChanged(buttons, yawVal, pitchVal) {
-  const inputType = slotToInputType(hotbar.selectedIndex)
-  if (buttons === lastButtons && yawVal === lastYaw && pitchVal === lastPitch && inputType === lastInputType) return
-  client.sendInput(NetworkProtocol.serializeInputMove(buttons, yawVal, pitchVal))
-  lastButtons = buttons; lastYaw = yawVal; lastPitch = pitchVal; lastInputType = inputType
-}
+// Set game client reference for controller to access player entity
+controller.setGameClient(client)
 
 // ── HUD ───────────────────────────────────────────────────────────────────
 const hud = /** @type {HTMLElement} */ (document.getElementById('hud'))
 
+// ── FPS Tracking ───────────────────────────────────────────────────────────
+const fpsTracker = {
+  frameCount: 0,
+  lastFpsTime: performance.now(),
+  currentFps: 0,
+
+  /** Update FPS tracking, returns current FPS */
+  update() {
+    this.frameCount++
+    const now = performance.now()
+    const fpsDt = now - this.lastFpsTime
+    if (fpsDt >= 1000) {
+      this.currentFps = Math.round((this.frameCount * 1000) / fpsDt)
+      this.frameCount = 0
+      this.lastFpsTime = now
+    }
+    return this.currentFps
+  },
+}
+
 // ── Render loop ───────────────────────────────────────────────────────────
 let lastTime = performance.now()
-
-// ── FPS tracking ───────────────────────────────────────────────────────────
-let frameCount = 0
-let lastFpsTime = performance.now()
-let currentFps = 0
 
 function animate() {
   requestAnimationFrame(animate)
@@ -142,144 +119,39 @@ function animate() {
   const dt  = Math.min((now - lastTime) / 1000, 0.1)  // cap at 100 ms
   lastTime  = now
 
-  // Read controller state before update() clears one-shot flags
-  const buttons = controller.buttons
-  const yaw     = controller.yaw
-  const pitch   = controller.pitch
+  // Read controller state before resetFrameState() clears one-shot flags
+  const yaw   = controller.yaw
+  const pitch = controller.pitch
 
-  // Handle Q key to unselect tool (and exit voxel mode if active)
-  if (controller.unselectToolPressed) {
-    hotbar.handleQ()
-    controller.unselectToolPressed = false
-    // Note: toolContext.currentTool is updated in the tool change detection below
-  }
+  // ── Controller update (compute button masks, movement deltas) ───────────
+  controller.update(dt)
 
-  // Handle hotbar keyboard input
-  if (!(controller instanceof TouchController)) {
-    // Pass key events to hotbar - but we need to hook this up differently
-    // The hotbar's handleKeyDown is called via window event listener
-  }
+  // ── Comprehensive controller sync ───────────────────────────────────────
+  // Handles: tool unselection, hotbar selection, pending inputs, targeting,
+  // voxel highlighting, bulk selection, input sending, and camera sync
+  const posInfo = controller.sync(voxelHighlight, client.chunkRegistry, camera, dt)
 
-  // Hotbar selection from controller
-  if (controller.selectedSlotIndex !== null && !(controller instanceof TouchController)) {
-    hotbar.selectSlot(controller.selectedSlotIndex)
-  }
-
-  // Note: ChunkRegistry injection and onSelect/onDeselect are handled by Hotbar
-
-  // Get current target FIRST (needed for sync's long-press bulk entry)
-  const toolMode = toolContext.getHighlightMode()
-  const toolColor = toolContext.getHighlightColor()
-  const toolSubMode = toolContext.getToolMode()
-  const currentTarget = controller.getCurrentTarget(toolMode, voxelHighlight, camera, client.chunkRegistry, toolSubMode)
-
-  // Process pending inputs (tool key presses with mode transitions)
-  if (controller instanceof KeyboardController || controller instanceof TouchController) {
-    controller.processPendingInputs(voxelHighlight, client.chunkRegistry, camera)
-  }
-
-  // Sync controller state (auto-exit builder mode if tool changed, handle movement, etc.)
-  // Note: long-press bulk entry happens here, uses currentTarget for start position
-  controller.sync(voxelHighlight, client.chunkRegistry, camera, currentTarget)
-
-  // Update voxel highlight visualization
-  voxelHighlight.setTarget(currentTarget, toolColor, toolMode, controller.isBuilderMode(), toolSubMode)
-
-  // Update tool-specific visuals (e.g., paste preview)
-  toolContext.currentTool?.update(voxelHighlight, controller.isBuilderMode(), controller.getBuilderTarget(), currentTarget, toolColor)
-
-  // Send all pending input (tool activation and/or movement)
-  controller.sendInput(client, voxelHighlight, camera, client.chunkRegistry, hotbar.selectedIndex)
-
-  // Sync bulk selection visuals
-  bulkSelection.setColor(toolColor)
-  if (controller.isBulkActive()) {
-    const bulkTarget = controller.getBulkTarget(toolMode, voxelHighlight, camera, client.chunkRegistry, toolSubMode)
-    bulkSelection.updateEnd(bulkTarget)
-  }
-
-  // ── Position update: get from local player entity via registry ────────────
-  const localPlayer = getLocalPlayer()
-  let posX = 32 * SUBVOXEL_SIZE   // 8192 - default spawn X
-  let posY = 22 * SUBVOXEL_SIZE   // 5632 - default spawn Y (approx surface + 2)
-  let posZ = 32 * SUBVOXEL_SIZE   // 8192 - default spawn Z
-  let predGrounded = false
-
-  if (localPlayer) {
-    // Use currentPos which is forward-predicted by PhysicsPredictionSystem.
-    // This gives proper voxel collision, gravity, and grounded detection.
-    const pos = localPlayer.currentPos
-    posX = pos.x
-    posY = pos.y
-    posZ = pos.z
-    predGrounded = localPlayer.motion.receivedGrounded
-  }
-  // Note: Before SELF_ENTITY arrives, camera stays at default spawn position.
-  // The initial position is set by server-sent entity in chunk snapshot.
-
-  // Divide by SUBVOXEL_SIZE to get voxel coordinates for Three.js.
-  camera.position.set(posX / SUBVOXEL_SIZE, posY / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
-  camera.rotation.y = yaw
-  camera.rotation.x = pitch
-
-  // ── Entity updates ────────────────────────────────────────────────────
+  // ── Entity updates ──────────────────────────────────────────────────────
   // Update entity animations (sheep leg swing, player mesh position, etc.)
   client.updateEntities(dt)
 
-  client.pruneDistantChunks(posX / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
+  client.pruneDistantChunks(posInfo.vposX, posInfo.vposZ)
   if (texturesReady) {
     client.rebuildDirtyChunks()
   }
 
   composer.render()
 
-  // ── FPS calculation ───────────────────────────────────────────────────────
-  frameCount++
-  const fpsNow = performance.now()
-  const fpsDt = fpsNow - lastFpsTime
-  if (fpsDt >= 1000) {
-    currentFps = Math.round((frameCount * 1000) / fpsDt)
-    frameCount = 0
-    lastFpsTime = fpsNow
-  }
+  // ── FPS calculation ─────────────────────────────────────────────────────
+  const currentFps = fpsTracker.update()
 
-  const vposX = posX / SUBVOXEL_SIZE, vposY = posY / SUBVOXEL_SIZE, vposZ = posZ / SUBVOXEL_SIZE
-
+  // ── HUD Update ──────────────────────────────────────────────────────────
   hud.textContent =
-    `pos  ${vposX.toFixed(1)}  ${vposY.toFixed(1)}  ${vposZ.toFixed(1)}   fps ${currentFps}`
+    `pos  ${posInfo.vposX.toFixed(1)}  ${posInfo.vposY.toFixed(1)}  ${posInfo.vposZ.toFixed(1)}   fps ${currentFps}`
 
-  // Update controller at end of frame (resets one-shot flags)
-  controller.update(dt)
+  // ── Reset controller frame state ────────────────────────────────────────
+  // Resets one-shot flags (toolActivated, selectedSlotIndex, etc.)
+  controller.resetFrameState(dt)
 }
-
-// Hook up keyboard events for hotbar
-window.addEventListener('keydown', (e) => {
-  // Handle Q key for unselecting tool
-  if (e.code === 'KeyQ') {
-    if (hotbar.handleQ(e)) {
-      // Tool was unselected
-      if (!(controller instanceof TouchController)) {
-        controller.selectedSlotIndex = null
-      }
-    }
-    return
-  }
-
-  if (hotbar.handleKeyDown(e)) {
-    // Hotbar handled it, update controller state
-    const slot = hotbar.getSelectedSlot()
-    if (slot.index >= 0) {
-      if (!(controller instanceof TouchController)) {
-        // For keyboard controller, we handle this via selectedSlotIndex
-        // But the hotbar already processed it, so just sync
-      }
-    } else {
-      // Tool was unselected
-      if (!(controller instanceof TouchController)) {
-        controller.selectedSlotIndex = null
-      }
-    }
-  }
-})
 
 animate()
