@@ -39,7 +39,7 @@ export class Hotbar {
   slotElements
 
   // Mode state
-  /** @type {'tools'|'voxels'|'select'} */
+  /** @type {'tools'|'voxels'|'select'|'rotate'} */
   #mode = 'tools'
   /** @type {Array<Tool|null>} Saved slots when entering special mode */
   #savedSlots = []
@@ -56,6 +56,13 @@ export class Hotbar {
     { id: 'destroy', label: 'Destroy', icon: '✕' },
     { id: 'copy', label: 'Copy', icon: '⎘' },
     { id: 'paste', label: 'Paste', icon: '⎗' },
+  ]
+
+  // Rotate mode items (for paste rotation)
+  /** @type {Array<{id: string, label: string, icon: string, action: string}>} */
+  #rotateItems = [
+    { id: 'rotateX', label: 'Rotate X', icon: '↻X', action: 'rotateX' },
+    { id: 'rotateY', label: 'Rotate Y', icon: '↻Y', action: 'rotateY' },
   ]
 
   // Callbacks
@@ -233,6 +240,43 @@ export class Hotbar {
         if (this.slotElements[this.selectedIndex]) {
           this.slotElements[this.selectedIndex].classList.add('selected')
         }
+        
+        // If paste mode selected, enter rotate mode
+        if (item.id === 'paste' && this.#selectVoxelTool.hasCopyBuffer()) {
+          this.enterRotateMode(this.#selectVoxelTool)
+        }
+      }
+      return
+    }
+
+    // In rotate mode, selecting triggers rotation actions
+    if (this.#mode === 'rotate') {
+      const rotateItem = this.slots[index]
+      if (rotateItem && this.#selectVoxelTool) {
+        /** @type {any} */
+        const item = rotateItem
+        if (item.action === 'rotateX') {
+          this.#selectVoxelTool.rotateX()
+        } else if (item.action === 'rotateY') {
+          this.#selectVoxelTool.rotateY()
+        }
+        
+        // Update visual selection briefly (no persistent selection in rotate mode)
+        if (this.slotElements[this.selectedIndex]) {
+          this.slotElements[this.selectedIndex].classList.remove('selected')
+        }
+        this.selectedIndex = index
+        if (this.slotElements[this.selectedIndex]) {
+          this.slotElements[this.selectedIndex].classList.add('selected')
+        }
+        
+        // Clear selection after a short delay
+        setTimeout(() => {
+          if (this.slotElements[this.selectedIndex]) {
+            this.slotElements[this.selectedIndex].classList.remove('selected')
+          }
+          this.selectedIndex = -1
+        }, 150)
       }
       return
     }
@@ -421,6 +465,83 @@ export class Hotbar {
   }
 
   /**
+   * Enter rotate mode (for paste rotation controls).
+   * Fills hotbar with rotation options.
+   * Note: Does NOT save slots - #savedSlots should keep tools slots for eventual exit.
+   * @param {import('../tools/SelectVoxelTool.js').SelectVoxelTool} selectVoxelTool - The tool to configure
+   */
+  enterRotateMode(selectVoxelTool) {
+    if (this.#mode === 'rotate') return
+    
+    // Don't save slots here - #savedSlots should still contain tools slots
+    // from when we entered select mode. We'll use it when exiting select mode.
+    
+    this.#mode = 'rotate'
+    this.#selectVoxelTool = selectVoxelTool
+    
+    // Fill slots with rotate mode items
+    this.slots = Array(10).fill(null)
+    this.#rotateItems.forEach((item, i) => {
+      if (i < 10) {
+        this.slots[i] = /** @type {any} */ ({
+          icon: item.icon,
+          id: item.id,
+          name: item.label,
+          action: item.action,
+        })
+      }
+    })
+    
+    // Show back button
+    if (this.#backButton) {
+      this.#backButton.style.display = 'flex'
+    }
+    
+    this.selectedIndex = -1  // No initial selection in rotate mode
+    this.renderRotateMode()
+  }
+
+  /**
+   * Exit rotate mode and return to select mode.
+   */
+  exitRotateMode() {
+    if (this.#mode !== 'rotate') return
+    
+    // Go back to select mode
+    this.#mode = 'select'
+    
+    // Restore select mode slots (NOT from #savedSlots - that has tools slots)
+    this.slots = Array(10).fill(null)
+    this.#selectItems.forEach((item, i) => {
+      if (i < 10) {
+        this.slots[i] = /** @type {any} */ ({
+          icon: item.icon,
+          id: item.id,
+          name: item.label,
+        })
+      }
+    })
+    
+    // Restore selection to paste mode
+    if (this.#selectVoxelTool) {
+      const pasteIndex = this.#selectItems.findIndex(item => item.id === 'paste')
+      this.selectedIndex = pasteIndex >= 0 ? pasteIndex : 0
+    } else {
+      this.selectedIndex = -1
+    }
+    
+    this.renderSelectMode()
+  }
+
+  /**
+   * Check if currently in rotate mode.
+   * @returns {boolean}
+   */
+  isInRotateMode() {
+    return this.#mode === 'rotate'
+  }
+
+  /**
    * Exit select mode and restore original tools.
    */
   exitSelectMode() {
@@ -528,6 +649,46 @@ export class Hotbar {
   }
 
   /**
+   * Render the hotbar in rotate mode (shows rotation controls).
+   */
+  renderRotateMode() {
+    // Clear slot elements (keep back button)
+    const slotsToRemove = this.container.querySelectorAll('.hotbar-slot')
+    slotsToRemove.forEach(el => el.remove())
+    this.slotElements = []
+
+    this.slots.forEach((slot, index) => {
+      const slotEl = document.createElement('div')
+      slotEl.className = 'hotbar-slot rotate-slot'
+      if (index === this.selectedIndex) {
+        slotEl.classList.add('selected')
+      }
+
+      const numberEl = document.createElement('span')
+      numberEl.className = 'hotbar-key'
+      // Show R and F keys for rotation
+      if (index === 0) numberEl.textContent = 'r'
+      else if (index === 1) numberEl.textContent = 'f'
+      else numberEl.textContent = index === 9 ? '0' : String(index + 1)
+
+      const iconEl = document.createElement('span')
+      iconEl.className = 'hotbar-icon'
+      iconEl.textContent = slot ? slot.icon : ''
+
+      slotEl.appendChild(numberEl)
+      slotEl.appendChild(iconEl)
+      this.container.appendChild(slotEl)
+      this.slotElements.push(slotEl)
+
+      // Touch selection
+      slotEl.addEventListener('pointerdown', (e) => {
+        e.preventDefault()
+        this.selectSlot(index)
+      })
+    })
+  }
+
+  /**
    * Handle Q key press to exit special mode and/or unselect tool.
    * @param {KeyboardEvent} [e] - Optional keyboard event to prevent default
    * @returns {boolean} true if handled
@@ -536,6 +697,13 @@ export class Hotbar {
     if (this.#mode === 'voxels') {
       this.exitVoxelMode()
       this.clearSelection()
+      if (e) e.preventDefault()
+      return true
+    }
+    
+    // Rotate mode exits to select mode, not fully out
+    if (this.#mode === 'rotate') {
+      this.exitRotateMode()
       if (e) e.preventDefault()
       return true
     }
@@ -606,6 +774,14 @@ export class Hotbar {
     
     // In select mode, return the SelectVoxelTool, not the mode item
     if (this.#mode === 'select') {
+      return {
+        index: this.selectedIndex,
+        tool: this.#selectVoxelTool,
+      }
+    }
+    
+    // In rotate mode, return the SelectVoxelTool
+    if (this.#mode === 'rotate') {
       return {
         index: this.selectedIndex,
         tool: this.#selectVoxelTool,

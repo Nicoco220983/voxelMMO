@@ -23,6 +23,12 @@ export class SelectVoxelTool extends Tool {
    */
   #copyBuffer = null
 
+  /**
+   * Rotation state for paste mode (0-3, representing 0°, 90°, 180°, 270°).
+   * @type {{x: number, y: number}}
+   */
+  #rotation = { x: 0, y: 0 }
+
   /** @type {ChunkRegistry|null} */
   #chunkRegistry = null
 
@@ -36,6 +42,107 @@ export class SelectVoxelTool extends Tool {
    */
   setMode(mode) {
     this.#mode = mode
+  }
+
+  /**
+   * Check if currently in paste mode.
+   * @returns {boolean}
+   */
+  isPasteMode() {
+    return this.#mode === 'paste'
+  }
+
+  /**
+   * Get current rotation state.
+   * @returns {{x: number, y: number}} Rotation in 90° steps (0-3)
+   */
+  getRotation() {
+    return { ...this.#rotation }
+  }
+
+  /**
+   * Increment X rotation by 90°.
+   * @returns {{x: number, y: number}} New rotation state
+   */
+  rotateX() {
+    this.#rotation.x = (this.#rotation.x + 1) % 4
+    return { ...this.#rotation }
+  }
+
+  /**
+   * Increment Y rotation by 90°.
+   * @returns {{x: number, y: number}} New rotation state
+   */
+  rotateY() {
+    this.#rotation.y = (this.#rotation.y + 1) % 4
+    return { ...this.#rotation }
+  }
+
+  /**
+   * Reset rotation to zero.
+   */
+  resetRotation() {
+    this.#rotation = { x: 0, y: 0 }
+  }
+
+  /**
+   * Apply rotation to a voxel position.
+   * Rotations are applied: Y first (yaw), then X (pitch).
+   * @private
+   * @param {{rx: number, ry: number, rz: number}} voxel - Relative voxel position
+   * @returns {{rx: number, ry: number, rz: number, type: number}} Transformed position
+   */
+  #applyRotation(voxel) {
+    if (!this.#copyBuffer) return { ...voxel }
+
+    const { width, height, depth } = this.#copyBuffer
+    
+    // Center at origin for rotation
+    let x = voxel.rx - (width - 1) / 2
+    let y = voxel.ry - (height - 1) / 2
+    let z = voxel.rz - (depth - 1) / 2
+
+    // Apply Y rotation (yaw) - rotates around Y axis (XZ plane)
+    for (let i = 0; i < this.#rotation.y; i++) {
+      const newX = z
+      const newZ = -x
+      x = newX
+      z = newZ
+    }
+
+    // Apply X rotation (pitch) - rotates around X axis (YZ plane)
+    for (let i = 0; i < this.#rotation.x; i++) {
+      const newY = -z
+      const newZ = y
+      y = newY
+      z = newZ
+    }
+
+    // Calculate new dimensions after rotation
+    let newWidth = width
+    let newHeight = height
+    let newDepth = depth
+
+    // Y rotation swaps width/depth
+    if (this.#rotation.y % 2 === 1) {
+      newWidth = depth
+      newDepth = width
+    }
+
+    // X rotation swaps height/depth
+    if (this.#rotation.x % 2 === 1) {
+      const tempHeight = newHeight
+      newHeight = newDepth
+      newDepth = tempHeight
+    }
+
+    // Uncenter with new dimensions
+    return {
+      rx: Math.round(x + (newWidth - 1) / 2),
+      ry: Math.round(y + (newHeight - 1) / 2),
+      rz: Math.round(z + (newDepth - 1) / 2),
+      type: voxel.type
+    }
   }
 
   /**
@@ -121,12 +228,16 @@ export class SelectVoxelTool extends Tool {
   /**
    * Copy a region of voxels into the copy buffer.
    * The anchor is always the minimum corner (minX, minY, minZ) of the region.
+   * Resets rotation when copying new region.
    * @param {{x: number, y: number, z: number}} start
    * @param {{x: number, y: number, z: number}} end
    * @returns {boolean} true if copy succeeded
    */
   copyRegion(start, end) {
     if (!this.#chunkRegistry) return false
+    
+    // Reset rotation on new copy
+    this.resetRotation()
 
     // Compute AABB bounds
     const minX = Math.min(start.x, end.x)
@@ -174,36 +285,42 @@ export class SelectVoxelTool extends Tool {
   /**
    * Get all paste operations for the copy buffer at a target position.
    * Returns an array of input buffers to send.
+   * Applies current rotation to voxel positions.
    * @param {{x: number, y: number, z: number}} target
    * @returns {Array<ArrayBuffer>}
    */
   getPasteInputs(target) {
     if (!this.#copyBuffer) return []
 
-    return this.#copyBuffer.voxels.map(voxel => 
-      SelectVoxelTool.serializeCreateInput(
-        target.x + voxel.rx,
-        target.y + voxel.ry,
-        target.z + voxel.rz,
+    return this.#copyBuffer.voxels.map(voxel => {
+      const rotated = this.#applyRotation(voxel)
+      return SelectVoxelTool.serializeCreateInput(
+        target.x + rotated.rx,
+        target.y + rotated.ry,
+        target.z + rotated.rz,
         voxel.type
       )
-    )
+    })
   }
 
   /**
    * Get preview voxel positions for paste mode.
    * Returns world positions of all voxels that will be pasted at the target.
+   * Applies current rotation to voxel positions.
    * @param {{x: number, y: number, z: number}} target
    * @returns {Array<{x: number, y: number, z: number}>}
    */
   getPastePreviewPositions(target) {
     if (!this.#copyBuffer || this.#mode !== 'paste') return []
 
-    return this.#copyBuffer.voxels.map(voxel => ({
-      x: target.x + voxel.rx,
-      y: target.y + voxel.ry,
-      z: target.z + voxel.rz
-    }))
+    return this.#copyBuffer.voxels.map(voxel => {
+      const rotated = this.#applyRotation(voxel)
+      return {
+        x: target.x + rotated.rx,
+        y: target.y + rotated.ry,
+        z: target.z + rotated.rz
+      }
+    })
   }
 
   /**
@@ -334,6 +451,15 @@ export class SelectVoxelTool extends Tool {
       const anchorZ = Math.min(start.z, end.z)
       return this.getPasteInputs({ x: anchorX, y: anchorY, z: anchorZ })
     }
+  }
+
+  /**
+   * Serialize rotation input for network (optional - for server validation).
+   * Not currently used since rotation is client-side only for preview.
+   * @returns {{x: number, y: number}}
+   */
+  serializeRotation() {
+    return { ...this.#rotation }
     
     return null
   }

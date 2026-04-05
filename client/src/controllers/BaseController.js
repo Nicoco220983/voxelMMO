@@ -277,6 +277,45 @@ export class BaseController {
   }
 
   /**
+   * Rotation key processed flags (prevents multiple rotations per keypress).
+   * @type {{x: boolean, y: boolean}}
+   */
+  rotationKeyProcessed = { x: false, y: false }
+
+  /**
+   * Handle rotation key input.
+   * Called by subclasses when rotation keys are pressed.
+   * @param {Object} keys - Key states
+   * @param {boolean} [keys.rotateX] - Rotate around X axis requested
+   * @param {boolean} [keys.rotateY] - Rotate around Y axis requested
+   */
+  handleRotationInput(keys) {
+    const currentTool = this.toolContext.currentTool
+    
+    // Only process rotation when in paste mode with a tool that supports it
+    if (!currentTool?.isPasteMode || !currentTool.isPasteMode()) {
+      this.rotationKeyProcessed = { x: false, y: false }
+      return
+    }
+
+    // Handle X rotation (R key)
+    if (keys.rotateX && !this.rotationKeyProcessed.x) {
+      currentTool.rotateX()
+      this.rotationKeyProcessed.x = true
+    } else if (!keys.rotateX) {
+      this.rotationKeyProcessed.x = false
+    }
+
+    // Handle Y rotation (F key)
+    if (keys.rotateY && !this.rotationKeyProcessed.y) {
+      currentTool.rotateY()
+      this.rotationKeyProcessed.y = true
+    } else if (!keys.rotateY) {
+      this.rotationKeyProcessed.y = false
+    }
+  }
+
+  /**
    * Move builder target by delta (delegates to VoxelHighlight).
    * @param {number} dx
    * @param {number} dy

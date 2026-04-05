@@ -8,7 +8,7 @@ import { InputButton } from '../NetworkProtocol.js'
  */
 export class KeyboardController extends BaseController {
   /** @type {Record<string, boolean>} */
-  #keys = { w: false, a: false, s: false, d: false, space: false, shift: false }
+  #keys = { w: false, a: false, s: false, d: false, space: false, shift: false, r: false, f: false }
 
   /** @type {HTMLElement} */
   #domElement
@@ -155,6 +155,16 @@ export class KeyboardController extends BaseController {
         this.#toggleBuilderModeRequested = true
         e.preventDefault()
         break
+      case 'KeyR':
+        // R key rotates around X axis in paste mode
+        this.#keys.r = true
+        e.preventDefault()
+        break
+      case 'KeyF':
+        // F key rotates around Y axis in paste mode
+        this.#keys.f = true
+        e.preventDefault()
+        break
       default: return
     }
   }
@@ -208,6 +218,12 @@ export class KeyboardController extends BaseController {
       case 'ShiftLeft': case 'ShiftRight':
         this.#keys.shift = false
         this.#builderKeyProcessed.shift = false
+        break
+      case 'KeyR':
+        this.#keys.r = false
+        break
+      case 'KeyF':
+        this.#keys.f = false
         break
       default: return
     }
@@ -324,6 +340,12 @@ export class KeyboardController extends BaseController {
       // Reset processed flags when not in builder mode to ensure clean state on entry
       this.#resetBuilderKeyProcessed()
     }
+
+    // Handle rotation input for paste mode
+    this.handleRotationInput({
+      rotateX: this.#keys.r,
+      rotateY: this.#keys.f
+    })
   }
 
   /**

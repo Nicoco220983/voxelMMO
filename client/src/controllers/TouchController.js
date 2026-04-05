@@ -21,6 +21,12 @@ export class TouchController extends BaseController {
   #descendBtn = null
   /** @type {HTMLElement|null} */
   #actionBtn = null
+  /** @type {HTMLElement|null} */
+  #rotateXBtn = null
+  /** @type {HTMLElement|null} */
+  #rotateYBtn = null
+  /** @type {HTMLElement|null} */
+  #backBtn = null
 
   /** @type {number|null} */
   #lookTouchId = null
@@ -55,6 +61,12 @@ export class TouchController extends BaseController {
 
   /** @type {number|null} Touch identifier for the action button. */
   #actionTouchId = null
+  /** @type {number|null} Touch identifier for rotate X button. */
+  #rotateXTouchId = null
+  /** @type {number|null} Touch identifier for rotate Y button. */
+  #rotateYTouchId = null
+  /** @type {number|null} Touch identifier for back button. */
+  #backTouchId = null
 
   /** @type {Function} */
   #boundTouchStart
@@ -149,12 +161,23 @@ export class TouchController extends BaseController {
     this.#jumpBtn = createBtn('jump-btn', '▲')
     this.#descendBtn = createBtn('descend-btn', '▼')
     this.#actionBtn = createBtn('action-btn', '●')
+    this.#rotateXBtn = createBtn('rotate-x-btn', '↻X')
+    this.#rotateYBtn = createBtn('rotate-y-btn', '↻Y')
+    this.#backBtn = createBtn('back-btn', '←')
+
+    // Hide rotation buttons initially
+    if (this.#rotateXBtn) this.#rotateXBtn.style.display = 'none'
+    if (this.#rotateYBtn) this.#rotateYBtn.style.display = 'none'
+    if (this.#backBtn) this.#backBtn.style.display = 'none'
 
     document.body.appendChild(this.#lookBase)
     document.body.appendChild(this.#moveBase)
     document.body.appendChild(this.#jumpBtn)
     document.body.appendChild(this.#descendBtn)
     document.body.appendChild(this.#actionBtn)
+    document.body.appendChild(this.#rotateXBtn)
+    document.body.appendChild(this.#rotateYBtn)
+    document.body.appendChild(this.#backBtn)
 
     // Position after append so we can read rects if needed; we use fixed CSS positions.
     this.#updateKnob(this.#lookKnob, 0, 0)
@@ -196,6 +219,33 @@ export class TouchController extends BaseController {
 
       if (target === this.#descendBtn || this.#descendBtn?.contains(target)) {
         this.#descendPressed = true
+        e.preventDefault()
+        continue
+      }
+
+      if (target === this.#rotateXBtn || this.#rotateXBtn?.contains(target)) {
+        if (this.#rotateXTouchId === null) {
+          this.#rotateXTouchId = touch.identifier
+          this.#triggerRotateX()
+        }
+        e.preventDefault()
+        continue
+      }
+
+      if (target === this.#rotateYBtn || this.#rotateYBtn?.contains(target)) {
+        if (this.#rotateYTouchId === null) {
+          this.#rotateYTouchId = touch.identifier
+          this.#triggerRotateY()
+        }
+        e.preventDefault()
+        continue
+      }
+
+      if (target === this.#backBtn || this.#backBtn?.contains(target)) {
+        if (this.#backTouchId === null) {
+          this.#backTouchId = touch.identifier
+          this.#triggerBack()
+        }
         e.preventDefault()
         continue
       }
@@ -260,6 +310,12 @@ export class TouchController extends BaseController {
         this.actionPressStartTime = null
         this.actionPressConsumed = false
         this.longPressTriggered = false
+      } else if (touch.identifier === this.#rotateXTouchId) {
+        this.#rotateXTouchId = null
+      } else if (touch.identifier === this.#rotateYTouchId) {
+        this.#rotateYTouchId = null
+      } else if (touch.identifier === this.#backTouchId) {
+        this.#backTouchId = null
       } else {
         const target = /** @type {HTMLElement|null} */ (touch.target)
         if (target === this.#jumpBtn || this.#jumpBtn?.contains(target)) {
@@ -348,37 +404,6 @@ export class TouchController extends BaseController {
   }
 
   /**
-   * Update touch controller state.
-   * Computes yaw/pitch from look stick, button masks from move stick.
-   * Note: resetFrameState() is called separately from main.js at end of frame.
-   * @param {number} dt
-   */
-  update(dt) {
-    // Look stick drives yaw/pitch continuously while held.
-    const lookSpeed = 2.0 // radians per second at full deflection
-    this.yaw -= this.#lookDx * lookSpeed * dt
-    this.pitch -= this.#lookDy * lookSpeed * dt
-    this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch))
-
-    // Move stick maps to buttons.
-    const deadZone = 0.15
-    let b = 0
-    if (this.#moveDy < -deadZone) b |= InputButton.FORWARD
-    if (this.#moveDy > deadZone) b |= InputButton.BACKWARD
-    if (this.#moveDx < -deadZone) b |= InputButton.LEFT
-    if (this.#moveDx > deadZone) b |= InputButton.RIGHT
-    if (this.#jumpPressed) b |= InputButton.JUMP
-    if (this.#descendPressed) b |= InputButton.DESCEND
-    this.buttons = b
-
-    // Compute builder movement delta when in builder mode
-    if (this.isBuilderMode()) {
-      const delta = this.#computeBuilderMoveDelta(b)
-      this.setBuilderMoveDelta(delta.x, delta.y, delta.z)
-    }
-  }
-
-  /**
    * Compute voxel movement delta from button mask and entry yaw.
    * Movement is locked to cardinal axes so inputs are unambiguous.
    * @param {number} buttons
@@ -423,6 +448,91 @@ export class TouchController extends BaseController {
     this.escPressed = true
   }
 
+  /**
+   * Trigger rotation around X axis.
+   * @private
+   */
+  #triggerRotateX() {
+    const currentTool = this.toolContext?.currentTool
+    if (currentTool?.rotateX) {
+      currentTool.rotateX()
+    }
+  }
+
+  /**
+   * Trigger rotation around Y axis.
+   * @private
+   */
+  #triggerRotateY() {
+    const currentTool = this.toolContext?.currentTool
+    if (currentTool?.rotateY) {
+      currentTool.rotateY()
+    }
+  }
+
+  /**
+   * Trigger back button (Q key equivalent).
+   * @private
+   */
+  #triggerBack() {
+    this.hotbar.handleQ()
+    this.selectedSlotIndex = null
+  }
+
+  /**
+   * Update visibility of rotation buttons based on hotbar mode.
+   * Called from main loop when mode changes.
+   */
+  updateRotationButtonsVisibility() {
+    const isRotateMode = this.hotbar?.isInRotateMode?.() ?? false
+    
+    if (this.#rotateXBtn) {
+      this.#rotateXBtn.style.display = isRotateMode ? 'flex' : 'none'
+    }
+    if (this.#rotateYBtn) {
+      this.#rotateYBtn.style.display = isRotateMode ? 'flex' : 'none'
+    }
+    if (this.#backBtn) {
+      // Show back button when in any special mode (voxels, select, rotate)
+      const showBack = this.hotbar?.isInVoxelMode?.() || 
+                       this.hotbar?.isInSelectMode?.() || 
+                       isRotateMode
+      this.#backBtn.style.display = showBack ? 'flex' : 'none'
+    }
+  }
+
+  /**
+   * Update touch controller state.
+   * @param {number} dt
+   */
+  update(dt) {
+    // Update rotation buttons visibility based on current mode
+    this.updateRotationButtonsVisibility()
+
+    // Look stick drives yaw/pitch continuously while held.
+    const lookSpeed = 2.0 // radians per second at full deflection
+    this.yaw -= this.#lookDx * lookSpeed * dt
+    this.pitch -= this.#lookDy * lookSpeed * dt
+    this.pitch = Math.max(-Math.PI / 2 + 0.01, Math.min(Math.PI / 2 - 0.01, this.pitch))
+
+    // Move stick maps to buttons.
+    const deadZone = 0.15
+    let b = 0
+    if (this.#moveDy < -deadZone) b |= InputButton.FORWARD
+    if (this.#moveDy > deadZone) b |= InputButton.BACKWARD
+    if (this.#moveDx < -deadZone) b |= InputButton.LEFT
+    if (this.#moveDx > deadZone) b |= InputButton.RIGHT
+    if (this.#jumpPressed) b |= InputButton.JUMP
+    if (this.#descendPressed) b |= InputButton.DESCEND
+    this.buttons = b
+
+    // Compute builder movement delta when in builder mode
+    if (this.isBuilderMode()) {
+      const delta = this.#computeBuilderMoveDelta(b)
+      this.setBuilderMoveDelta(delta.x, delta.y, delta.z)
+    }
+  }
+
   destroy() {
     document.removeEventListener('touchstart', this.#boundTouchStart)
     document.removeEventListener('touchmove', this.#boundTouchMove)
@@ -434,5 +544,8 @@ export class TouchController extends BaseController {
     this.#jumpBtn?.remove()
     this.#descendBtn?.remove()
     this.#actionBtn?.remove()
+    this.#rotateXBtn?.remove()
+    this.#rotateYBtn?.remove()
+    this.#backBtn?.remove()
   }
 }
