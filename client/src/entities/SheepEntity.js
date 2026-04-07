@@ -1,26 +1,11 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
 import { EntityType, SHEEP_BEHAVIOR_BIT, SUBVOXEL_SIZE } from '../types.js'
+import { SheepBehaviorComponent } from '../components/SheepBehaviorComponent.js'
 import * as THREE from 'three'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
-
-/**
- * @class SheepBehaviorComponent
- * @description Client-side mirror of server sheep behavior state.
- */
-export class SheepBehaviorComponent {
-  /** @type {number} 0 = IDLE, 1 = WALKING */
-  state = 0
-
-  /**
-   * @param {BufReader} reader
-   */
-  deserialize(reader) {
-    this.state = reader.readUint8()
-  }
-}
 
 /**
  * @class SheepEntity
