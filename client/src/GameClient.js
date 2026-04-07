@@ -9,6 +9,7 @@ import { NetworkProtocol, ServerMessageType } from './NetworkProtocol.js'
 import { Chunk } from './Chunk.js'
 import { ChunkRegistry } from './ChunkRegistry.js'
 import { EntityRegistry } from './EntityRegistry.js'
+import { EntityDeserializer } from './EntityDeserializer.js'
 import { lz4Decompress, BufReader } from './utils.js'
 import { BaseEntity } from './entities/BaseEntity.js'
 import { TICK_RATE } from './types.js'
@@ -378,7 +379,7 @@ export class GameClient {
 
     // Entity section
     const ess = view.getInt32(off, true); off += 4
-    const entityCount = this.#entityRegistry.applySnapshotEntities(this.#chunkRegistry, chunkId, view, off, ess, messageTick)
+    const entityCount = EntityDeserializer.applySnapshotEntities(this.#entityRegistry, this.#chunkRegistry, chunkId, view, off, ess, messageTick)
     off += ess
 
     chunk.dirty = true
@@ -445,8 +446,8 @@ export class GameClient {
         const flags = view.getUint8(15)
         // Extract payload bytes from the decompressed view
         const payload = new Uint8Array(pView.buffer, pView.byteOffset, pView.byteLength)
-        entityCount = this.#entityRegistry.applySnapshotDeltaEntities(
-          this.#chunkRegistry, chunkId, payload, payloadOff, ess, flags, messageTick)
+        entityCount = EntityDeserializer.applySnapshotDeltaEntities(
+          this.#entityRegistry, this.#chunkRegistry, chunkId, payload, payloadOff, ess, flags, messageTick)
       }
     }
 
@@ -469,7 +470,7 @@ export class GameClient {
     let entityCount = 0
     if (entityOff + 4 <= pView.byteLength) {
       const reader = new BufReader(pView, entityOff)
-      entityCount = this.#entityRegistry.applyDeltaEntities(this.#chunkRegistry, chunkId, reader, messageTick)
+      entityCount = EntityDeserializer.applyDeltaEntities(this.#entityRegistry, this.#chunkRegistry, chunkId, reader, messageTick)
     }
 
     chunk.dirty = true
