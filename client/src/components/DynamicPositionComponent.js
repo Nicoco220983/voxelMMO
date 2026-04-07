@@ -27,6 +27,15 @@ import { GRAVITY_DECREMENT } from '../types.js'
  * chunk message header and is passed in as messageTick.
  */
 export class DynamicPositionComponent {
+  /** @type {Readonly<DynamicPositionComponent>} Default values for CREATE deserialization */
+  static DEFAULT = Object.freeze({
+    receivedTick: 0,
+    receivedX: 0, receivedY: 0, receivedZ: 0,
+    receivedVx: 0, receivedVy: 0, receivedVz: 0,
+    receivedGrounded: false,
+    currentX: 0, currentY: 0, currentZ: 0
+  })
+
   // ── Received state (from server) ──────────────────────────────────────────
   /** @type {number} Reference tick when this state was received from server. */
   receivedTick = 0
@@ -43,6 +52,24 @@ export class DynamicPositionComponent {
   /** @type {SubVoxelCoord} */ currentX = 0
   /** @type {SubVoxelCoord} */ currentY = 0
   /** @type {SubVoxelCoord} */ currentZ = 0
+
+  /**
+   * Reset all fields to default values.
+   * Called during CREATE_ENTITY deserialization before selective component reading.
+   */
+  resetToDefaults() {
+    this.receivedTick = DynamicPositionComponent.DEFAULT.receivedTick
+    this.receivedX = DynamicPositionComponent.DEFAULT.receivedX
+    this.receivedY = DynamicPositionComponent.DEFAULT.receivedY
+    this.receivedZ = DynamicPositionComponent.DEFAULT.receivedZ
+    this.receivedVx = DynamicPositionComponent.DEFAULT.receivedVx
+    this.receivedVy = DynamicPositionComponent.DEFAULT.receivedVy
+    this.receivedVz = DynamicPositionComponent.DEFAULT.receivedVz
+    this.receivedGrounded = DynamicPositionComponent.DEFAULT.receivedGrounded
+    this.currentX = DynamicPositionComponent.DEFAULT.currentX
+    this.currentY = DynamicPositionComponent.DEFAULT.currentY
+    this.currentZ = DynamicPositionComponent.DEFAULT.currentZ
+  }
 
   /**
    * Deserialize from reader: x,y,z(i32) · vx,vy,vz(i32) · grounded(u8).

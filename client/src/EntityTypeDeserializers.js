@@ -2,7 +2,7 @@
 /**
  * @file EntityTypeDeserializers.js
  * @description Client-side entity type deserializer table.
- * Imports deserializers from individual entity type files and exports the lookup table.
+ * Exports deserializer lookup table using static methods from entity classes.
  *
  * Mirrors server/game/EntityTypeSerializers.cpp
  *
@@ -13,9 +13,8 @@
  *   table.deserializeUpdate(entity, reader, mask, tick)
  */
 
-import * as PlayerEntityDeserializer from './entities/PlayerEntityDeserializer.js'
-import * as GhostPlayerEntityDeserializer from './entities/GhostPlayerEntityDeserializer.js'
-import * as SheepEntityDeserializer from './entities/SheepEntityDeserializer.js'
+import { PlayerEntity } from './entities/PlayerEntity.js'
+import { SheepEntity } from './entities/SheepEntity.js'
 
 /**
  * @typedef {Object} EntityDeserializerTable
@@ -31,11 +30,20 @@ import * as SheepEntityDeserializer from './entities/SheepEntityDeserializer.js'
  */
 export const ENTITY_DESERIALIZER_TABLE = [
   // EntityType::PLAYER = 0
-  PlayerEntityDeserializer,
+  {
+    deserializeCreate: PlayerEntity.deserializeCreate.bind(PlayerEntity),
+    deserializeUpdate: PlayerEntity.deserializeUpdate.bind(PlayerEntity)
+  },
   // EntityType::GHOST_PLAYER = 1
-  GhostPlayerEntityDeserializer,
+  {
+    deserializeCreate: PlayerEntity.deserializeCreateGhost.bind(PlayerEntity),
+    deserializeUpdate: PlayerEntity.deserializeUpdate.bind(PlayerEntity)
+  },
   // EntityType::SHEEP = 2
-  SheepEntityDeserializer
+  {
+    deserializeCreate: SheepEntity.deserializeCreate.bind(SheepEntity),
+    deserializeUpdate: SheepEntity.deserializeUpdate.bind(SheepEntity)
+  }
 ]
 
 /**

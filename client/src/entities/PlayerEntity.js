@@ -1,11 +1,14 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
-import { EntityType, SUBVOXEL_SIZE } from '../types.js'
+import { EntityType, SUBVOXEL_SIZE, POSITION_BIT } from '../types.js'
 import * as THREE from 'three'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
+/** @typedef {import('../types.js').ChunkId} ChunkId */
 /** @typedef {import('../types.js').EntityType} EntityType */
+/** @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
+/** @typedef {import('../EntityRegistry.js').EntityRegistry} EntityRegistry */
 
 /**
  * @class PlayerEntity
@@ -309,5 +312,79 @@ export class PlayerEntity extends BaseEntity {
   destroy(scene) {
     this.#destroyMesh()
     this.#scene = null
+  }
+
+  // ─── Static Deserialization Methods ───────────────────────────────────────
+
+  /**
+   * Deserialize player entity creation.
+   * 
+   * For CREATE_ENTITY: Reset ALL components to defaults first, then deserialize
+   * only the components indicated by componentMask. Missing components remain
+   * at their default values.
+   * 
+   * @param {EntityRegistry} entityRegistry
+   * @param {ChunkRegistry} chunkRegistry
+   * @param {GlobalEntityId} entityId
+   * @param {ChunkId} chunkId
+   * @param {BufReader} reader
+   * @param {number} componentMask - Bitmask indicating which components are present
+   * @param {number} messageTick
+   * @returns {PlayerEntity|null}
+   */
+  static deserializeCreate(entityRegistry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick) {
+    const entity = /** @type {PlayerEntity} */ (entityRegistry.createEntity(chunkRegistry, entityId, EntityType.PLAYER, chunkId))
+    if (!entity) return null
+
+    // 1. Reset ALL components to defaults first
+    entity.motion.resetToDefaults()
+
+    // 2. Deserialize only components indicated by mask (missing = stay at default)
+    if (componentMask & POSITION_BIT) {
+      entity.motion.deserialize(reader, messageTick)
+    }
+
+    return entity
+  }
+
+  /**
+   * Deserialize ghost player entity creation.
+   * Same as player but creates entity with GHOST_PLAYER type.
+   * 
+   * @param {EntityRegistry} entityRegistry
+   * @param {ChunkRegistry} chunkRegistry
+   * @param {GlobalEntityId} entityId
+   * @param {ChunkId} chunkId
+   * @param {BufReader} reader
+   * @param {number} componentMask - Bitmask indicating which components are present
+   * @param {number} messageTick
+   * @returns {PlayerEntity|null}
+   */
+  static deserializeCreateGhost(entityRegistry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick) {
+    const entity = /** @type {PlayerEntity} */ (entityRegistry.createEntity(chunkRegistry, entityId, EntityType.GHOST_PLAYER, chunkId))
+    if (!entity) return null
+
+    // 1. Reset ALL components to defaults first
+    entity.motion.resetToDefaults()
+
+    // 2. Deserialize only components indicated by mask (missing = stay at default)
+    if (componentMask & POSITION_BIT) {
+      entity.motion.deserialize(reader, messageTick)
+    }
+
+    return entity
+  }
+
+  /**
+   * Deserialize player entity update.
+   * @param {PlayerEntity} entity
+   * @param {BufReader} reader
+   * @param {number} componentMask
+   * @param {number} messageTick
+   */
+  static deserializeUpdate(entity, reader, componentMask, messageTick) {
+    if (componentMask & POSITION_BIT) {
+      entity.motion.deserialize(reader, messageTick)
+    }
   }
 }

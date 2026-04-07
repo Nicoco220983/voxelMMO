@@ -33,14 +33,20 @@ entt::entity spawnImpl(entt::registry& reg,
 size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) {
     const size_t startOffset = w.offset();
 
-    // Ghost player has only POSITION_BIT
-    constexpr uint8_t flags = POSITION_BIT;
+    // For CREATE: component decides if it needs serialization based on non-default values
+    uint8_t flags = 0;
+    const auto& pos = reg.get<DynamicPositionComponent>(ent);
+    if (pos.isNonDefault()) flags |= POSITION_BIT;
 
     const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
     w.write(gid.id);
     w.write(static_cast<uint8_t>(EntityType::GHOST_PLAYER));
     w.write(flags);
-    DynamicPositionComponent::serialize(reg, ent, flags, w);
+
+    // Serialize only if non-default
+    if (flags & POSITION_BIT) {
+        DynamicPositionComponent::serialize(reg, ent, POSITION_BIT, w);
+    }
 
     return w.offset() - startOffset;
 }

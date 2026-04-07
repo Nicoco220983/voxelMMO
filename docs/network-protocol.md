@@ -128,6 +128,8 @@ ComponentFlags uint8     (bitmask of present components)
   if SHEEP_BEHAVIOR_BIT: SheepBehaviorComponent fields
 ```
 
+**Semantics:** Snapshot entity records use the same CREATE semantics as `CREATE_ENTITY` deltas: each component decides if it needs serialization based on whether its values differ from defaults. Clients MUST reset all components to defaults first, then deserialize only the components indicated by the mask.
+
 ### CHUNK_SNAPSHOT_DELTA (types 2-3, optionally _COMPRESSED)
 
 Sent periodically (every 20 ticks) after initial snapshot. Contains voxel deltas but **full entities** (not deltas).
@@ -146,7 +148,7 @@ int32   entity_section_stored_size
     bytes   entity_data   → int32 count + entity records (same format as SNAPSHOT)
 ```
 
-**Entity record format:** Same as CHUNK_SNAPSHOT (full entity state, no DeltaType prefix).
+**Entity record format:** Same as CHUNK_SNAPSHOT (full entity state using CREATE semantics, no DeltaType prefix). Components are included only if non-default.
 
 ### CHUNK_TICK_DELTA (types 4-5, optionally _COMPRESSED)
 
@@ -172,7 +174,7 @@ DeltaType      uint8   (enum: 0=CREATE, 1=UPDATE, 2=DELETE, 3=CHUNK_CHANGE)
 GlobalEntityId uint32  (stable across chunk moves and server lifetime)
   if DeltaType is CREATE or UPDATE:
     EntityType     uint8     (entity's game type)
-    ComponentFlags uint8     (bitmask of dirty components, bits 0-5)
+    ComponentFlags uint8     (bitmask of components present, bits 0-5)
       if POSITION_BIT:       DynamicPositionComponent fields (see below)
       if SHEEP_BEHAVIOR_BIT: SheepBehaviorComponent fields
   if DeltaType is CHUNK_CHANGE:
@@ -186,6 +188,10 @@ GlobalEntityId uint32  (stable across chunk moves and server lifetime)
 - **UPDATE_ENTITY (1)**: Entity already known; only dirty components present.
 - **DELETE_ENTITY (2)**: Entity removed from this chunk.
 - **CHUNK_CHANGE_ENTITY (3)**: Entity moved to a different chunk (old chunk sends this).
+
+**ComponentFlags semantics differ by DeltaType:**
+- **CREATE_ENTITY**: Each component decides if it needs serialization based on `isNonDefault()`. The mask indicates which components are present in the message. Clients MUST reset all components to defaults first, then deserialize only the present components.
+- **UPDATE_ENTITY**: The mask indicates which components are dirty (changed since last update). Clients update only those components.
 
 ---
 
@@ -377,13 +383,14 @@ The client implements a **two-level tick protection system** to handle out-of-or
 
 **1. CREATE_ENTITY resets all component ticks**
 
-When a CREATE_ENTITY is received and accepted:
+When a CREATE_ENTITY (or SNAPSHOT/SNAPSHOT_DELTA entity record) is received and accepted:
 - `entity.lastCreateReceivedTick = messageTick`
+- **All** components are reset to their default values
 - For **every** component: `component.lastUpdateReceivedTick = messageTick`
-- Components present in message: deserialized normally
+- Components present in message (indicated by ComponentFlags mask): deserialized to update from defaults
 - Components **missing** from message: remain at default values, but marked as "updated at create tick"
 
-This ensures that missing components = default values, and future stale updates to those components are correctly rejected.
+**Key point:** The ComponentFlags in CREATE messages indicates which components are **present** (non-default), not which are dirty. Each component uses `isNonDefault()` on the server to determine if serialization is needed.
 
 **2. Cross-chunk entity moves**
 

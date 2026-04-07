@@ -38,18 +38,26 @@ entt::entity spawnImpl(entt::registry& reg,
 size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) {
     const size_t startOffset = w.offset();
 
-    // Sheep has POSITION_BIT and SHEEP_BEHAVIOR_BIT
-    constexpr uint8_t flags = POSITION_BIT | SHEEP_BEHAVIOR_BIT;
+    // For CREATE: each component decides if it needs serialization based on non-default values
+    uint8_t flags = 0;
+    const auto& pos = reg.get<DynamicPositionComponent>(ent);
+    if (pos.isNonDefault()) flags |= POSITION_BIT;
+
+    const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
+    if (behavior.isNonDefault()) flags |= SHEEP_BEHAVIOR_BIT;
 
     const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
     w.write(gid.id);
     w.write(static_cast<uint8_t>(EntityType::SHEEP));
     w.write(flags);
-    DynamicPositionComponent::serialize(reg, ent, flags, w);
 
-    // Serialize sheep behavior component
-    const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
-    behavior.serializeFields(w);
+    // Serialize only non-default components
+    if (flags & POSITION_BIT) {
+        DynamicPositionComponent::serialize(reg, ent, POSITION_BIT, w);
+    }
+    if (flags & SHEEP_BEHAVIOR_BIT) {
+        behavior.serializeFields(w);
+    }
 
     return w.offset() - startOffset;
 }

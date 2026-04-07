@@ -30,6 +30,16 @@ struct DynamicPositionComponent {
     bool moved{true};              ///< Set whenever position changes; cleared by checkEntitiesChunks().
 
     /**
+     * @brief Check if any field differs from default (zero-initialized) values.
+     * Used by serializeCreate to determine if component needs to be sent.
+     */
+    bool isNonDefault() const noexcept {
+        return x != 0 || y != 0 || z != 0 ||
+               vx != 0 || vy != 0 || vz != 0 ||
+               grounded != false;
+    }
+
+    /**
      * @brief Serialize the raw position fields (no component-flags byte).
      *
      * Wire layout: int32 x,y,z | int32 vx,vy,vz | uint8 grounded

@@ -24,6 +24,18 @@ struct SheepBehaviorComponent {
     float yaw{0};                ///< Current rotation (radians, for facing movement)
 
     /**
+     * @brief Check if any field differs from default values.
+     * Used by serializeCreate to determine if component needs to be sent.
+     */
+    bool isNonDefault() const noexcept {
+        return state != State::IDLE ||
+               stateEndTick != 0 ||
+               targetX != 0 ||
+               targetZ != 0 ||
+               yaw != 0.0f;
+    }
+
+    /**
      * @brief Serialize behavior state.
      * Wire layout: uint8 state
      */
