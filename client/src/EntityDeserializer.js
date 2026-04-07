@@ -1,11 +1,11 @@
 // @ts-check
-import { EntityType } from './types.js'
-import { DeltaType } from './NetworkProtocol.js'
+import { getEntityDeserializer } from './EntityTypeDeserializers.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
 /** @typedef {import('./types.js').ChunkId} ChunkId */
 /** @typedef {import('./EntityRegistry.js').EntityRegistry} EntityRegistry */
+/** @typedef {import('./types.js').GlobalEntityId} GlobalEntityId */
 
 /**
  * @class EntityDeserializer
@@ -13,8 +13,8 @@ import { lz4Decompress, BufReader } from './utils.js'
  * Mirrors the server-side EntitySerializer.cpp for network message parsing.
  *
  * Deserialization formats:
- *   deserializeFull():     [global_id(4)] [entity_type(1)] [component_mask(1)] [component_data...]
- *   deserializeDelta():    [delta_type(1)] [global_id(4)] [entity_type(1) if CREATE/UPDATE] [component_mask(1) if CREATE/UPDATE] [component_data...]
+ *   deserializeCreate(): [global_id(4)] [entity_type(1)] [component_mask(1)] [component_data...]
+ *   deserializeUpdate(): [global_id(4)] [entity_type(1)] [component_mask(1)] [component_data...]
  *
  * This class is stateless - all methods are pure functions that operate on
  * the provided buffers and delegate entity lifecycle to EntityRegistry.
@@ -81,14 +81,17 @@ export class EntityDeserializer {
     const count = reader.readInt32()
 
     for (let i = 0; i < count; i++) {
-      const id = reader.readUint32()
-      const type = reader.readUint8()
-      const componentFlags = reader.readUint8()
+      const entityId = reader.readUint32()
+      const entityType = reader.readUint8()
+      const componentMask = reader.readUint8()
 
-      const entity = entityRegistry.createEntity(chunkRegistry, id, type, chunkId)
-      if (entity) {
-        entity.deserializeComponents(reader, componentFlags, messageTick)
+      const deserializer = getEntityDeserializer(entityType)
+      if (!deserializer) {
+        console.error('[EntityDeserializer] Unknown entity type:', entityType, 'for entity', entityId)
+        continue
       }
+
+      deserializer.deserializeCreate(entityRegistry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick)
     }
     return count
   }
@@ -150,6 +153,13 @@ export class EntityDeserializer {
    * @returns {number} Number of entity deltas parsed
    */
   static applyDeltaEntities(entityRegistry, chunkRegistry, chunkId, reader, messageTick) {
+    const DeltaType = {
+      CREATE_ENTITY: 0,
+      UPDATE_ENTITY: 1,
+      DELETE_ENTITY: 2,
+      CHUNK_CHANGE_ENTITY: 3
+    }
+
     const count = reader.readInt32()
 
     for (let i = 0; i < count; i++) {
@@ -185,13 +195,21 @@ export class EntityDeserializer {
           continue
         }
 
+        const deserializer = getEntityDeserializer(entityType)
+        if (!deserializer) {
+          console.error('[EntityDeserializer] Unknown entity type:', entityType, 'for entity', entityId)
+          continue
+        }
+
         if (!entity) {
-          entity = entityRegistry.createEntity(chunkRegistry, entityId, entityType, chunkId)
+          // CREATE_ENTITY: create new entity
+          entity = deserializer.deserializeCreate(entityRegistry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick)
           if (!entity) continue
         } else {
+          // UPDATE_ENTITY: update existing entity
           console.debug('[EntityDeserializer] Updating entity:', { entityId, entityType })
+          deserializer.deserializeUpdate(entity, reader, componentMask, messageTick)
         }
-        entity.deserializeComponents(reader, componentMask, messageTick)
 
         // Note: Chunk boundary detection is now handled by ChunkMembershipSystem
         // which runs every tick in GameClient.updateEntities()

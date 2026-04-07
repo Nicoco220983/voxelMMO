@@ -8,24 +8,24 @@ namespace voxelmmo {
 /**
  * @brief Serialization function table indexed by EntityType.
  *
- * This table maps each EntityType to its corresponding serializeFull
+ * This table maps each EntityType to its corresponding serializeCreate
  * and serializeUpdate functions. The table is indexed by the uint8_t
  * value of the EntityType enum.
  */
 const EntitySerializerTable ENTITY_SERIALIZER_TABLE[] = {
     // EntityType::PLAYER = 0
     {
-        &PlayerEntity::serializeFull,
+        &PlayerEntity::serializeCreate,
         &PlayerEntity::serializeUpdate
     },
     // EntityType::GHOST_PLAYER = 1
     {
-        &GhostPlayerEntity::serializeFull,
+        &GhostPlayerEntity::serializeCreate,
         &GhostPlayerEntity::serializeUpdate
     },
     // EntityType::SHEEP = 2
     {
-        &SheepEntity::serializeFull,
+        &SheepEntity::serializeCreate,
         &SheepEntity::serializeUpdate
     }
 };

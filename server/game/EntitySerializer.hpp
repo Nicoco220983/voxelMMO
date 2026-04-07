@@ -17,12 +17,12 @@ struct DirtyComponent;
  *   - Finalizing/compressing the buffer
  *
  * Serialization formats:
- *   serializeFull():     [delta_type if forDelta] [global_id(4)] [entity_type(1)] [component_mask(1)] [component_data...]
+ *   serializeCreate():   [delta_type if forDelta] [global_id(4)] [entity_type(1)] [component_mask(1)] [component_data...]
  *   serializeDelta():    [delta_type(1)] [global_id(4)] [entity_type(1) if CREATE/UPDATE] [component_mask(1) if CREATE/UPDATE] [component_data...]
  */
 struct EntitySerializer {
     /**
-     * @brief Serialize a full entity (all components).
+     * @brief Serialize a full entity (all components) for creation.
      *
      * Used for snapshots and for newly created entities in deltas.
      * When forDelta=true, writes CREATE_ENTITY delta type as first byte.
@@ -33,7 +33,7 @@ struct EntitySerializer {
      * @param forDelta If true, write delta type prefix (default: false).
      * @return Bytes written.
      */
-    static size_t serializeFull(
+    static size_t serializeCreate(
         entt::registry& reg,
         entt::entity ent,
         SafeBufWriter& w,

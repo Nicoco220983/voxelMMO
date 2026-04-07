@@ -70,7 +70,7 @@ entt::entity spawnImpl(entt::registry& reg,
                        const EntitySpawnRequest& req);
 
 /**
- * @brief Serialize a full ghost player entity (no delta type prefix).
+ * @brief Serialize a full ghost player entity for creation (no delta type prefix).
  *
  * Format: [global_id(4)] [entity_type(1)=GHOST_PLAYER] [component_mask(1)] [position_data...]
  *
@@ -81,7 +81,7 @@ entt::entity spawnImpl(entt::registry& reg,
  * @param w   Buffer writer.
  * @return Bytes written.
  */
-size_t serializeFull(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
+size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
 
 /**
  * @brief Serialize ghost player entity update (no delta type prefix).

@@ -34,7 +34,7 @@ entt::entity spawnImpl(entt::registry& reg,
     return spawn(reg, globalId, req.x, req.y, req.z, req.playerId);
 }
 
-size_t serializeFull(entt::registry& reg, entt::entity ent, SafeBufWriter& w) {
+size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) {
     const size_t startOffset = w.offset();
 
     // Player has only POSITION_BIT

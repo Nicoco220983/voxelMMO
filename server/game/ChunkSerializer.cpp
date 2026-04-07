@@ -205,7 +205,7 @@ static uint8_t serializeEntitiesSnapshot(const Chunk& chunk, entt::registry& reg
     
     int32_t entityCount = 0;
     for (auto ent : chunk.entities) {
-        EntitySerializer::serializeFull(reg, ent, w);
+        EntitySerializer::serializeCreate(reg, ent, w);
         ++entityCount;
     }
     

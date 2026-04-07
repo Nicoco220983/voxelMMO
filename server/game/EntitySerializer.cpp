@@ -9,7 +9,7 @@
 
 namespace voxelmmo {
 
-size_t EntitySerializer::serializeFull(
+size_t EntitySerializer::serializeCreate(
     entt::registry& reg,
     entt::entity ent,
     SafeBufWriter& w,
@@ -27,7 +27,7 @@ size_t EntitySerializer::serializeFull(
     }
     
     // Serialize entity state (no delta type prefix - that's handled above)
-    serializer.serializeFull(reg, ent, w);
+    serializer.serializeCreate(reg, ent, w);
     
     return w.offset() - startOffset;
 }
@@ -72,7 +72,7 @@ size_t EntitySerializer::serializeDelta(
     if (dirty.deltaType == DeltaType::CREATE_ENTITY) {
         // Newly created entity: write delta type + full state
         w.write(static_cast<uint8_t>(DeltaType::CREATE_ENTITY));
-        serializer.serializeFull(reg, ent, w);
+        serializer.serializeCreate(reg, ent, w);
     } else if (dirty.dirtyFlags != 0) {
         // Updated entity: write delta type + delta state
         w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));

@@ -22,7 +22,7 @@ struct DirtyComponent;
  * @param w Buffer writer.
  * @return Bytes written.
  */
-using SerializeFullFn = size_t(*)(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
+using SerializeCreateFn = size_t(*)(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
 
 /**
  * @brief Function type for serializing entity update (delta state, no delta type prefix).
@@ -44,7 +44,7 @@ using SerializeUpdateFn = size_t(*)(entt::registry& reg, entt::entity ent, const
  * @brief Serialization function table entry per entity type.
  */
 struct EntitySerializerTable {
-    SerializeFullFn serializeFull;      // Full entity state (no delta type prefix)
+    SerializeCreateFn serializeCreate;  // Full entity state (no delta type prefix)
     SerializeUpdateFn serializeUpdate;  // Delta state (no delta type prefix)
 };
 
@@ -53,11 +53,12 @@ struct EntitySerializerTable {
  *
  * Usage:
  *   auto& table = ENTITY_SERIALIZER_TABLE[static_cast<uint8_t>(entityType)];
- *   table.serializeFull(reg, ent, writer);   // For snapshots/CREATE_ENTITY
+ *   table.serializeCreate(reg, ent, writer);  // For snapshots/CREATE_ENTITY
  *   table.serializeUpdate(reg, ent, dirty, writer);  // For UPDATE_ENTITY deltas
  */
 extern const EntitySerializerTable ENTITY_SERIALIZER_TABLE[];
 
+/**
 /**
  * @brief Helper to look up serializer table entry for an entity type.
  * @return Reference to the serializer table entry.
@@ -65,5 +66,8 @@ extern const EntitySerializerTable ENTITY_SERIALIZER_TABLE[];
 inline const EntitySerializerTable& getEntitySerializer(EntityType type) {
     return ENTITY_SERIALIZER_TABLE[static_cast<uint8_t>(type)];
 }
+
+// Backward compatibility alias (deprecated, use serializeCreate)
+using SerializeFullFn = SerializeCreateFn;
 
 } // namespace voxelmmo

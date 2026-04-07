@@ -53,7 +53,7 @@ entt::entity spawnImpl(entt::registry& reg,
                        const EntitySpawnRequest& req);
 
 /**
- * @brief Serialize a full sheep entity (no delta type prefix).
+ * @brief Serialize a full sheep entity for creation (no delta type prefix).
  *
  * Format: [global_id(4)] [entity_type(1)=SHEEP] [component_mask(1)] [position_data...] [behavior_data...]
  *
@@ -64,7 +64,7 @@ entt::entity spawnImpl(entt::registry& reg,
  * @param w   Buffer writer.
  * @return Bytes written.
  */
-size_t serializeFull(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
+size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
 
 /**
  * @brief Serialize sheep entity update (no delta type prefix).

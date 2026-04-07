@@ -35,7 +35,7 @@ entt::entity spawnImpl(entt::registry& reg,
     return spawn(reg, globalId, req.x, req.y, req.z, req.startTick);
 }
 
-size_t serializeFull(entt::registry& reg, entt::entity ent, SafeBufWriter& w) {
+size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) {
     const size_t startOffset = w.offset();
 
     // Sheep has POSITION_BIT and SHEEP_BEHAVIOR_BIT
