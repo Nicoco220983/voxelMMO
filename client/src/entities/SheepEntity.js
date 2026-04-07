@@ -1,10 +1,9 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
-import { EntityType, SHEEP_BEHAVIOR_BIT, SUBVOXEL_SIZE } from '../types.js'
+import { EntityType, SUBVOXEL_SIZE } from '../types.js'
 import { SheepBehaviorComponent } from '../components/SheepBehaviorComponent.js'
 import * as THREE from 'three'
 
-/** @typedef {import('../utils.js').BufReader} BufReader */
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
 
 /**
@@ -109,19 +108,6 @@ export class SheepEntity extends BaseEntity {
     }
 
     return group
-  }
-
-  /**
-   * Deserialize components including sheep behavior.
-   * @param {BufReader} reader
-   * @param {number} flags
-   * @param {number} messageTick
-   */
-  deserializeComponents(reader, flags, messageTick) {
-    super.deserializeComponents(reader, flags, messageTick)
-    if (flags & SHEEP_BEHAVIOR_BIT) {
-      this.behavior.deserialize(reader)
-    }
   }
 
   /**

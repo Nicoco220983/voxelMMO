@@ -1,8 +1,7 @@
 // @ts-check
 import { describe, it, expect } from 'vitest'
 import { DynamicPositionComponent } from '../../client/src/components/DynamicPositionComponent.js'
-import { BaseEntity } from '../../client/src/entities/BaseEntity.js'
-import { GRAVITY_DECREMENT, POSITION_BIT } from '../../client/src/types.js'
+import { GRAVITY_DECREMENT } from '../../client/src/types.js'
 
 // ── BufReader helper (no lz4js dependency needed for physics tests) ──────────
 
@@ -151,89 +150,18 @@ describe('DynamicPositionComponent.deserialize', () => {
   })
 })
 
-// ── BaseEntity.fromRecord ─────────────────────────────────────────────────────
+// ── BaseEntity getters via DynamicPositionComponent ───────────────────────────
 
-describe('BaseEntity.fromRecord', () => {
-  it('reads id, type, flags and deserializes POSITION_BIT component', () => {
-    const bytes = [
-      // GlobalEntityId uint32 LE (was uint16)
-      5, 0, 0, 0,
-      // EntityType uint8
-      1,  // GHOST_PLAYER
-      // ComponentFlags uint8
-      POSITION_BIT,
-      // DynamicPositionComponent: x,y,z,vx,vy,vz,grounded
-      ...i32le(256), ...i32le(512), ...i32le(768),
-      ...i32le(0),   ...i32le(-6),  ...i32le(0),
-      0,  // grounded = false
-    ]
-    const entity = BaseEntity.fromRecord(makeReader(bytes), 100)
-    expect(entity.id).toBe(5)
-    expect(entity.type).toBe(1)
-    expect(entity.motion.receivedTick).toBe(100)
-    expect(entity.motion.receivedX).toBe(256)
-    expect(entity.motion.receivedY).toBe(512)
-    expect(entity.motion.receivedZ).toBe(768)
-    expect(entity.motion.receivedVy).toBe(-6)
-    expect(entity.motion.receivedGrounded).toBe(false)
-  })
-
-  it('leaves motion at defaults when POSITION_BIT is not set', () => {
-    const bytes = [
-      3, 0, 0, 0,  // GlobalEntityId = 3 (uint32, was uint16)
-      0,           // EntityType = PLAYER
-      0,           // ComponentFlags = 0 (no components)
-    ]
-    const entity = BaseEntity.fromRecord(makeReader(bytes), 50)
-    expect(entity.id).toBe(3)
-    expect(entity.motion.receivedX).toBe(0)
-    expect(entity.motion.receivedY).toBe(0)
-    expect(entity.motion.receivedZ).toBe(0)
-  })
-})
-
-// ── BaseEntity.applyDelta ─────────────────────────────────────────────────────
-
-describe('BaseEntity.applyDelta', () => {
-  it('updates motion from delta record', () => {
-    const entity = new BaseEntity(7, 0)
-    const bytes = [
-      POSITION_BIT,
-      ...i32le(1024), ...i32le(2048), ...i32le(4096),
-      ...i32le(77),   ...i32le(0),    ...i32le(-77),
-      1,  // grounded = true
-    ]
-    entity.applyDelta(makeReader(bytes), 200)
-    expect(entity.motion.receivedTick).toBe(200)
-    expect(entity.motion.receivedX).toBe(1024)
-    expect(entity.motion.receivedY).toBe(2048)
-    expect(entity.motion.receivedZ).toBe(4096)
-    expect(entity.motion.receivedVx).toBe(77)
-    expect(entity.motion.receivedVz).toBe(-77)
-    expect(entity.motion.receivedGrounded).toBe(true)
-  })
-
-  it('does not change motion when no bits are set', () => {
-    const entity = new BaseEntity(1, 0)
-    entity.motion.receivedX = 999; entity.motion.receivedTick = 5
-    entity.applyDelta(makeReader([0x00]), 99)  // flags = 0
-    expect(entity.motion.receivedX).toBe(999)
-    expect(entity.motion.receivedTick).toBe(5)  // unchanged
-  })
-})
-
-// ── BaseEntity.currentPos ────────────────────────────────────────────────────
-
-describe('BaseEntity.currentPos', () => {
+describe('DynamicPositionComponent getters', () => {
   it('returns the current predicted position', () => {
-    const entity = new BaseEntity(1, 0)
-    entity.motion.receivedTick = 10
-    entity.motion.receivedX = 500; entity.motion.receivedY = 1000; entity.motion.receivedZ = 0
-    entity.motion.receivedVx = 10; entity.motion.receivedVy = 0;  entity.motion.receivedVz = 0
-    entity.motion.receivedGrounded = true
+    const motion = new DynamicPositionComponent()
+    motion.receivedTick = 10
+    motion.receivedX = 500; motion.receivedY = 1000; motion.receivedZ = 0
+    motion.receivedVx = 10; motion.receivedVy = 0;  motion.receivedVz = 0
+    motion.receivedGrounded = true
     // First update prediction to compute current position
-    entity.motion.updatePrediction(13)  // 3 ticks later
-    const p = entity.currentPos
+    motion.updatePrediction(13)  // 3 ticks later
+    const p = motion.getCurrentPos()
     expect(p.x).toBe(530)  // 500 + 10*3
     expect(p.y).toBe(1000)
     expect(p.z).toBe(0)
