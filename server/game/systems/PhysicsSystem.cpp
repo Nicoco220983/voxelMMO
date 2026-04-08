@@ -466,9 +466,13 @@ void processFullPhysicsEntity(entt::registry& registry, entt::entity ent,
     updateGroundContact(registry, ent, collision, groundType, bounceVelocity, /*isClimbing=*/false);
 
     // Apply final position and velocity
+    // Only mark dirty if something unpredictable happened (state change, wall hit, bounce)
+    // Constant-velocity movement is predictable by client, don't mark dirty for small movements
+    const bool dirty = (grounded != dyn.grounded) || collision.hitWallX || collision.hitWallZ || 
+                       collision.hitCeiling || bounceVelocity != 0;
     DynamicPositionComponent::modify(registry, ent,
         dyn.x + resolvedDx, dyn.y + resolvedDy, dyn.z + resolvedDz,
-        nvx, nvy, nvz, grounded, collision.collided);
+        nvx, nvy, nvz, grounded, dirty);
 }
 
 /**
