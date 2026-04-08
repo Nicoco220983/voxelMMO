@@ -91,7 +91,24 @@ export class EntityDeserializer {
         continue
       }
 
-      deserializer.deserializeCreate(entityRegistry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick)
+      // Check if entity exists and message is stale
+      const existingEntity = entityRegistry.get(entityId)
+      if (existingEntity && messageTick <= existingEntity.lastCreateTick) {
+        console.debug('[EntityDeserializer] Discarding stale snapshot entity:', { entityId, messageTick, lastCreateTick: existingEntity.lastCreateTick })
+        // Still need to consume the component data in the reader (pass null to read without storing)
+        deserializer.deserializeCreate(null, reader, componentMask, messageTick)
+        continue
+      }
+
+      // Create entity first, then deserialize into it
+      const entity = entityRegistry.createEntity(chunkRegistry, entityId, entityType, chunkId)
+      if (entity) {
+        deserializer.deserializeCreate(entity, reader, componentMask, messageTick)
+        entity.markCreated(messageTick)
+      } else {
+        // Failed to create, consume component data without storing
+        deserializer.deserializeCreate(null, reader, componentMask, messageTick)
+      }
     }
     return count
   }
@@ -167,12 +184,24 @@ export class EntityDeserializer {
       const entityId = reader.readUint32()
 
       if (deltaType === DeltaType.DELETE_ENTITY) {
+        const entity = entityRegistry.get(entityId)
+        // Discard stale delete
+        if (entity && messageTick <= entity.lastCreateTick) {
+          console.debug('[EntityDeserializer] Discarding stale DELETE_ENTITY:', { entityId, messageTick, lastCreateTick: entity.lastCreateTick })
+          continue
+        }
         entityRegistry.deleteEntity(chunkRegistry, entityId)
         continue
       }
 
       if (deltaType === DeltaType.CHUNK_CHANGE_ENTITY) {
         const newChunkIdPacked = reader.readInt64()
+        const entity = entityRegistry.get(entityId)
+        // Discard stale chunk change
+        if (entity && messageTick <= entity.lastCreateTick) {
+          console.debug('[EntityDeserializer] Discarding stale CHUNK_CHANGE_ENTITY:', { entityId, messageTick, lastCreateTick: entity.lastCreateTick })
+          continue
+        }
         // Only remove if the target chunk is not registered
         if (!chunkRegistry.has(newChunkIdPacked)) {
           console.debug('[EntityDeserializer] Entity moved to unregistered chunk, removing:', { entityId, newChunkId: newChunkIdPacked.toString() })
@@ -201,10 +230,28 @@ export class EntityDeserializer {
           continue
         }
 
+        // Check if message is stale (tick <= lastCreateTick)
+        if (entity && messageTick <= entity.lastCreateTick) {
+          console.debug('[EntityDeserializer] Discarding stale delta entity:', { entityId, deltaType, messageTick, lastCreateTick: entity.lastCreateTick })
+          // Consume component data without storing (pass null to entity parameter)
+          if (deltaType === DeltaType.CREATE_ENTITY) {
+            deserializer.deserializeCreate(null, reader, componentMask, messageTick)
+          } else {
+            deserializer.deserializeUpdate(null, reader, componentMask, messageTick)
+          }
+          continue
+        }
+
         if (!entity) {
-          // CREATE_ENTITY: create new entity
-          entity = deserializer.deserializeCreate(entityRegistry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick)
-          if (!entity) continue
+          // CREATE_ENTITY: create new entity, then deserialize into it
+          entity = entityRegistry.createEntity(chunkRegistry, entityId, entityType, chunkId)
+          if (!entity) {
+            // Failed to create, consume component data without storing
+            deserializer.deserializeCreate(null, reader, componentMask, messageTick)
+            continue
+          }
+          deserializer.deserializeCreate(entity, reader, componentMask, messageTick)
+          entity.markCreated(messageTick)
         } else {
           // UPDATE_ENTITY: update existing entity
           console.debug('[EntityDeserializer] Updating entity:', { entityId, entityType })

@@ -1,11 +1,13 @@
 // @ts-check
 import { GRAVITY_DECREMENT } from '../types.js'
+import { BaseComponent } from './BaseComponent.js'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
 /** @typedef {import('../types.js').SubVoxelCoord} SubVoxelCoord */
 
 /**
  * @class DynamicPositionComponent
+ * @extends BaseComponent
  * @description 3-D position + velocity + physics flags. Mirrors server.
  * 
  * Stores TWO sets of state:
@@ -26,7 +28,7 @@ import { GRAVITY_DECREMENT } from '../types.js'
  * The reference tick is NOT in the component stream — it comes from the
  * chunk message header and is passed in as messageTick.
  */
-export class DynamicPositionComponent {
+export class DynamicPositionComponent extends BaseComponent {
   /** @type {Readonly<DynamicPositionComponent>} Default values for CREATE deserialization */
   static DEFAULT = Object.freeze({
     receivedTick: 0,
@@ -75,30 +77,45 @@ export class DynamicPositionComponent {
    * Deserialize from reader: x,y,z(i32) · vx,vy,vz(i32) · grounded(u8).
    * Updates the received* fields. Does NOT update current* - prediction
    * happens separately via updatePrediction().
+   * @param {DynamicPositionComponent?} self
    * @param {BufReader} reader
    * @param {number}    messageTick  Server tick from the chunk message header.
    */
-  deserialize(reader, messageTick) {
-    this.receivedTick     = messageTick
-    this.receivedX        = reader.readInt32()
-    this.receivedY        = reader.readInt32()
-    this.receivedZ        = reader.readInt32()
-    this.receivedVx       = reader.readInt32()
-    this.receivedVy       = reader.readInt32()
-    this.receivedVz       = reader.readInt32()
-    this.receivedGrounded = reader.readUint8() !== 0
-    
+  static deserialize(self, reader, messageTick) {
+
+    const receivedX        = reader.readInt32()
+    if(self) self.receivedX = receivedX
+    const receivedY        = reader.readInt32()
+    if(self) self.receivedY = receivedY
+    const receivedZ        = reader.readInt32()
+    if(self) self.receivedZ = receivedZ
+    const receivedVx       = reader.readInt32()
+    if(self) self.receivedVx = receivedVx
+    const receivedVy       = reader.readInt32()
+    if(self) self.receivedVy = receivedVy
+    const receivedVz       = reader.readInt32()
+    if(self) self.receivedVz = receivedVz
+    const receivedGrounded = reader.readUint8() !== 0
+    if(self) self.receivedGrounded = receivedGrounded
+    if(!self) {
+      console.debug('[DynamicPositionComponent] discarded')
+      return
+    }
+
     // Initialize current position to received position
     // Prediction will update it on next tick
-    this.currentX = this.receivedX
-    this.currentY = this.receivedY
-    this.currentZ = this.receivedZ
-    
+    self.receivedTick     = messageTick
+    self.currentX = self.receivedX
+    self.currentY = self.receivedY
+    self.currentZ = self.receivedZ
+
+    self.markUpdated(messageTick)
+
     console.debug('[DynamicPositionComponent] deserialized:', {
-      tick: this.receivedTick,
-      x: this.receivedX, y: this.receivedY, z: this.receivedZ,
-      vx: this.receivedVx, vy: this.receivedVy, vz: this.receivedVz,
-      grounded: this.receivedGrounded
+      tick: self.receivedTick,
+      x: self.receivedX, y: self.receivedY, z: self.receivedZ,
+      vx: self.receivedVx, vy: self.receivedVy, vz: self.receivedVz,
+      grounded: self.receivedGrounded
     })
   }
 

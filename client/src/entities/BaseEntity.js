@@ -33,6 +33,9 @@ export class BaseEntity {
   /** @type {ChunkId|undefined} Current chunk ID (updated when entity moves) */
   chunkId
 
+  /** @type {number} Last tick when entity received a CREATE state */
+  lastCreateTick = 0
+
   motion = new DynamicPositionComponent()
 
   /**
@@ -42,6 +45,15 @@ export class BaseEntity {
   constructor(id, type) {
     this.id   = id
     this.type = type
+  }
+
+  /**
+   * Mark entity as created at given tick.
+   * Called by deserializers when CREATE state is received.
+   * @param {number} tick
+   */
+  markCreated(tick) {
+    this.lastCreateTick = tick
   }
 
   /**

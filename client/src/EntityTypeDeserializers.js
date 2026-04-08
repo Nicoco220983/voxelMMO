@@ -9,7 +9,8 @@
  * Usage:
  *   import { getEntityDeserializer, ENTITY_DESERIALIZER_TABLE } from './EntityTypeDeserializers.js'
  *   const table = getEntityDeserializer(entityType)
- *   const entity = table.deserializeCreate(registry, chunkRegistry, id, chunkId, reader, mask, tick)
+ *   entityRegistry.createEntity(chunkRegistry, id, entityType, chunkId)
+ *   table.deserializeCreate(entity, reader, mask, tick)
  *   table.deserializeUpdate(entity, reader, mask, tick)
  */
 
@@ -18,7 +19,7 @@ import { SheepEntity } from './entities/SheepEntity.js'
 
 /**
  * @typedef {Object} EntityDeserializerTable
- * @property {Function} deserializeCreate - Function to deserialize entity creation: (registry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick) => entity
+ * @property {Function} deserializeCreate - Function to deserialize entity creation into existing entity: (entity, reader, componentMask, messageTick) => void
  * @property {Function} deserializeUpdate - Function to deserialize entity update: (entity, reader, componentMask, messageTick) => void
  */
 

@@ -1,6 +1,7 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
 import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, SHEEP_BEHAVIOR_BIT } from '../types.js'
+import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { SheepBehaviorComponent } from '../components/SheepBehaviorComponent.js'
 import * as THREE from 'three'
 
@@ -183,55 +184,48 @@ export class SheepEntity extends BaseEntity {
   // ─── Static Deserialization Methods ───────────────────────────────────────
 
   /**
-   * Deserialize sheep entity creation.
+   * Deserialize sheep entity creation into an existing entity.
    * 
    * For CREATE_ENTITY: Reset ALL components to defaults first, then deserialize
    * only the components indicated by componentMask. Missing components remain
    * at their default values.
    * 
-   * @param {EntityRegistry} entityRegistry
-   * @param {ChunkRegistry} chunkRegistry
-   * @param {GlobalEntityId} entityId
-   * @param {ChunkId} chunkId
+   * @param {SheepEntity} entity - The entity to deserialize into (already created)
    * @param {BufReader} reader
    * @param {number} componentMask - Bitmask indicating which components are present
    * @param {number} messageTick
-   * @returns {SheepEntity|null}
    */
-  static deserializeCreate(entityRegistry, chunkRegistry, entityId, chunkId, reader, componentMask, messageTick) {
-    const entity = /** @type {SheepEntity} */ (entityRegistry.createEntity(chunkRegistry, entityId, EntityType.SHEEP, chunkId))
-    if (!entity) return null
-
-    // 1. Reset ALL components to defaults first
-    entity.motion.resetToDefaults()
-    entity.behavior.resetToDefaults()
+  static deserializeCreate(entity, reader, componentMask, messageTick) {
+    if (entity) {
+      // 1. Reset ALL components to defaults first
+      entity.motion.resetToDefaults()
+      entity.behavior.resetToDefaults()
+    }
 
     // 2. Deserialize only components indicated by mask (missing = stay at default)
-    if (componentMask & POSITION_BIT) {
-      entity.motion.deserialize(reader, messageTick)
-    }
-
-    if (componentMask & SHEEP_BEHAVIOR_BIT) {
-      entity.behavior.deserialize(reader)
-    }
-
-    return entity
+    // If entity is null, component data is still read from reader but discarded
+    SheepEntity.deserializeComponents(entity, reader, componentMask, messageTick)
   }
 
   /**
    * Deserialize sheep entity update.
-   * @param {SheepEntity} entity
+   * @param {SheepEntity?} entity
    * @param {BufReader} reader
    * @param {number} componentMask
    * @param {number} messageTick
    */
   static deserializeUpdate(entity, reader, componentMask, messageTick) {
-    if (componentMask & POSITION_BIT) {
-      entity.motion.deserialize(reader, messageTick)
-    }
+    SheepEntity.deserializeComponents(entity, reader, componentMask, messageTick)
+  }
 
-    if (componentMask & SHEEP_BEHAVIOR_BIT) {
-      entity.behavior.deserialize(reader)
-    }
+  /**
+   * @param {SheepEntity?} self 
+   * @param {BufReader} reader 
+   * @param {number} componentMask 
+   * @param {number} messageTick 
+   */
+  static deserializeComponents(self, reader, componentMask, messageTick) {
+    if (componentMask & POSITION_BIT) DynamicPositionComponent.deserialize(self?.motion, reader, messageTick)
+    if (componentMask & SHEEP_BEHAVIOR_BIT) SheepBehaviorComponent.deserialize(self?.behavior, reader, messageTick)
   }
 }

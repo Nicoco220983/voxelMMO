@@ -68,6 +68,17 @@ export class BufReader {
     this.offset += 8
     return (BigInt(hi) << 32n) | BigInt(lo)
   }
+
+  /**
+   * Skip n bytes without reading.
+   * @param {number} n Number of bytes to skip.
+   */
+  skip(n) {
+    if (this.offset + n > this.#view.byteLength) {
+      throw new Error(`BufReader overrun: need ${n} bytes at offset ${this.offset}, have ${this.#view.byteLength}`)
+    }
+    this.offset += n
+  }
 }
 
 /**
