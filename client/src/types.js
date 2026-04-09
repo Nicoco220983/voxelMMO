@@ -138,7 +138,10 @@ export function chunkIdFromChunkPos(cx, cy, cz) {
 
 /**
  * Compute ChunkId for the chunk containing world voxel coordinates (vx, vy, vz).
- * Uses arithmetic right-shift for correct negative coordinate handling.
+ * Uses floor division for correct negative coordinate handling.
+ * Note: cannot use bitwise shift (>>) because it truncates to 32-bit, causing
+ * incorrect results for coordinates beyond 32-bit signed int range (~262k voxels).
+ * Divides by CHUNK_SIZE (32), not by (1 << CHUNK_SHIFT) which is for sub-voxels.
  * @param {VoxelCoord} vx - World voxel X
  * @param {VoxelCoord} vy - World voxel Y
  * @param {VoxelCoord} vz - World voxel Z
@@ -146,14 +149,16 @@ export function chunkIdFromChunkPos(cx, cy, cz) {
  */
 export function chunkIdFromVoxelPos(vx, vy, vz) {
   return chunkIdFromChunkPos(
-    vx >> CHUNK_SHIFT_X,
-    vy >> CHUNK_SHIFT_Y,
-    vz >> CHUNK_SHIFT_Z
+    Math.floor(vx / CHUNK_SIZE_X),
+    Math.floor(vy / CHUNK_SIZE_Y),
+    Math.floor(vz / CHUNK_SIZE_Z)
   )
 }
 
 /**
  * Compute ChunkId for the chunk containing sub-voxel coordinates.
+ * Uses floor division for correct negative coordinate handling.
+ * Note: cannot use bitwise shift (>>) because it truncates to 32-bit.
  * @param {SubVoxelCoord} sx - Sub-voxel X coordinate
  * @param {SubVoxelCoord} sy - Sub-voxel Y coordinate
  * @param {SubVoxelCoord} sz - Sub-voxel Z coordinate
@@ -161,9 +166,9 @@ export function chunkIdFromVoxelPos(vx, vy, vz) {
  */
 export function chunkIdFromSubVoxelPos(sx, sy, sz) {
   return chunkIdFromChunkPos(
-    sx >> CHUNK_SHIFT_X,
-    sy >> CHUNK_SHIFT_Y,
-    sz >> CHUNK_SHIFT_Z
+    Math.floor(sx / (1 << CHUNK_SHIFT_X)),
+    Math.floor(sy / (1 << CHUNK_SHIFT_Y)),
+    Math.floor(sz / (1 << CHUNK_SHIFT_Z))
   )
 }
 
@@ -175,17 +180,17 @@ export function chunkIdFromSubVoxelPos(sx, sy, sz) {
 export function getChunkPos(chunkId) {
   const packed = BigInt.asIntN(64, chunkId)
   
-  // Extract Y (6 bits at bit 58)
+  // Extract Y (6 bits at bit 58) - use shift trick for sign extension
   const yRaw = Number((packed >> 58n) & MASK_6)
-  const cy = (yRaw & Number(SIGN_BIT_6)) ? (yRaw | Number(SIGN_EXT_6)) : yRaw
+  const cy = (yRaw << 26) >> 26  // sign extend from 6 bits to 32 bits
   
-  // Extract X (29 bits at bit 29)
+  // Extract X (29 bits at bit 29) - use shift trick for sign extension
   const xRaw = Number((packed >> 29n) & MASK_29)
-  const cx = (xRaw & Number(SIGN_BIT_29)) ? (xRaw | Number(SIGN_EXT_29)) : xRaw
+  const cx = (xRaw << 3) >> 3    // sign extend from 29 bits to 32 bits
   
-  // Extract Z (29 bits at bit 0)
+  // Extract Z (29 bits at bit 0) - use shift trick for sign extension
   const zRaw = Number(packed & MASK_29)
-  const cz = (zRaw & Number(SIGN_BIT_29)) ? (zRaw | Number(SIGN_EXT_29)) : zRaw
+  const cz = (zRaw << 3) >> 3    // sign extend from 29 bits to 32 bits
   
   return { cx, cy, cz }
 }
