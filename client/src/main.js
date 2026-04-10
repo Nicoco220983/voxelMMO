@@ -8,6 +8,7 @@ import { Hotbar } from './ui/Hotbar.js'
 import { VoxelHighlight } from './ui/VoxelHighlight.js'
 import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
 import { ToolContext } from './ui/ToolContext.js'
+import { DeathScreen } from './ui/DeathScreen.js'
 import { createController } from './controllers/ControllerManager.js'
 import { voxelTexturesReady } from './VoxelTextures.js'
 
@@ -57,6 +58,24 @@ const _sessionToken = getOrCreateSessionToken()
 
 const client = new GameClient(`ws://${location.host}/ws`, scene)
 window.gameClient = client  // Expose for entity prediction
+
+// ── Death Screen ────────────────────────────────────────────────────────────
+const deathScreen = new DeathScreen(() => {
+  // Respawn callback: hide screen and send new join
+  deathScreen.hide()
+  client.clear()  // Clear local entities
+  client.sendJoin(_entityType, _sessionToken)
+  console.info('[main] Respawn JOIN sent')
+})
+
+// Set up death detection callback
+client.onDeath(() => {
+  console.info('[main] Player died, showing death screen')
+  deathScreen.show()
+})
+
+
+
 client.connect().then(() => {
   client.sendJoin(_entityType, _sessionToken)
 }).catch((err) => {
@@ -88,6 +107,17 @@ controller.setGameClient(client)
 
 // ── HUD ───────────────────────────────────────────────────────────────────
 const hud = /** @type {HTMLElement} */ (document.getElementById('hud'))
+const damageFlash = /** @type {HTMLElement} */ (document.getElementById('damage-flash'))
+
+/** Show damage flash effect */
+function showDamageFlash() {
+  if (!damageFlash) return
+  damageFlash.classList.add('active')
+  // Remove after animation completes
+  setTimeout(() => {
+    damageFlash.classList.remove('active')
+  }, 300)
+}
 
 // ── FPS Tracking ───────────────────────────────────────────────────────────
 const fpsTracker = {
@@ -140,8 +170,19 @@ function animate() {
   const currentFps = fpsTracker.update()
 
   // ── HUD Update ──────────────────────────────────────────────────────────
+  // Get player health for display
+  const selfEntity = client.selfEntity
+  const healthText = selfEntity?.health 
+    ? `hp ${selfEntity.health.current}/${selfEntity.health.max}  ` 
+    : ''
+  
+  // Check for damage using hasBeenDamaged() (resets after check)
+  if (selfEntity?.health?.hasBeenDamaged()) {
+    showDamageFlash()
+  }
+  
   hud.textContent =
-    `pos  ${posInfo.vposX.toFixed(1)}  ${posInfo.vposY.toFixed(1)}  ${posInfo.vposZ.toFixed(1)}   fps ${currentFps}`
+    `${healthText}pos  ${posInfo.vposX.toFixed(1)}  ${posInfo.vposY.toFixed(1)}  ${posInfo.vposZ.toFixed(1)}   fps ${currentFps}`
 
   // ── Reset controller frame state ────────────────────────────────────────
   // Resets one-shot flags (toolActivated, selectedSlotIndex, etc.)

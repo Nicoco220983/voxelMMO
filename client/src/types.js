@@ -254,10 +254,11 @@ export function voxelIndexToString(voxelIndex) {
 /** @type {number} */ export const PLAYER_WALK_SPEED_VOXELS = 6.0   // voxels/s (server: PLAYER_WALK_SPEED=77 sub-vox/tick)
 /** @type {number} */ export const PLAYER_JUMP_VY_VOXELS    = 110 / 256 * TICK_RATE  // ≈ 8.6 voxels/s initial vy
 
-// ── Component dirty-bit constants (must match server DynamicPositionComponent.hpp) ──
+// ── Component dirty-bit constants (must match server component headers) ──
 
 /** @type {number} */ export const POSITION_BIT = 1 << 0
 /** @type {number} */ export const SHEEP_BEHAVIOR_BIT = 1 << 1
+/** @type {number} */ export const HEALTH_BIT = 1 << 2
 
 // Note: Entity lifecycle is tracked via DeltaType (CREATE_ENTITY, UPDATE_ENTITY, DELETE_ENTITY, CHUNK_CHANGE_ENTITY)
 // in the message itself, not via component flags. See NetworkProtocol.js for DeltaType enum.

@@ -37,6 +37,7 @@ namespace voxelmmo::PlayerEntity {
  */
 inline constexpr int32_t PLAYER_WALK_SPEED = 77;   ///<  6 vox/s × SUBVOXEL_SIZE × TICK_DT
 inline constexpr int32_t PLAYER_JUMP_VY    = 90;   ///< gives ≈ 3.9 voxel jump height
+inline constexpr uint16_t DEFAULT_HEALTH   = 100;  ///< Default player health points
 
 /**
  * @brief Compute player velocity from input buttons and yaw.

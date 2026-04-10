@@ -161,10 +161,29 @@
       height: 72px;
       font-size: 28px;
     }
+
+    /* ── Damage flash overlay ──────────────────────────────────────────────── */
+    #damage-flash {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: radial-gradient(circle, transparent 30%, rgba(255, 0, 0, 0.4) 100%);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.1s ease-out;
+      z-index: 100;
+    }
+    #damage-flash.active {
+      opacity: 1;
+      transition: opacity 0.3s ease-out;
+    }
   </style>
 </head>
 <body>
   <div id="hud"></div>
+  <div id="damage-flash"></div>
   <script type="module" src="/src/main.js"></script>
 </body>
 </html>

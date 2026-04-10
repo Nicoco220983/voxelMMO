@@ -1,6 +1,7 @@
 #include "game/systems/PhysicsSystem.hpp"
 #include "game/Chunk.hpp"
 #include "game/components/GroundContactComponent.hpp"
+#include "game/components/HealthComponent.hpp"
 #include "common/VoxelPhysicProps.hpp"
 #include <algorithm>
 
@@ -233,6 +234,70 @@ namespace PhysicsSystem {
 
 using namespace Physics;
 
+// ── Fall Damage Constants ───────────────────────────────────────────────────
+
+/** @brief Minimum impact velocity (sub-voxels/tick) to take fall damage. 
+ *  200 ≈ 3.1 voxels/s fall speed, roughly 0.5 voxel drop */
+inline constexpr int32_t FALL_DAMAGE_MIN_IMPACT_VY = 100;
+
+/** @brief Impact velocity that causes instant death. 
+ *  900 ≈ 14 voxels/s, roughly 10 voxel drop */
+inline constexpr int32_t FALL_DAMAGE_FATAL_IMPACT_VY = 500;
+
+/** @brief Calculate fall damage from impact velocity.
+ *  Returns damage amount (0 if below threshold).
+ */
+inline uint16_t calculateFallDamage(int32_t impactVy) {
+    // impactVy is negative when falling, take absolute value
+    const int32_t speed = -impactVy;  // Make positive
+    
+    if (speed <= FALL_DAMAGE_MIN_IMPACT_VY) {
+        return 0;  // Safe landing
+    }
+    
+    if (speed >= FALL_DAMAGE_FATAL_IMPACT_VY) {
+        return 1000;  // Instant death (exceeds any reasonable max health)
+    }
+    
+    // Linear damage scaling: maps [200, 900] to [1, 100]
+    // Formula: damage = (speed - min) * 100 / (fatal - min) + 1
+    const uint16_t damage = static_cast<uint16_t>(
+        (speed - FALL_DAMAGE_MIN_IMPACT_VY) * 100 / 
+        (FALL_DAMAGE_FATAL_IMPACT_VY - FALL_DAMAGE_MIN_IMPACT_VY) + 1
+    );
+    
+    return damage;
+}
+
+/**
+ * @brief Apply fall damage to entity on landing.
+ * HealthComponent::applyDamage handles PendingDeleteComponent emplacement if entity dies.
+ * @return true if entity died from fall damage
+ */
+bool applyFallDamageOnLanding(entt::registry& registry, entt::entity ent,
+                              int32_t impactVy, VoxelPhysicType groundType,
+                              uint32_t tickCount) {
+    const auto& props = getVoxelPhysicProps(groundType);
+    
+    // Only apply damage on solid surfaces
+    if (!(props.flags & VoxelPhysicProps::FLAG_SOLID)) {
+        return false;
+    }
+    
+    auto* health = registry.try_get<HealthComponent>(ent);
+    if (!health) {
+        return false;
+    }
+    
+    const uint16_t damage = calculateFallDamage(impactVy);
+    if (damage == 0) {
+        return false;
+    }
+    
+    // HealthComponent::applyDamage handles PendingDeleteComponent emplacement
+    return HealthComponent::applyDamage(registry, ent, damage, tickCount);
+}
+
 /**
  * @brief Build AABB from position and bounding box.
  */
@@ -419,7 +484,7 @@ void processClimbingEntity(entt::registry& registry, entt::entity ent,
  */
 void processFullPhysicsEntity(entt::registry& registry, entt::entity ent,
                               const DynamicPositionComponent& dyn,
-                              AABB aabb, VoxelContext& ctx) {
+                              AABB aabb, VoxelContext& ctx, uint32_t tickCount) {
     // Check if entity is touching a climbable voxel (ladder)
     // Requires: center X,Z within voxel bounds, AND Y overlap with climbable voxel
     if (ctx.isTouchingClimbable(aabb, dyn.x, dyn.y, dyn.z)) {
@@ -448,8 +513,15 @@ void processFullPhysicsEntity(entt::registry& registry, entt::entity ent,
     VoxelPhysicType groundType = grounded ? hitSurfaceType : VoxelPhysicTypes::AIR;
     int32_t bounceVelocity = 0;
     
+    // Apply fall damage on hard landing (before bounce calculation)
     if (collision.landed && groundType != VoxelPhysicTypes::AIR) {
         const auto& props = getVoxelPhysicProps(groundType);
+        
+        // Apply fall damage (HealthComponent handles death marking)
+        if (props.flags & VoxelPhysicProps::FLAG_SOLID) {
+            applyFallDamageOnLanding(registry, ent, gravVy, groundType, tickCount);
+        }
+        
         if (props.restitution > 0) {
             bounceVelocity = calculateBounceVelocity(gravVy, props.restitution);
         }
@@ -482,7 +554,7 @@ void processEntity(entt::registry& registry, entt::entity ent,
                    const DynamicPositionComponent& dyn,
                    const BoundingBoxComponent& bbox,
                    PhysicsMode mode,
-                   VoxelContext& ctx) {
+                   VoxelContext& ctx, uint32_t tickCount) {
     switch (mode) {
         case PhysicsMode::GHOST:
             processGhostEntity(registry, ent, dyn);
@@ -496,13 +568,13 @@ void processEntity(entt::registry& registry, entt::entity ent,
             
         case PhysicsMode::FULL: {
             AABB aabb = buildAABB(dyn, bbox);
-            processFullPhysicsEntity(registry, ent, dyn, aabb, ctx);
+            processFullPhysicsEntity(registry, ent, dyn, aabb, ctx, tickCount);
             break;
         }
     }
 }
 
-void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry) {
+void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry, uint32_t tickCount) {
     VoxelContext ctx{chunkRegistry};
 
     for (auto& [chunkId, chunkPtr] : chunkRegistry.getAllChunks()) {
@@ -510,6 +582,7 @@ void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry) {
         ctx.lastChunkId = chunkId;
 
         for (auto ent : chunkPtr->entities) {
+            
             if (!registry.all_of<DynamicPositionComponent,
                                  BoundingBoxComponent,
                                  PhysicsModeComponent>(ent)) {
@@ -520,7 +593,7 @@ void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry) {
             const auto& bbox = registry.get<BoundingBoxComponent>(ent);
             const auto mode  = registry.get<PhysicsModeComponent>(ent).mode;
 
-            processEntity(registry, ent, dyn, bbox, mode, ctx);
+            processEntity(registry, ent, dyn, bbox, mode, ctx, tickCount);
         }
     }
 }

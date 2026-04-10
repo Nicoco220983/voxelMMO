@@ -1,8 +1,9 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
-import { EntityType, SUBVOXEL_SIZE, POSITION_BIT } from '../types.js'
+import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, HEALTH_BIT } from '../types.js'
 import * as THREE from 'three'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
+import { HealthComponent } from '../components/HealthComponent.js'
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
@@ -63,6 +64,9 @@ export class PlayerEntity extends BaseEntity {
   #lastTime = 0
   /** @type {number} Smoothed horizontal speed */
   #smoothedSpeed = 0
+
+  /** @type {HealthComponent} Health component for damage/death tracking */
+  health = new HealthComponent()
 
   /**
    * @param {GlobalEntityId} globalId  GlobalEntityId.
@@ -333,6 +337,7 @@ export class PlayerEntity extends BaseEntity {
     if (entity) {
       // 1. Reset ALL components to defaults first
       entity.motion.resetToDefaults()
+      entity.health.resetToDefaults()
     }
 
     // 2. Deserialize only components indicated by mask (missing = stay at default)
@@ -353,6 +358,7 @@ export class PlayerEntity extends BaseEntity {
     if (entity) {
       // 1. Reset ALL components to defaults first
       entity.motion.resetToDefaults()
+      entity.health.resetToDefaults()
     }
 
     // 2. Deserialize only components indicated by mask (missing = stay at default)
@@ -376,8 +382,10 @@ export class PlayerEntity extends BaseEntity {
    * @param {BufReader} reader 
    * @param {number} componentMask 
    * @param {number} messageTick 
+   * @param {number} [entityId] - Global entity ID for self-entity damage detection
    */
   static deserializeComponents(self, reader, componentMask, messageTick) {
     if (componentMask & POSITION_BIT) DynamicPositionComponent.deserialize(self?.motion, reader, messageTick)
+    if (componentMask & HEALTH_BIT) HealthComponent.deserialize(self?.health, reader, messageTick)
   }
 }

@@ -127,7 +127,7 @@ describe('DynamicPositionComponent.deserialize', () => {
     ]
     const reader = makeReader(bytes)
     const c = new DynamicPositionComponent()
-    c.deserialize(reader, 42)
+    DynamicPositionComponent.deserialize(c, reader, 42)
     expect(c.receivedTick).toBe(42)
     expect(c.receivedX).toBe(1000)
     expect(c.receivedY).toBe(2000)
@@ -145,7 +145,7 @@ describe('DynamicPositionComponent.deserialize', () => {
       0,  // grounded = false
     ]
     const c = new DynamicPositionComponent()
-    c.deserialize(makeReader(bytes), 1)
+    DynamicPositionComponent.deserialize(c, makeReader(bytes), 1)
     expect(c.receivedGrounded).toBe(false)
   })
 })

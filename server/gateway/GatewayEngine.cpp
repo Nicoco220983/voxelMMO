@@ -98,11 +98,15 @@ void GatewayEngine::handleJoin(uWS::WebSocket<false, true, PlayerConnection>* ws
     // Check if this PlayerId is already connected (reconnection)
     auto existingIt = sockets.find(pid);
     if (existingIt != sockets.end()) {
-        // Close the old connection
-        existingIt->second->close();
-        sockets.erase(existingIt);
-        removePlayer(pid);
-        if (disconnectCb) disconnectCb(pid);
+        // Only close if it's a different socket (actual reconnection)
+        // Same socket = respawn, not reconnection
+        if (existingIt->second != ws) {
+            // Close the old connection
+            existingIt->second->close();
+            sockets.erase(existingIt);
+            removePlayer(pid);
+            if (disconnectCb) disconnectCb(pid);
+        }
     }
     
     // Assign PlayerId to this connection

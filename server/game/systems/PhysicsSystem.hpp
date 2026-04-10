@@ -22,8 +22,12 @@ namespace PhysicsSystem {
  * 
  * Note: Jump handling is performed by JumpSystem, which should run after PhysicsSystem.
  * PhysicsSystem only handles physics simulation (gravity, collision, bounce).
+ * 
+ * @param registry      Entity registry
+ * @param chunkRegistry Chunk registry for voxel collision queries
+ * @param tickCount     Current game tick (for fall damage timestamp)
  */
-void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry);
+void apply(entt::registry& registry, const ChunkRegistry& chunkRegistry, uint32_t tickCount = 0);
 
 } // namespace PhysicsSystem
 

@@ -63,9 +63,6 @@ Chunk coord = sub-voxel position >> 13 (arithmetic shift handles negatives).
 | PlayerId | uint64 | derived from session token (first 8 bytes) — deterministic, enables stateless reconnection |
 | GatewayId | uint32 | |
 
-Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to compute flat array index.
-
-> **Note:** `ChunkEntityId` (uint16) is deprecated; `GlobalEntityId` is now used on the wire.
 
 # Code structure
 
@@ -150,22 +147,10 @@ Chunk voxels: 32 × 32 × 32 = 32 768 bytes. Use `voxelIndexFromPos(x,y,z)` to c
 
 > Keep **both** `AGENTS.md` ≤ 2.5 K tokens.
 > Trim stale content before adding new content.
-
-## Build
-
-```bash
-bash scripts/build.sh           # Release — server (C++) + client (Vite)
-bash scripts/build.sh --debug   # Debug + ASan/UBSan
-```
-
-## Test
-
-```bash
-bash scripts/test.sh            # C++ unit tests (Catch2) + JS tests (vitest)
-```
+> When making a dev plan, shows a concise list of new/modified files/classes/props, and care about SRP
 
 ## Checklist after any structural change
 
-1. `bash scripts/build.sh` — must compile cleanly with zero warnings.
+1. `bash scripts/build.sh` — must compile cleanly with zero warnings (with `--debug` option to have debug + ASan/UBSan)
 2. `bash scripts/test.sh` — all tests must pass.
 3. Update `AGENTS.md` (types, component list, architecture notes) and `docs/` as needed.

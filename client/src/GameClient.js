@@ -56,6 +56,12 @@ export class GameClient {
   #latestServerTick = 0
   #latestServerTickTimeMs = Date.now()
 
+  /** @type {Function|null} Callback when player dies */
+  #onDeathCallback = null
+
+  /** @type {Function|null} Callback when player takes damage */
+  #onDamageCallback = null
+
   /**
    * Returns the local player's own entity as tracked by the server, or null until
    * the SELF_ENTITY message has been received.
@@ -89,6 +95,42 @@ export class GameClient {
         chunk.dirty = true
       }
     })
+  }
+
+  /**
+   * Set callback for player death event.
+   * Called when player's health reaches 0.
+   * @param {Function} callback
+   */
+  onDeath(callback) {
+    this.#onDeathCallback = callback
+  }
+
+  /**
+   * Set callback for player damage event.
+   * Called when player's health decreases from server update.
+   * @param {Function} callback
+   * @deprecated Use health.hasBeenDamaged() in render loop instead
+   */
+  onDamage(callback) {
+    this.#onDamageCallback = callback
+  }
+
+  /**
+   * Check if player is dead and trigger death callback.
+   * Called during entity updates.
+   * @private
+   */
+  #checkPlayerDeath() {
+    const self = this.selfEntity
+    if (!self) return
+
+    // Check if health component exists and player is dead
+    if (self.health && self.health.isDead && this.#onDeathCallback) {
+      console.info('[GameClient] Player died, triggering onDeath callback')
+      this.#onDeathCallback()
+      this.#onDeathCallback = null  // Only trigger once
+    }
   }
 
   /**
@@ -232,6 +274,9 @@ export class GameClient {
     
     // Update chunk membership based on predicted positions
     ChunkMembershipSystem.update(this.#entityRegistry, this.#chunkRegistry)
+    
+    // Check if player died and trigger callback
+    this.#checkPlayerDeath()
     
     // Update entity animations
     for (const entity of this.#entityRegistry.all()) {

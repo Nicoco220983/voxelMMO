@@ -1,8 +1,9 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
-import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, SHEEP_BEHAVIOR_BIT } from '../types.js'
+import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, SHEEP_BEHAVIOR_BIT, HEALTH_BIT } from '../types.js'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { SheepBehaviorComponent } from '../components/SheepBehaviorComponent.js'
+import { HealthComponent } from '../components/HealthComponent.js'
 import * as THREE from 'three'
 
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
@@ -28,6 +29,9 @@ import * as THREE from 'three'
 export class SheepEntity extends BaseEntity {
   /** @type {SheepBehaviorComponent} */
   behavior = new SheepBehaviorComponent()
+
+  /** @type {HealthComponent} Health component for damage/death tracking */
+  health = new HealthComponent()
 
   /** @type {THREE.Group|null} */
   mesh = null
@@ -200,6 +204,7 @@ export class SheepEntity extends BaseEntity {
       // 1. Reset ALL components to defaults first
       entity.motion.resetToDefaults()
       entity.behavior.resetToDefaults()
+      entity.health.resetToDefaults()
     }
 
     // 2. Deserialize only components indicated by mask (missing = stay at default)
@@ -227,5 +232,6 @@ export class SheepEntity extends BaseEntity {
   static deserializeComponents(self, reader, componentMask, messageTick) {
     if (componentMask & POSITION_BIT) DynamicPositionComponent.deserialize(self?.motion, reader, messageTick)
     if (componentMask & SHEEP_BEHAVIOR_BIT) SheepBehaviorComponent.deserialize(self?.behavior, reader, messageTick)
+    if (componentMask & HEALTH_BIT) HealthComponent.deserialize(self?.health, reader, messageTick)
   }
 }

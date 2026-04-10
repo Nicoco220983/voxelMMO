@@ -26,6 +26,9 @@ inline constexpr int32_t SHEEP_BBOX_HZ = 192;  // 0.75 voxels
 /** @brief Walking speed in sub-voxels per tick. */
 inline constexpr int32_t SHEEP_WALK_SPEED = 38;  // ~0.15 voxels/tick
 
+/** @brief Default health for sheep entities. */
+inline constexpr uint16_t DEFAULT_HEALTH = 20;
+
 /**
  * @brief Spawn a sheep entity.
  *

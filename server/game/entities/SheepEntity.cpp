@@ -1,5 +1,6 @@
 #include "game/entities/SheepEntity.hpp"
 #include "game/entities/EntityFactory.hpp"
+#include "game/components/HealthComponent.hpp"
 
 namespace voxelmmo::SheepEntity {
 
@@ -25,6 +26,9 @@ entt::entity spawn(entt::registry& reg,
         startTick + idleTicks,
         x, z, 0.0f);
 
+    // Add health component
+    reg.emplace<HealthComponent>(ent, DEFAULT_HEALTH, DEFAULT_HEALTH, /*lastDamageTick=*/0);
+
     return ent;
 }
 
@@ -46,6 +50,9 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) 
     const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
     if (behavior.isNonDefault()) flags |= SHEEP_BEHAVIOR_BIT;
 
+    const auto& health = reg.get<HealthComponent>(ent);
+    if (health.isNonDefault()) flags |= HEALTH_BIT;
+
     const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
     w.write(gid.id);
     w.write(static_cast<uint8_t>(EntityType::SHEEP));
@@ -58,13 +65,16 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) 
     if (flags & SHEEP_BEHAVIOR_BIT) {
         behavior.serializeFields(w);
     }
+    if (flags & HEALTH_BIT) {
+        HealthComponent::serialize(reg, ent, HEALTH_BIT, w);
+    }
 
     return w.offset() - startOffset;
 }
 
 size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyComponent& dirty, SafeBufWriter& w) {
-    // Sheep tracks both position and behavior
-    const uint8_t flags = dirty.dirtyFlags & (POSITION_BIT | SHEEP_BEHAVIOR_BIT);
+    // Sheep tracks position, behavior, and health
+    const uint8_t flags = dirty.dirtyFlags & (POSITION_BIT | SHEEP_BEHAVIOR_BIT | HEALTH_BIT);
 
     // Nothing to serialize if no tracked components are dirty
     if (flags == 0) {
@@ -83,6 +93,11 @@ size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyCompone
     if (flags & SHEEP_BEHAVIOR_BIT) {
         const auto& behavior = reg.get<SheepBehaviorComponent>(ent);
         behavior.serializeFields(w);
+    }
+
+    // Serialize health component if dirty
+    if (flags & HEALTH_BIT) {
+        HealthComponent::serialize(reg, ent, HEALTH_BIT, w);
     }
 
     return w.offset() - startOffset;

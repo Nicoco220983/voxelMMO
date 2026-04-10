@@ -21,6 +21,7 @@ size_t process(
         }
     }
 
+    // TODO: only add PendingDeletionComponent
     // Process deletions - destroy entity and remove from playerEntities map
     for (auto ent : toDelete) {
         const auto& player = registry.get<PlayerComponent>(ent);

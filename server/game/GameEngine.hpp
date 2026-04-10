@@ -375,16 +375,18 @@ private:
     void serializeChunks();
 
     /**
-     * @brief Set DELETE_ENTITY delta type on entities marked with PendingDeleteComponent.
-     *
-     * This is called after serialization is complete but before entities are destroyed.
-     * It ensures that any entities marked for deletion during this tick will have
-     * their DELETE_ENTITY delta serialized on the NEXT tick (when they are actually destroyed).
-     *
-     * Note: Entities that entered leftEntities during chunk membership update are
-     * handled via CHUNK_CHANGE_ENTITY, not DELETE_ENTITY.
+     * @brief Mark TTL-expired entities with DELETE_ENTITY delta type.
+     * Runs before serialization so DELETE deltas are sent to clients.
+     * @param tick Current game tick
      */
-    void setDeleteDeltaOnPendingDeletions();
+    void setDeleteDeltaOnPendingDeletions(uint32_t tick);
+
+    /**
+     * @brief Destroy TTL-expired entities.
+     * Runs after serialization so DELETE deltas have been sent.
+     * @param tick Current game tick
+     */
+    void processPendingDeletions(uint32_t tick);
 
     /**
      * @brief Process pending player creation requests.

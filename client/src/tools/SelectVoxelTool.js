@@ -259,7 +259,7 @@ export class SelectVoxelTool extends Tool {
       for (let x = minX; x <= maxX; x++) {
         for (let z = minZ; z <= maxZ; z++) {
           const type = this.#getVoxelAt(x, y, z)
-          if (type !== null && type !== 0) {  // Skip air
+          if (type !== null) {  // Include air (type 0) for paste-to-destroy behavior
             voxels.push({
               rx: x - minX,
               ry: y - minY,
