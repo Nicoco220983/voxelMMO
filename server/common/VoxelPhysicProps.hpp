@@ -26,11 +26,12 @@ struct VoxelPhysicProps {
     /// Restitution (bounce) on collision: 0-255. Applied only on collision.
     uint8_t restitution;
     
-    /// Flags: SOLID, CLIMBABLE, etc.
+    /// Flags: SOLID, CLIMBABLE, INFLICTS_FALL_DAMAGE, etc.
     uint8_t flags;
     
-    static constexpr uint8_t FLAG_SOLID     = 1 << 0;
-    static constexpr uint8_t FLAG_CLIMBABLE = 1 << 1;  ///< Entity can climb (no gravity)
+    static constexpr uint8_t FLAG_SOLID               = 1 << 0;
+    static constexpr uint8_t FLAG_CLIMBABLE           = 1 << 1;  ///< Entity can climb (no gravity)
+    static constexpr uint8_t FLAG_INFLICTS_FALL_DAMAGE = 1 << 2;  ///< Landing causes fall damage
 };
 
 /**
@@ -40,22 +41,22 @@ struct VoxelPhysicProps {
 inline constexpr std::array<VoxelPhysicProps, 256> makeVoxelPhysicPropsTable() {
     std::array<VoxelPhysicProps, 256> table{};
     
-    // Initialize all to SOLID-like defaults
+    // Initialize all to SOLID-like defaults (FLAG_INFLICTS_FALL_DAMAGE set)
     for (auto& p : table) {
-        p = VoxelPhysicProps{0, 0, 0, VoxelPhysicProps::FLAG_SOLID};  // no limits, solid
+        p = VoxelPhysicProps{0, 0, 0, VoxelPhysicProps::FLAG_SOLID | VoxelPhysicProps::FLAG_INFLICTS_FALL_DAMAGE};
     }
     
-    // AIR: non-solid
+    // AIR: non-solid, no fall damage
     table[VoxelPhysicTypes::AIR] = VoxelPhysicProps{0, 0, 0, 0};
     
-    // SLIME: bouncy, no speed limits
+    // SLIME: bouncy, no speed limits, no fall damage
     table[VoxelPhysicTypes::SLIME] = VoxelPhysicProps{0, 0, 255, VoxelPhysicProps::FLAG_SOLID};
     
-    // MUD: slow movement (half normal speed)
+    // MUD: slow movement (half normal speed), no fall damage (soft landing)
     // Normal player speed ~77 sub-voxels/tick, mud caps at ~30
     table[VoxelPhysicTypes::MUD] = VoxelPhysicProps{30, 0, 0, VoxelPhysicProps::FLAG_SOLID};
     
-    // LADDER: climbable, non-solid, no speed limits
+    // LADDER: climbable, non-solid, no speed limits, no fall damage
     table[VoxelPhysicTypes::LADDER] = VoxelPhysicProps{0, 0, 0, VoxelPhysicProps::FLAG_CLIMBABLE};
     
     return table;

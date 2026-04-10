@@ -513,17 +513,18 @@ void processFullPhysicsEntity(entt::registry& registry, entt::entity ent,
     VoxelPhysicType groundType = grounded ? hitSurfaceType : VoxelPhysicTypes::AIR;
     int32_t bounceVelocity = 0;
     
-    // Apply fall damage on hard landing (before bounce calculation)
+    // Apply fall damage on hard landing (respects voxel's inflictsFallDamage property)
     if (collision.landed && groundType != VoxelPhysicTypes::AIR) {
         const auto& props = getVoxelPhysicProps(groundType);
         
-        // Apply fall damage (HealthComponent handles death marking)
-        if (props.flags & VoxelPhysicProps::FLAG_SOLID) {
-            applyFallDamageOnLanding(registry, ent, gravVy, groundType, tickCount);
-        }
-        
+        // Calculate bounce velocity if surface is bouncy
         if (props.restitution > 0) {
             bounceVelocity = calculateBounceVelocity(gravVy, props.restitution);
+        }
+        
+        // Apply fall damage only if surface is solid AND inflicts fall damage
+        if ((props.flags & VoxelPhysicProps::FLAG_SOLID) && (props.flags & VoxelPhysicProps::FLAG_INFLICTS_FALL_DAMAGE)) {
+            applyFallDamageOnLanding(registry, ent, gravVy, groundType, tickCount);
         }
     }
 
