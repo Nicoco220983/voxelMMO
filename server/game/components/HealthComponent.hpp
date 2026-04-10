@@ -1,6 +1,5 @@
 #pragma once
 #include "DirtyComponent.hpp"
-#include "PendingDeleteComponent.hpp"
 #include "common/Types.hpp"
 #include "common/SafeBufWriter.hpp"
 #include <entt/entt.hpp>
@@ -10,12 +9,14 @@ namespace voxelmmo {
 
 inline constexpr uint8_t HEALTH_BIT = 1 << 2;
 
+inline constexpr uint32_t DEATH_DELETION_DELAY_TICKS = 180;  // ~3 seconds at 60tps
+
 /**
  * @brief Health component for damageable entities (players, sheep, etc.).
  *
  * Tracks current/max health and the tick when last damage was taken.
- * When current health reaches 0, PendingDeleteComponent is automatically added
- * with a TTL delay for client death feedback.
+ * When current health reaches 0, deleteAtTick is set with a TTL delay
+ * for client death feedback.
  *
  * Serialized layout (when HEALTH_BIT is set):
  *   uint16 current | uint16 max | uint32 lastDamageTick
@@ -24,6 +25,7 @@ struct HealthComponent {
     uint16_t current{0};        ///< Current health points
     uint16_t max{0};            ///< Maximum health points
     uint32_t lastDamageTick{0}; ///< Tick when health last changed (damage or heal)
+    uint32_t deleteAtTick{0};   ///< Tick when entity should be deleted (0 = not scheduled)
 
     /**
      * @brief Check if health is at non-default values.
@@ -83,12 +85,20 @@ struct HealthComponent {
         
         const bool died = newHealth == 0;
         if (died) {
-            // Mark for delayed deletion (allows client death animation/feedback)
-            if (!reg.all_of<PendingDeleteComponent>(ent)) {
-                reg.emplace<PendingDeleteComponent>(ent, tick + DEATH_DELETION_DELAY_TICKS);
-            }
+            // Schedule delayed deletion (allows client death animation/feedback)
+            c.deleteAtTick = tick + DEATH_DELETION_DELAY_TICKS;
+            reg.get<DirtyComponent>(ent).markForDeletion();
         }
         return died;
+    }
+
+    /**
+     * @brief Check if the entity should be deleted at the given tick.
+     * @param currentTick The current game tick.
+     * @return true if TTL has expired (0 = immediate deletion).
+     */
+    [[nodiscard]] bool shouldDelete(uint32_t currentTick) const {
+        return deleteAtTick == 0 || currentTick >= deleteAtTick;
     }
 
     /**

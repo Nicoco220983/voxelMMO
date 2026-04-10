@@ -1,11 +1,13 @@
 #include "game/GameEngine.hpp"
 #include "game/systems/InputSystem.hpp"
 #include "game/systems/DisconnectedPlayerSystem.hpp"
-#include "game/components/PendingDeleteComponent.hpp"
 #include "game/components/SheepBehaviorComponent.hpp"
+#include "game/components/HealthComponent.hpp"
+
 #include "common/NetworkProtocol.hpp"
 #include "common/VoxelTypes.hpp"
 #include "game/components/PlayerComponent.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include "game/components/DisconnectedPlayerComponent.hpp"
 #include "game/entities/PlayerEntity.hpp"
@@ -213,18 +215,6 @@ void GameEngine::serializeChunks() {
     }
 }
 
-// ── Physics ───────────────────────────────────────────────────────────────
-
-void GameEngine::stepPhysics() {
-    PhysicsSystem::apply(registry, chunkRegistry, static_cast<uint32_t>(tickCount));
-}
-
-// ── Jump ──────────────────────────────────────────────────────────────────
-
-void GameEngine::stepJump() {
-    JumpSystem::apply(registry, static_cast<uint32_t>(tickCount), PlayerEntity::PLAYER_JUMP_VY);
-}
-
 // ── Chunk lookup ──────────────────────────────────────────────────────────
 
 const Chunk* GameEngine::chunkAt(SubVoxelCoord px, SubVoxelCoord py, SubVoxelCoord pz) noexcept {
@@ -259,14 +249,17 @@ void GameEngine::tick() {
 
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
-    stepPhysics();
-    stepJump();
+    PhysicsSystem::apply(registry, chunkRegistry, static_cast<uint32_t>(tickCount));
+    JumpSystem::apply(registry, static_cast<uint32_t>(tickCount), PlayerEntity::PLAYER_JUMP_VY);
 
     // Process disconnected players once per second (before chunk membership update)
     if (tick - lastDisconnectCheckTick >= TICK_RATE) {
         DisconnectedPlayerSystem::process(registry, playerEntities, tick);
         lastDisconnectCheckTick = tick;
     }
+
+    // Check health-based deletion timeouts (sets DELETE_ENTITY delta type)
+    HealthSystem::processDeathTimeouts(registry, tick);
 
     // Unified chunk membership update: rebuilds chunk entity sets, handles movement,
     // updates watchingPlayers, and activates chunks
@@ -276,9 +269,6 @@ void GameEngine::tick() {
     // Unload unwatched chunks (save first, then unload from memory)
     ChunkMembershipSystem::unloadUnwatchedChunks(chunkRegistry, registry, saveSystem_.get());
 
-    // Mark TTL-expired entities for deletion (sets DELETE_ENTITY delta type)
-    // This must happen before serialization so the DELETE delta is sent
-    setDeleteDeltaOnPendingDeletions(tick);
 
     // Send state updates to clients (includes chunk snapshots with player entities)
     // Also sends SELF_ENTITY messages to newly created players
@@ -291,47 +281,46 @@ void GameEngine::tick() {
 
 // ── Pending Deletion Management ────────────────────────────────────────────
 
-void GameEngine::setDeleteDeltaOnPendingDeletions(uint32_t tick) {
-    // Mark TTL-expired entities with DELETE_ENTITY delta type.
-    // This runs BEFORE serialization so clients receive the DELETE delta.
-    auto view = registry.view<PendingDeleteComponent, DirtyComponent>();
-    
-    for (auto ent : view) {
-        const auto& pending = view.get<PendingDeleteComponent>(ent);
-        
-        // Check if TTL has expired (0 = immediate deletion)
-        if (pending.deleteAtTick == 0 || tick >= pending.deleteAtTick) {
-            auto& dirty = view.get<DirtyComponent>(ent);
-            dirty.markForDeletion();
-        }
-    }
-}
-
 void GameEngine::processPendingDeletions(uint32_t tick) {
-    // Destroy TTL-expired entities.
+    // Destroy entities marked for deletion.
     // This runs AFTER serialization so DELETE deltas have been sent to clients.
     std::vector<entt::entity> toDestroy;
     
     {
-        auto view = registry.view<PendingDeleteComponent>();
+        // Find entities marked for deletion via DirtyComponent
+        auto view = registry.view<DirtyComponent>();
         for (auto ent : view) {
-            const auto& pending = view.get<PendingDeleteComponent>(ent);
-            
-            // Check if TTL has expired (same condition as setDeleteDeltaOnPendingDeletions)
-            if (pending.deleteAtTick == 0 || tick >= pending.deleteAtTick) {
+            const auto& dirty = view.get<DirtyComponent>(ent);
+            if (dirty.deltaType == DeltaType::DELETE_ENTITY) {
+                // Check TTL if entity has HealthComponent with deleteAtTick set
+                if (auto* health = registry.try_get<HealthComponent>(ent)) {
+                    if (health->deleteAtTick > 0 && !health->shouldDelete(tick)) {
+                        continue; // TTL not expired yet
+                    }
+                }
                 toDestroy.push_back(ent);
             }
         }
     }
     
-    // Remove from playerEntities map before destroying
+    // Remove from playerEntities map and chunk entity sets before destroying
     for (auto ent : toDestroy) {
+        // Remove from playerEntities map
         for (auto it = playerEntities.begin(); it != playerEntities.end(); ) {
             if (it->second == ent) {
                 it = playerEntities.erase(it);
             } else {
                 ++it;
             }
+        }
+        
+        // Remove from chunk entity set
+        if (auto* membership = registry.try_get<ChunkMembershipComponent>(ent)) {
+            PlayerId playerId = 0;
+            if (auto* playerComp = registry.try_get<PlayerComponent>(ent)) {
+                playerId = playerComp->playerId;
+            }
+            chunkRegistry.removeEntity(membership->currentChunkId, ent, playerId);
         }
     }
     
@@ -352,29 +341,32 @@ void GameEngine::processPendingPlayerCreations() {
             entt::entity ent = existingIt->second;
             
             if (registry.valid(ent)) {
-                if(registry.all_of<PendingDeleteComponent>(ent)) {
-                    // Respawn after death
-                    registry.remove<PlayerComponent>(ent);
+                if (auto* health = registry.try_get<HealthComponent>(ent)) {
+                    if (health->deleteAtTick > 0) {
+                        // Respawn after death - clear deleteAtTick and let code below create new entity
+                        health->deleteAtTick = 0;
+                        registry.remove<PlayerComponent>(ent);
+                        // Fall through to create new entity
+                    } else {
+                        // Reconnection: recover player entity
 
-                } else {
-                    // Reconnection: recover player entity
+                        // Remove disconnected component if present
+                        if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
+                            registry.remove<DisconnectedPlayerComponent>(ent);
+                        }
 
-                    // Remove disconnected component if present
-                    if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
-                        registry.remove<DisconnectedPlayerComponent>(ent);
+                        // Mark entity as newly created for serialization (so client gets full state)
+                        auto& dirty = registry.get<DirtyComponent>(ent);
+                        dirty.markCreated();
+                        
+                        // Re-add player entity to its chunk (to sync chunk.presentPlayers)
+                        auto& pos = registry.get<DynamicPositionComponent>(ent);
+                        const ChunkId chunkId = ChunkId::fromSubVoxelPos(pos.x, pos.y, pos.z);
+                        chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
+                        
+                        std::cout << "[GameEngine] Client " << req.playerId << " connected (reconnect)\n";
+                        continue;  // Skip to next request
                     }
-
-                    // Mark entity as newly created for serialization (so client gets full state)
-                    auto& dirty = registry.get<DirtyComponent>(ent);
-                    dirty.markCreated();
-                    
-                    // Re-add player entity to its chunk (to sync chunk.presentPlayers)
-                    auto& pos = registry.get<DynamicPositionComponent>(ent);
-                    const ChunkId chunkId = ChunkId::fromSubVoxelPos(pos.x, pos.y, pos.z);
-                    chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
-                    
-                    std::cout << "[GameEngine] Client " << req.playerId << " connected (reconnect)\n";
-                    continue;  // Skip to next request
                 }
             }
         }

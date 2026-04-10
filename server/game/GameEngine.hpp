@@ -8,6 +8,7 @@
 #include "game/systems/ChunkMembershipSystem.hpp"
 
 #include "game/systems/SheepAISystem.hpp"
+#include "game/systems/HealthSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/GlobalEntityIdComponent.hpp"
@@ -375,13 +376,6 @@ private:
     void serializeChunks();
 
     /**
-     * @brief Mark TTL-expired entities with DELETE_ENTITY delta type.
-     * Runs before serialization so DELETE deltas are sent to clients.
-     * @param tick Current game tick
-     */
-    void setDeleteDeltaOnPendingDeletions(uint32_t tick);
-
-    /**
      * @brief Destroy TTL-expired entities.
      * Runs after serialization so DELETE deltas have been sent.
      * @param tick Current game tick
@@ -428,17 +422,6 @@ private:
      * Called in tick() before processPendingVoxelCreations().
      */
     void processPendingBulkVoxelCreations();
-
-    /**
-     * @brief Step physics simulation for all entities.
-     */
-    void stepPhysics();
-    
-    /**
-     * @brief Step jump logic for all entities with JumpComponent.
-     * Must run after stepPhysics() so GroundContactComponent is updated.
-     */
-    void stepJump();
 
     /**
      * @brief Get the chunk containing the given world position.

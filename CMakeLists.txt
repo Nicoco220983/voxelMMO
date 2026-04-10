@@ -27,11 +27,13 @@ add_executable(voxelmmo
     server/game/entities/GhostPlayerEntity.cpp
     server/game/entities/SheepEntity.cpp
     server/game/systems/ChunkMembershipSystem.cpp
+    server/game/systems/HealthSystem.cpp
     server/game/systems/DisconnectedPlayerSystem.cpp
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp
     server/game/systems/JumpSystem.cpp
     server/game/systems/SheepAISystem.cpp
+    server/game/systems/HealthSystem.cpp
     server/game/components/GroundContactComponent.cpp
     server/game/components/WalkComponent.cpp
 )
@@ -78,6 +80,7 @@ add_executable(voxelmmo_tests
     server/game/entities/GhostPlayerEntity.cpp
     server/game/entities/SheepEntity.cpp
     server/game/systems/ChunkMembershipSystem.cpp
+    server/game/systems/HealthSystem.cpp
     server/game/systems/DisconnectedPlayerSystem.cpp
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp

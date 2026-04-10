@@ -2,6 +2,7 @@
 #include "game/WorldGenerator.hpp"
 #include "game/SaveSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
+#include "game/components/DirtyComponent.hpp"
 #include <iostream>
 
 namespace voxelmmo {
@@ -83,38 +84,26 @@ bool ChunkRegistry::deactivate(ChunkId id, entt::registry& registry) {
     Chunk* chunk = it->second.get();
     chunk->activated = false;
 
-    // Remove all non-player entities from this chunk
-    std::vector<entt::entity> toRemove;
-    toRemove.reserve(chunk->entities.size());
-    
+    // Mark all entities for deletion
+    // processPendingDeletions will handle actual destruction and chunk entity set cleanup
     for (entt::entity ent : chunk->entities) {
-        // Keep players (they persist across chunk deactivation)
-        if (registry.valid(ent) && !registry.all_of<PlayerComponent>(ent)) {
-            toRemove.push_back(ent);
-        }
-    }
-
-    for (entt::entity ent : toRemove) {
-        chunk->entities.erase(ent);
         if (registry.valid(ent)) {
-            registry.destroy(ent);
+            registry.get_or_emplace<DirtyComponent>(ent).markForDeletion();
         }
     }
 
     return true;
 }
 
-bool ChunkRegistry::unload(ChunkId id) {
+bool ChunkRegistry::unload(ChunkId id, entt::registry& registry) {
     auto it = chunks_.find(id);
     if (it == chunks_.end()) {
         return false;
     }
     
-    // Safety check: don't unload if still activated
+    // Auto-deactivate if still activated
     if (it->second->activated) {
-        std::cerr << "[ChunkRegistry] Warning: Cannot unload active chunk ("
-                  << id.x() << "," << id.y() << "," << id.z() << ")\n";
-        return false;
+        deactivate(id, registry);
     }
     
     chunks_.erase(it);
@@ -149,6 +138,17 @@ bool ChunkRegistry::addPlayerEntity(ChunkId chunkId, entt::entity entity, Player
     std::cerr << "[ChunkRegistry] Warning: addPlayerEntity failed - chunk (" 
               << chunkId.x() << "," << chunkId.y() << "," << chunkId.z() 
               << ") does not exist\n";
+    return false;
+}
+
+bool ChunkRegistry::removeEntity(ChunkId chunkId, entt::entity entity, PlayerId playerId) {
+    if (Chunk* chunk = getChunkMutable(chunkId)) {
+        chunk->entities.erase(entity);
+        if (playerId != 0) {
+            chunk->presentPlayers.erase(playerId);
+        }
+        return true;
+    }
     return false;
 }
 

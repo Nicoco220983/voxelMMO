@@ -8,9 +8,7 @@ namespace voxelmmo {
 namespace ChunkMembershipSystem {
 
 void markForDeletion(entt::registry& registry, entt::entity ent) {
-    if (!registry.all_of<PendingDeleteComponent>(ent)) {
-        registry.emplace<PendingDeleteComponent>(ent);
-    }
+    registry.get_or_emplace<DirtyComponent>(ent).markForDeletion();
 }
 
 ChunkMembershipResult update(
@@ -116,11 +114,8 @@ size_t unloadUnwatchedChunks(
     std::vector<ChunkId> toUnload;
     
     for (const auto& [cid, chunkPtr] : chunkRegistry.getAllChunks()) {
-        // Unload if:
-        // 1. No players watching
-        // 2. Not activated (entities already removed)
-        // 3. Has been saved before or we can save it now
-        if (chunkPtr->watchingPlayers.empty() && !chunkPtr->activated) {
+        // Unload if no players watching (unload() will auto-deactivate if needed)
+        if (chunkPtr->watchingPlayers.empty()) {
             toUnload.push_back(cid);
         }
     }
@@ -133,7 +128,7 @@ size_t unloadUnwatchedChunks(
             }
         }
         
-        if (chunkRegistry.unload(cid)) {
+        if (chunkRegistry.unload(cid, registry)) {
             ++unloadedCount;
             auto pos = getChunkPos(cid);
             std::cout << "[ChunkMembership] Unloaded unwatched chunk ("

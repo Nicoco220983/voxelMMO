@@ -115,15 +115,18 @@ public:
     bool deactivate(ChunkId id, entt::registry& registry);
 
     /**
-     * @brief Unload a chunk from the registry (save it first!).
+     * @brief Unload a chunk from the registry.
      *
-     * This removes the chunk entirely from memory. The chunk should be
-     * saved before calling this. Entities must be removed first via deactivate().
+     * This removes the chunk entirely from memory. If the chunk is still
+     * activated, it will be deactivated first (marking all non-player
+     * entities for deletion). The chunk voxel data should be saved before
+     * calling this.
      *
      * @param id Chunk ID to unload.
+     * @param registry ECS registry (needed for deactivation if still active).
      * @return true if the chunk was unloaded, false if not found.
      */
-    bool unload(ChunkId id);
+    bool unload(ChunkId id, entt::registry& registry);
 
     /**
      * @brief Get all loaded chunks (for iteration).
@@ -176,6 +179,19 @@ public:
      * @return true if the entity was added, false if chunk not found.
      */
     bool addPlayerEntity(ChunkId chunkId, entt::entity entity, PlayerId playerId);
+
+    /**
+     * @brief Remove an entity from its chunk's entity set.
+     *
+     * The entity is removed from the chunk's entities set. For players,
+     * also removes from presentPlayers set.
+     *
+     * @param chunkId The chunk ID where the entity should be removed from.
+     * @param entity The entity handle to remove.
+     * @param playerId Optional player ID to remove from presentPlayers (0 = not a player).
+     * @return true if the entity was removed, false if chunk not found.
+     */
+    bool removeEntity(ChunkId chunkId, entt::entity entity, PlayerId playerId = 0);
 
 private:
     std::unordered_map<ChunkId, std::unique_ptr<Chunk>> chunks_;

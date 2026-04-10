@@ -4,7 +4,6 @@
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
-#include "game/components/PendingDeleteComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
 #include "common/Types.hpp"
 #include "game/GatewayInfo.hpp"

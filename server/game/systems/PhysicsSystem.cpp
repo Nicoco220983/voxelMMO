@@ -271,7 +271,7 @@ inline uint16_t calculateFallDamage(int32_t impactVy) {
 
 /**
  * @brief Apply fall damage to entity on landing.
- * HealthComponent::applyDamage handles PendingDeleteComponent emplacement if entity dies.
+ * HealthComponent::applyDamage handles marking entity for deletion if it dies.
  * @return true if entity died from fall damage
  */
 bool applyFallDamageOnLanding(entt::registry& registry, entt::entity ent,
@@ -294,7 +294,7 @@ bool applyFallDamageOnLanding(entt::registry& registry, entt::entity ent,
         return false;
     }
     
-    // HealthComponent::applyDamage handles PendingDeleteComponent emplacement
+    // HealthComponent::applyDamage handles deletion scheduling
     return HealthComponent::applyDamage(registry, ent, damage, tickCount);
 }
 

@@ -1,4 +1,5 @@
 #include "game/systems/DisconnectedPlayerSystem.hpp"
+#include "game/components/DirtyComponent.hpp"
 
 namespace voxelmmo {
 namespace DisconnectedPlayerSystem {
@@ -8,29 +9,21 @@ size_t process(
     std::unordered_map<PlayerId, entt::entity>& playerEntities,
     uint32_t currentTick)
 {
-    size_t deletedCount = 0;
+    size_t markedCount = 0;
 
-    auto view = registry.view<DisconnectedPlayerComponent, PlayerComponent>();
-    std::vector<entt::entity> toDelete;
+    auto view = registry.view<DisconnectedPlayerComponent, PlayerComponent, DirtyComponent>();
 
-    // Find all expired disconnections
+    // Mark expired disconnection entities for deletion
     for (auto ent : view) {
         const auto& disc = view.get<DisconnectedPlayerComponent>(ent);
         if (disc.hasExpired(currentTick)) {
-            toDelete.push_back(ent);
+            // Mark for deletion - processPendingDeletions will handle actual cleanup
+            view.get<DirtyComponent>(ent).markForDeletion();
+            ++markedCount;
         }
     }
 
-    // TODO: only add PendingDeletionComponent
-    // Process deletions - destroy entity and remove from playerEntities map
-    for (auto ent : toDelete) {
-        const auto& player = registry.get<PlayerComponent>(ent);
-        playerEntities.erase(player.playerId);
-        registry.destroy(ent);
-        ++deletedCount;
-    }
-
-    return deletedCount;
+    return markedCount;
 }
 
 bool cancelDisconnection(entt::registry& registry, entt::entity ent) {
