@@ -310,6 +310,7 @@ bool SaveSystem::saveChunkVoxels(ChunkId id, const std::vector<VoxelType>& voxel
         return false;
     }
     
+    std::cout << "[SaveSystem] Saved chunk (" << id.x() << "," << id.y() << "," << id.z() << ")\n";
     return true;
 }
 

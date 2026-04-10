@@ -56,6 +56,7 @@ void markForDeletion(entt::registry& registry, entt::entity ent);
  * @param generator         WorldGenerator for terrain and entity generation.
  * @param entityFactory     Factory to queue entity spawn requests.
  * @param tick              Current server tick.
+ * @param saveSystem        SaveSystem to load saved chunks from.
  * @return ChunkMembershipResult containing list of activated chunks.
  */
 ChunkMembershipResult update(
@@ -67,7 +68,8 @@ ChunkMembershipResult update(
     int32_t activationRadius,
     WorldGenerator& generator,
     EntityFactory& entityFactory,
-    uint32_t tick);
+    uint32_t tick,
+    SaveSystem* saveSystem);
 
 /**
  * @brief Unload chunks that are no longer watched by any player.

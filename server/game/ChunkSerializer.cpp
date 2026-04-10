@@ -417,10 +417,12 @@ static void clearChunkDirtiness(Chunk& chunk, entt::registry& reg) {
     // Clear voxel deltas for all chunks
     chunk.world.clearDelta();
 
-    // Clear entity dirty flags
+    // Clear entity dirty flags (but keep deletion flag - entity will be destroyed after serialization)
     for (auto ent : chunk.entities) {
         auto& dirty = reg.get<DirtyComponent>(ent);
-        dirty.clear();
+        if (dirty.deltaType != DeltaType::DELETE_ENTITY) {
+            dirty.clear();
+        }
     }
 }
 

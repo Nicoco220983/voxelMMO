@@ -264,11 +264,10 @@ void GameEngine::tick() {
     // Unified chunk membership update: rebuilds chunk entity sets, handles movement,
     // updates watchingPlayers, and activates chunks
     auto membershipResult = ChunkMembershipSystem::update(
-        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick);
+        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick, saveSystem_.get());
 
     // Unload unwatched chunks (save first, then unload from memory)
     ChunkMembershipSystem::unloadUnwatchedChunks(chunkRegistry, registry, saveSystem_.get());
-
 
     // Send state updates to clients (includes chunk snapshots with player entities)
     // Also sends SELF_ENTITY messages to newly created players
@@ -292,9 +291,9 @@ void GameEngine::processPendingDeletions(uint32_t tick) {
         for (auto ent : view) {
             const auto& dirty = view.get<DirtyComponent>(ent);
             if (dirty.deltaType == DeltaType::DELETE_ENTITY) {
-                // Check TTL if entity has HealthComponent with deleteAtTick set
+                // Check TTL if entity has HealthComponent
                 if (auto* health = registry.try_get<HealthComponent>(ent)) {
-                    if (health->deleteAtTick > 0 && !health->shouldDelete(tick)) {
+                    if (!health->shouldDelete(tick)) {
                         continue; // TTL not expired yet
                     }
                 }

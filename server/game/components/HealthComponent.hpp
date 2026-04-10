@@ -9,7 +9,7 @@ namespace voxelmmo {
 
 inline constexpr uint8_t HEALTH_BIT = 1 << 2;
 
-inline constexpr uint32_t DEATH_DELETION_DELAY_TICKS = 180;  // ~3 seconds at 60tps
+inline constexpr uint32_t DEATH_DELETION_DELAY_TICKS = 60;  // ~3 seconds at 20tps
 
 /**
  * @brief Health component for damageable entities (players, sheep, etc.).
@@ -87,7 +87,6 @@ struct HealthComponent {
         if (died) {
             // Schedule delayed deletion (allows client death animation/feedback)
             c.deleteAtTick = tick + DEATH_DELETION_DELAY_TICKS;
-            reg.get<DirtyComponent>(ent).markForDeletion();
         }
         return died;
     }
@@ -95,10 +94,10 @@ struct HealthComponent {
     /**
      * @brief Check if the entity should be deleted at the given tick.
      * @param currentTick The current game tick.
-     * @return true if TTL has expired (0 = immediate deletion).
+     * @return true if deletion is scheduled and TTL has expired.
      */
     [[nodiscard]] bool shouldDelete(uint32_t currentTick) const {
-        return deleteAtTick == 0 || currentTick >= deleteAtTick;
+        return deleteAtTick > 0 && currentTick >= deleteAtTick;
     }
 
     /**

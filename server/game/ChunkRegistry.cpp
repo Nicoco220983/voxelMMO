@@ -85,7 +85,6 @@ bool ChunkRegistry::deactivate(ChunkId id, entt::registry& registry) {
     chunk->activated = false;
 
     // Mark all entities for deletion
-    // processPendingDeletions will handle actual destruction and chunk entity set cleanup
     for (entt::entity ent : chunk->entities) {
         if (registry.valid(ent)) {
             registry.get_or_emplace<DirtyComponent>(ent).markForDeletion();

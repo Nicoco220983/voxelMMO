@@ -2,6 +2,7 @@
 #include "game/Chunk.hpp"
 #include "game/WorldGenerator.hpp"
 #include "game/entities/EntityFactory.hpp"
+#include "game/SaveSystem.hpp"
 #include <iostream>
 
 namespace voxelmmo {
@@ -20,7 +21,8 @@ ChunkMembershipResult update(
     int32_t activationRadius,
     WorldGenerator& generator,
     EntityFactory& entityFactory,
-    uint32_t tick)
+    uint32_t tick,
+    SaveSystem* saveSystem)
 {
     ChunkMembershipResult result;
 
@@ -83,7 +85,7 @@ ChunkMembershipResult update(
                         // Ensure activation-radius chunks exist
                         if (std::abs(dx) <= activationRadius && std::abs(dz) <= activationRadius) {
                             bool wasNew = !chunkRegistry.hasChunk(cid);
-                            Chunk* chunk = chunkRegistry.generate(generator, cid);
+                            Chunk* chunk = chunkRegistry.generate(generator, cid, saveSystem);
                             chunkRegistry.activate(cid, generator, entityFactory, tick);
                             if (chunk && wasNew) {
                                 result.activatedChunks.push_back(cid);

@@ -73,7 +73,7 @@ public:
      * @param saveSystem Optional SaveSystem to load saved chunks from.
      * @return Pointer to the generated/loaded chunk.
      */
-    Chunk* generate(WorldGenerator& generator, ChunkId id, SaveSystem* saveSystem = nullptr);
+    Chunk* generate(WorldGenerator& generator, ChunkId id, SaveSystem* saveSystem);
 
     /**
      * @brief Create or get a chunk without generating voxels.
