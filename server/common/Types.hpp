@@ -33,11 +33,11 @@ inline constexpr int CHUNK_SHIFT_X = 13;  ///< log2(CHUNK_SIZE_X × SUBVOXEL_SIZ
 inline constexpr int CHUNK_SHIFT_Z = 13;  ///< log2(CHUNK_SIZE_Z × SUBVOXEL_SIZE) = log2(32 × 256)
 
 /**
- * @brief Chunk identifier packed as sint6(y) | sint29(x) | sint29(z) into 64 bits.
+ * @brief Chunk identifier packed as sint8(y) | sint28(x) | sint28(z) into 64 bits.
  *
- * Bit layout (MSB first): [63:58] y (6-bit signed) | [57:29] x (29-bit signed) | [28:0] z (29-bit signed)
+ * Bit layout (MSB first): [63:56] y (8-bit signed) | [55:28] x (28-bit signed) | [27:0] z (28-bit signed)
  *
- * World extents: y ∈ [-32, 31], x/z ∈ [-268 435 456, 268 435 455]
+ * World extents: y ∈ [-128, 127], x/z ∈ [-134 217 728, 134 217 727]
  */
 struct ChunkId {
     int64_t packed{0};
@@ -45,9 +45,9 @@ struct ChunkId {
     /** @brief Construct a ChunkId from its three signed components. */
     static constexpr ChunkId make(ChunkCoord chunkY, ChunkCoord chunkX, ChunkCoord chunkZ) noexcept {
         ChunkId id;
-        id.packed = (static_cast<int64_t>(chunkY  & 0x3F)        << 58)
-                  | (static_cast<int64_t>(chunkX  & 0x1FFFFFFF)  << 29)
-                  |  static_cast<int64_t>(chunkZ  & 0x1FFFFFFF);
+        id.packed = (static_cast<int64_t>(chunkY  & 0xFF)       << 56)
+                  | (static_cast<int64_t>(chunkX  & 0xFFFFFFF)  << 28)
+                  |  static_cast<int64_t>(chunkZ  & 0xFFFFFFF);
         return id;
     }
 
@@ -79,22 +79,22 @@ struct ChunkId {
             subZ >> CHUNK_SHIFT_Z);
     }
 
-    /** @brief Y component, signed 6-bit (range [-32, 31]). */
+    /** @brief Y component, signed 8-bit (range [-128, 127]). */
     constexpr ChunkCoord y() const noexcept {
-        int32_t v = static_cast<int32_t>((packed >> 58) & 0x3F);
-        return (v & 0x20) ? (v | 0xFFFFFFC0) : v;
+        int32_t v = static_cast<int32_t>((packed >> 56) & 0xFF);
+        return (v & 0x80) ? (v | 0xFFFFFF00) : v;
     }
 
-    /** @brief X component, signed 29-bit. */
+    /** @brief X component, signed 28-bit. */
     constexpr ChunkCoord x() const noexcept {
-        int32_t v = static_cast<int32_t>((packed >> 29) & 0x1FFFFFFF);
-        return (v & 0x10000000) ? (v | static_cast<int32_t>(0xE0000000)) : v;
+        int32_t v = static_cast<int32_t>((packed >> 28) & 0xFFFFFFF);
+        return (v & 0x8000000) ? (v | static_cast<int32_t>(0xF0000000)) : v;
     }
 
-    /** @brief Z component, signed 29-bit. */
+    /** @brief Z component, signed 28-bit. */
     constexpr ChunkCoord z() const noexcept {
-        int32_t v = static_cast<int32_t>(packed & 0x1FFFFFFF);
-        return (v & 0x10000000) ? (v | static_cast<int32_t>(0xE0000000)) : v;
+        int32_t v = static_cast<int32_t>(packed & 0xFFFFFFF);
+        return (v & 0x8000000) ? (v | static_cast<int32_t>(0xF0000000)) : v;
     }
 
     constexpr bool operator==(const ChunkId& o) const noexcept { return packed == o.packed; }

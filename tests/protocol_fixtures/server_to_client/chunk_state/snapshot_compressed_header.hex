@@ -4,7 +4,7 @@
 #
 # type=1 (ServerMessageType::CHUNK_SNAPSHOT_COMPRESSED)
 # size=24 (header + 4 bytes for entity_section_size, no actual voxel/entity data)
-# chunkId=0 (packed sint6(y)|sint29(x)|sint29(z) = all zeros for chunk (0,0,0))
+# chunkId=0 (packed sint8(y)|sint28(x)|sint28(z) = all zeros for chunk (0,0,0))
 # tick=1
 # flags=0 (entity section uncompressed)
 # compressed_voxel_size=0 (no voxel data)

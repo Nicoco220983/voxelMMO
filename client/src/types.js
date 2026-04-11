@@ -18,7 +18,7 @@
  */
 
 /**
- * Packed ChunkId as a BigInt: sint6(y) | sint29(x) | sint29(z) in 64 bits.
+ * Packed ChunkId as a BigInt: sint8(y) | sint28(x) | sint28(z) in 64 bits.
  * @typedef {bigint} ChunkId
  */
 
@@ -115,24 +115,24 @@ export function stringToEntityType(str) {
 
 // ── ChunkId helper functions ─────────────────────────────────────────────────
 
-const MASK_6 = 0x3Fn
-const MASK_29 = 0x1FFFFFFFn
-const SIGN_BIT_6 = 0x20n
-const SIGN_BIT_29 = 0x10000000n
-const SIGN_EXT_6 = 0xFFFFFFFFFFFFFFC0n
-const SIGN_EXT_29 = 0xFFFFFFFFE0000000n
+const MASK_8 = 0xFFn
+const MASK_28 = 0xFFFFFFFn
+const SIGN_BIT_8 = 0x80n
+const SIGN_BIT_28 = 0x8000000n
+const SIGN_EXT_8 = 0xFFFFFFFFFFFFFF00n
+const SIGN_EXT_28 = 0xFFFFFFFFF0000000n
 
 /**
  * Create a ChunkId from its three signed chunk coordinates.
- * @param {ChunkCoord} cx - Chunk X, signed 29-bit
- * @param {ChunkCoord} cy - Chunk Y, signed 6-bit (range [-32, 31])
- * @param {ChunkCoord} cz - Chunk Z, signed 29-bit
+ * @param {ChunkCoord} cx - Chunk X, signed 28-bit
+ * @param {ChunkCoord} cy - Chunk Y, signed 8-bit (range [-128, 127])
+ * @param {ChunkCoord} cz - Chunk Z, signed 28-bit
  * @returns {ChunkId}
  */
 export function chunkIdFromChunkPos(cx, cy, cz) {
-  const packed = (BigInt(BigInt.asIntN(32, BigInt(cy)) & MASK_6) << 58n)
-               | (BigInt(BigInt.asIntN(32, BigInt(cx)) & MASK_29) << 29n)
-               | BigInt(BigInt.asIntN(32, BigInt(cz)) & MASK_29)
+  const packed = (BigInt(BigInt.asIntN(32, BigInt(cy)) & MASK_8) << 56n)
+               | (BigInt(BigInt.asIntN(32, BigInt(cx)) & MASK_28) << 28n)
+               | BigInt(BigInt.asIntN(32, BigInt(cz)) & MASK_28)
   return BigInt.asIntN(64, packed)
 }
 
@@ -180,17 +180,17 @@ export function chunkIdFromSubVoxelPos(sx, sy, sz) {
 export function getChunkPos(chunkId) {
   const packed = BigInt.asIntN(64, chunkId)
   
-  // Extract Y (6 bits at bit 58) - use shift trick for sign extension
-  const yRaw = Number((packed >> 58n) & MASK_6)
-  const cy = (yRaw << 26) >> 26  // sign extend from 6 bits to 32 bits
+  // Extract Y (8 bits at bit 56) - use shift trick for sign extension
+  const yRaw = Number((packed >> 56n) & MASK_8)
+  const cy = (yRaw << 24) >> 24  // sign extend from 8 bits to 32 bits
   
-  // Extract X (29 bits at bit 29) - use shift trick for sign extension
-  const xRaw = Number((packed >> 29n) & MASK_29)
-  const cx = (xRaw << 3) >> 3    // sign extend from 29 bits to 32 bits
+  // Extract X (28 bits at bit 28) - use shift trick for sign extension
+  const xRaw = Number((packed >> 28n) & MASK_28)
+  const cx = (xRaw << 4) >> 4    // sign extend from 28 bits to 32 bits
   
-  // Extract Z (29 bits at bit 0) - use shift trick for sign extension
-  const zRaw = Number(packed & MASK_29)
-  const cz = (zRaw << 3) >> 3    // sign extend from 29 bits to 32 bits
+  // Extract Z (28 bits at bit 0) - use shift trick for sign extension
+  const zRaw = Number(packed & MASK_28)
+  const cz = (zRaw << 4) >> 4    // sign extend from 28 bits to 32 bits
   
   return { cx, cy, cz }
 }

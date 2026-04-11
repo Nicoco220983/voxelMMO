@@ -47,7 +47,7 @@ Three nested spaces (all use fixed-point integers, no floats in game state):
 **Chunk dimensions:** 32×32×32 voxels → `CHUNK_SHIFT_{Y,X,Z}=13` (log₂(32×256)).  
 Chunk coord = sub-voxel position >> 13 (arithmetic shift handles negatives).
 
-**ChunkId packing** (int64): `sint6(y) | sint29(x) | sint29(z)` — use `fromChunkPos()` / `chunkIdFromChunkPos()`.  
+**ChunkId packing** (int64): `sint8(y) | sint28(x) | sint28(z)` — use `fromChunkPos()` / `chunkIdFromChunkPos()`.  
 **VoxelIndex packing** (uint16): `uint5(y) | uint5(x) | uint5(z)` — flat array index; use `voxelIndexFromPos()`.
 
 **Client rendering:** divide sub-voxel position by `SUBVOXEL_SIZE` (256) before passing to Three.js.
@@ -56,7 +56,7 @@ Chunk coord = sub-voxel position >> 13 (arithmetic shift handles negatives).
 
 | Type | Repr | Notes |
 |------|------|-------|
-| ChunkId | int64 packed | sint6(y) · sint29(x) · sint29(z); helpers: `fromChunkPos()`, `fromVoxelPos()`, `fromSubVoxelPos()` (server) / `chunkIdFrom*Pos()` (client) |
+| ChunkId | int64 packed | sint8(y) · sint28(x) · sint28(z); helpers: `fromChunkPos()`, `fromVoxelPos()`, `fromSubVoxelPos()` (server) / `chunkIdFrom*Pos()` (client) |
 | VoxelIndex | uint16 | uint5(y) · uint5(x) · uint5(z) — flat array index; helpers: `voxelIndexFromPos()`, `getVoxelIndexPos()` |
 | VoxelType | uint8 | 0 = air |
 | GlobalEntityId | uint32 | assigned at spawn, stable across moves |

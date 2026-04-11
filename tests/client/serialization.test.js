@@ -47,11 +47,11 @@ import { ServerMessageType } from '../../client/src/NetworkProtocol.js'
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-/** Pack ChunkId as BigInt: sint6(y) | sint29(x) | sint29(z). */
+/** Pack ChunkId as BigInt: sint8(y) | sint28(x) | sint28(z). */
 function packChunkId(y, x, z) {
-  return (BigInt(y & 0x3F) << 58n)
-       | (BigInt(x & 0x1FFFFFFF) << 29n)
-       |  BigInt(z & 0x1FFFFFFF)
+  return (BigInt(y & 0xFF) << 56n)
+       | (BigInt(x & 0xFFFFFFF) << 28n)
+       |  BigInt(z & 0xFFFFFFF)
 }
 
 /**
@@ -117,17 +117,17 @@ function buildDeltaMsg(chunkId, tick, mods, msgType = ServerMessageType.CHUNK_TI
 describe('ChunkId packing', () => {
   it('roundtrips y/x/z components', () => {
     const cases = [
-      { y: 0,   x: 0,  z: 0 },
-      { y: 1,   x: 1,  z: 1 },
-      { y: -1,  x: -1, z: -1 },
-      { y: 31,  x: 268435455,  z: 268435455 },
-      { y: -32, x: -268435456, z: -268435456 },
+      { y: 0,    x: 0,  z: 0 },
+      { y: 1,    x: 1,  z: 1 },
+      { y: -1,   x: -1, z: -1 },
+      { y: 127,  x: 134217727,  z: 134217727 },
+      { y: -128, x: -134217728, z: -134217728 },
     ]
     for (const { y, x, z } of cases) {
       const packed = packChunkId(y, x, z)
-      const dy = Number(BigInt.asIntN(6,  packed >> 58n))
-      const dx = Number(BigInt.asIntN(29, packed >> 29n))
-      const dz = Number(BigInt.asIntN(29, packed))
+      const dy = Number(BigInt.asIntN(8,  packed >> 56n))
+      const dx = Number(BigInt.asIntN(28, packed >> 28n))
+      const dz = Number(BigInt.asIntN(28, packed))
       expect(dy).toBe(y)
       expect(dx).toBe(x)
       expect(dz).toBe(z)
