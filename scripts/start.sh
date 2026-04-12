@@ -3,13 +3,26 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT_DIR="$SCRIPT_DIR/.."
-BUILD_DIR="$ROOT_DIR/build"
+
+# ── Determine build mode ──────────────────────────────────────────────────
+# Priority: --debug flag > BUILD_MODE env var > default (Release)
+BUILD_MODE="${BUILD_MODE:-Release}"
+
+for arg in "$@"; do
+  case "$arg" in
+    --debug)
+      BUILD_MODE=Debug
+      ;;
+  esac
+done
+
+BUILD_DIR="$ROOT_DIR/build/$BUILD_MODE"
 PRODUCTION="${PRODUCTION:-0}"
 
 # ── Sanity checks ───────────────────────────────────────────────────────────
 if [[ ! -f "$BUILD_DIR/voxelmmo" ]]; then
     echo "ERROR: Server binary not found at $BUILD_DIR/voxelmmo"
-    echo "Run: bash scripts/build.sh"
+    echo "Build with: BUILD_MODE=$BUILD_MODE bash scripts/build.sh"
     exit 1
 fi
 if [[ "$PRODUCTION" != "1" && ! -d "$ROOT_DIR/client/dist" ]]; then
