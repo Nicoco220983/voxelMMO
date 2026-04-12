@@ -1,28 +1,57 @@
 #include "gateway/GatewayEngine.hpp"
-#include "common/NetworkProtocol.hpp"
+#include "gateway/ChunkState.hpp"
+#include "gateway/PlayerInfo.hpp"
 #include "common/NetworkProtocol.hpp"
 #include <iostream>
 #include <cstring>
 #include <vector>
+#include <unordered_map>
 
 namespace voxelmmo {
 
-GatewayEngine::GatewayEngine()  = default;
+// Implementation class
+class GatewayEngine::Impl {
+public:
+    uWS::App wsApp;
+    uWS::Loop* uwsLoop{nullptr};
+    us_listen_socket_t* listenSocket_{nullptr};
+
+    std::unordered_map<PlayerId, uWS::WebSocket<false, true, PlayerConnection>*> sockets;
+
+    GatewayEngine::PlayerConnectCallback connectCb;
+    GatewayEngine::PlayerDisconnectCallback disconnectCb;
+    GatewayEngine::PlayerInputCallback inputCb;
+
+    std::unordered_map<ChunkId, ChunkState> chunkStates;
+    std::unordered_map<PlayerId, PlayerInfo> players;
+};
+
+GatewayEngine::GatewayEngine() 
+    : pImpl(std::make_unique<Impl>()) {}
+
 GatewayEngine::~GatewayEngine() = default;
 
-void GatewayEngine::setPlayerConnectCallback(PlayerConnectCallback cb)       { connectCb    = std::move(cb); }
-void GatewayEngine::setPlayerDisconnectCallback(PlayerDisconnectCallback cb)  { disconnectCb = std::move(cb); }
-void GatewayEngine::setPlayerInputCallback(PlayerInputCallback cb)             { inputCb      = std::move(cb); }
+void GatewayEngine::setPlayerConnectCallback(PlayerConnectCallback cb) { 
+    pImpl->connectCb = std::move(cb); 
+}
+
+void GatewayEngine::setPlayerDisconnectCallback(PlayerDisconnectCallback cb) { 
+    pImpl->disconnectCb = std::move(cb); 
+}
+
+void GatewayEngine::setPlayerInputCallback(PlayerInputCallback cb) { 
+    pImpl->inputCb = std::move(cb); 
+}
 
 // ── Incoming from game engine ─────────────────────────────────────────────
 
 void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
-    if (!uwsLoop) return;
+    if (!pImpl->uwsLoop) return;
     
     // Copy the batch so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
-    uwsLoop->defer([this, buf]() {
+    pImpl->uwsLoop->defer([this, buf]() {
         // Parse individual messages using their embedded [type(1)][size(2)] header
         // and update chunk state for each message.
         size_t off = 0;
@@ -40,26 +69,26 @@ void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
 }
 
 void GatewayEngine::receiveGameMessageForPlayer(PlayerId playerId, const uint8_t* data, size_t size) {
-    if (!uwsLoop) return;
+    if (!pImpl->uwsLoop) return;
     
     // Copy the message so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
 
-    uwsLoop->defer([this, playerId, buf]() {
+    pImpl->uwsLoop->defer([this, playerId, buf]() {
         sendToPlayer(playerId, buf->data(), buf->size());
     });
 }
 
 void GatewayEngine::broadcastBatch(const uint8_t* data, size_t size) {
     const std::string_view msg(reinterpret_cast<const char*>(data), size);
-    for (auto& [pid, ws] : sockets) {
+    for (auto& [pid, ws] : pImpl->sockets) {
         ws->send(msg, uWS::OpCode::BINARY);
     }
 }
 
 bool GatewayEngine::sendToPlayer(PlayerId playerId, const uint8_t* data, size_t size) {
-    auto it = sockets.find(playerId);
-    if (it == sockets.end()) return false;
+    auto it = pImpl->sockets.find(playerId);
+    if (it == pImpl->sockets.end()) return false;
     const std::string_view msg(reinterpret_cast<const char*>(data), size);
     it->second->send(msg, uWS::OpCode::BINARY);
     return true;
@@ -68,20 +97,20 @@ bool GatewayEngine::sendToPlayer(PlayerId playerId, const uint8_t* data, size_t 
 // ── WebSocket server ──────────────────────────────────────────────────────
 
 void GatewayEngine::stop() {
-    if (uwsLoop) {
-        uwsLoop->defer([this]() {
+    if (pImpl->uwsLoop) {
+        pImpl->uwsLoop->defer([this]() {
             std::cout << "[gateway] Stopping server...\n";
             
             // Close all WebSocket connections gracefully
-            for (auto& [pid, ws] : sockets) {
+            for (auto& [pid, ws] : pImpl->sockets) {
                 ws->close();
             }
-            sockets.clear();
+            pImpl->sockets.clear();
             
             // Close listen socket to stop accepting new connections
-            if (listenSocket_) {
-                us_listen_socket_close(0, listenSocket_);
-                listenSocket_ = nullptr;
+            if (pImpl->listenSocket_) {
+                us_listen_socket_close(0, pImpl->listenSocket_);
+                pImpl->listenSocket_ = nullptr;
                 std::cout << "[gateway] Listen socket closed\n";
             }
         });
@@ -96,41 +125,40 @@ void GatewayEngine::handleJoin(uWS::WebSocket<false, true, PlayerConnection>* ws
     const PlayerId pid = NetworkProtocol::playerIdFromSessionToken(joinMsg.sessionToken);
     
     // Check if this PlayerId is already connected (reconnection)
-    auto existingIt = sockets.find(pid);
-    if (existingIt != sockets.end()) {
+    auto existingIt = pImpl->sockets.find(pid);
+    if (existingIt != pImpl->sockets.end()) {
         // Only close if it's a different socket (actual reconnection)
         // Same socket = respawn, not reconnection
         if (existingIt->second != ws) {
             // Close the old connection
             existingIt->second->close();
-            sockets.erase(existingIt);
+            pImpl->sockets.erase(existingIt);
             removePlayer(pid);
-            if (disconnectCb) disconnectCb(pid);
+            if (pImpl->disconnectCb) pImpl->disconnectCb(pid);
         }
     }
     
     // Assign PlayerId to this connection
     ws->getUserData()->playerId = pid;
-    sockets[pid] = ws;
+    pImpl->sockets[pid] = ws;
     
     // Send all cached chunk state to the new player
-    for (const auto& [cid, state] : chunkStates) {
+    for (const auto& [cid, state] : pImpl->chunkStates) {
         auto [stateData, length] = state.getDataToSend(0);
         if (length > 0) {
             sendToPlayer(pid, stateData, length);
         }
     }
     
-    if (connectCb) connectCb(pid);
+    if (pImpl->connectCb) pImpl->connectCb(pid);
 }
 
 void GatewayEngine::listen(int port) {
     // Capture the loop pointer now, while we are on the uWS thread.
     // receiveGameMessage() will use this from the game thread.
-    uwsLoop = uWS::Loop::get();
+    pImpl->uwsLoop = uWS::Loop::get();
 
-    wsApp.ws<PlayerConnection>("/*", {
-        /* Settings */
+    pImpl->wsApp.template ws<PlayerConnection>("/*", {
         .maxPayloadLength = 16 * 1024,
         .idleTimeout      = 120,
 
@@ -155,8 +183,8 @@ void GatewayEngine::listen(int port) {
             
             // Forward all messages (including JOIN) to the game engine
             const PlayerId pid = ws->getUserData()->playerId;
-            if (pid != 0 && inputCb) {
-                inputCb(pid, data, size);
+            if (pid != 0 && pImpl->inputCb) {
+                pImpl->inputCb(pid, data, size);
             }
         },
 
@@ -164,15 +192,15 @@ void GatewayEngine::listen(int port) {
                         int /*code*/, std::string_view /*reason*/) {
             const PlayerId pid = ws->getUserData()->playerId;
             if (pid != 0) {
-                sockets.erase(pid);
+                pImpl->sockets.erase(pid);
                 removePlayer(pid);
-                if (disconnectCb) disconnectCb(pid);
+                if (pImpl->disconnectCb) pImpl->disconnectCb(pid);
             }
         },
     })
     .listen(port, [this, port](us_listen_socket_t* listenSocket) {
         if (listenSocket) {
-            listenSocket_ = listenSocket;
+            pImpl->listenSocket_ = listenSocket;
             std::cout << "[gateway] Listening on port " << port << "\n";
         } else {
             std::cerr << "[gateway] Failed to bind port " << port << "\n";
@@ -201,33 +229,33 @@ void GatewayEngine::receiveChunkMessage(const uint8_t* data, size_t size) {
 }
 
 ChunkState& GatewayEngine::getChunkState(ChunkId id) {
-    return chunkStates[id];
+    return pImpl->chunkStates[id];
 }
 
 const ChunkState* GatewayEngine::findChunkState(ChunkId id) const {
-    const auto it = chunkStates.find(id);
-    return (it != chunkStates.end()) ? &it->second : nullptr;
+    const auto it = pImpl->chunkStates.find(id);
+    return (it != pImpl->chunkStates.end()) ? &it->second : nullptr;
 }
 
 void GatewayEngine::removeChunk(ChunkId id) {
-    chunkStates.erase(id);
+    pImpl->chunkStates.erase(id);
 }
 
 // ── Per-player snapshot tick tracking ─────────────────────────────────────
 
 void GatewayEngine::setPlayerStateTick(PlayerId pid, ChunkId cid, uint32_t tick) {
-    players[pid].lastStateTick[cid] = tick;
+    pImpl->players[pid].lastStateTick[cid] = tick;
 }
 
 uint32_t GatewayEngine::getPlayerStateTick(PlayerId pid, ChunkId cid) const {
-    const auto pit = players.find(pid);
-    if (pit == players.end()) return 0;
+    const auto pit = pImpl->players.find(pid);
+    if (pit == pImpl->players.end()) return 0;
     const auto cit = pit->second.lastStateTick.find(cid);
     return (cit != pit->second.lastStateTick.end()) ? cit->second : 0;
 }
 
 void GatewayEngine::removePlayer(PlayerId pid) {
-    players.erase(pid);
+    pImpl->players.erase(pid);
 }
 
 } // namespace voxelmmo

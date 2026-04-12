@@ -2,13 +2,15 @@
 #include "common/NetworkProtocol.hpp"
 #include "common/EntityType.hpp"
 #include "common/Types.hpp"
-#include "game/ChunkRegistry.hpp"
-#include <entt/entt.hpp>
+#include <entt/entity/fwd.hpp>
 #include <functional>
 #include <unordered_map>
 #include <vector>
 
 namespace voxelmmo {
+
+// Forward declarations
+class ChunkRegistry;
 
 /**
  * @brief Spawn request for deferred entity creation.

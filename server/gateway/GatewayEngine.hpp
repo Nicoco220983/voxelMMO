@@ -1,14 +1,15 @@
 #pragma once
 #include "common/Types.hpp"
 #include "common/NetworkProtocol.hpp"
-#include "gateway/ChunkState.hpp"
-#include "gateway/PlayerInfo.hpp"
 #include <uwebsockets/App.h>
-#include <unordered_map>
 #include <functional>
 #include <cstdint>
 
 namespace voxelmmo {
+
+// Forward declarations
+struct ChunkState;
+struct PlayerInfo;
 
 /**
  * @brief Per-WebSocket connection data stored inside µWebSockets' user-data slot.
@@ -35,6 +36,12 @@ class GatewayEngine {
 public:
     GatewayEngine();
     ~GatewayEngine();
+
+    // Non-copyable, non-movable
+    GatewayEngine(const GatewayEngine&) = delete;
+    GatewayEngine& operator=(const GatewayEngine&) = delete;
+    GatewayEngine(GatewayEngine&&) = delete;
+    GatewayEngine& operator=(GatewayEngine&&) = delete;
 
     /**
      * @brief Deliver one tick's batch of serialised messages from the game engine.
@@ -153,42 +160,11 @@ public:
                     const NetworkProtocol::JoinMessage& joinMsg);
 
 private:
-    uWS::App  wsApp;
+    class Impl;
+    std::unique_ptr<Impl> pImpl;
 
-    /**
-     * @brief uWS event-loop pointer captured on the uWS thread during listen().
-     * receiveGameMessage() may be called from any thread and uses this to defer
-     * work safely onto the uWS event loop.
-     */
-    uWS::Loop* uwsLoop{nullptr};
-
-    /** @brief Listen socket for graceful shutdown. */
-    us_listen_socket_t* listenSocket_{nullptr};
-
-    /** @brief Active connections keyed by PlayerId. */
-    std::unordered_map<PlayerId, uWS::WebSocket<false, true, PlayerConnection>*> sockets;
-
-    PlayerConnectCallback    connectCb;
-    PlayerDisconnectCallback disconnectCb;
-    PlayerInputCallback      inputCb;
-
-    /** @brief Cached chunk states keyed by ChunkId. */
-    std::unordered_map<ChunkId, ChunkState> chunkStates;
-
-    /** @brief Per-player metadata keyed by PlayerId. */
-    std::unordered_map<PlayerId, PlayerInfo> players;
-
-    /**
-     * @brief Send a complete batch to all connected players.
-     * Must be called from the uWS event loop thread.
-     */
+    // Private methods implemented in cpp
     void broadcastBatch(const uint8_t* data, size_t size);
-
-    /**
-     * @brief Send a message to a specific player.
-     * Must be called from the uWS event loop thread.
-     * @return true if player was connected and message was sent.
-     */
     bool sendToPlayer(PlayerId playerId, const uint8_t* data, size_t size);
 };
 

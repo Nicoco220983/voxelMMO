@@ -1,5 +1,7 @@
 #include "game/GameEngine.hpp"
 #include "gateway/GatewayEngine.hpp"
+#include "game/SaveSystem.hpp"
+#include "game/WorldGenerator.hpp"
 #include "common/EntityType.hpp"
 #include <iostream>
 #include <thread>

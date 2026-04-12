@@ -1,37 +1,32 @@
 #pragma once
-#include "ChunkRegistry.hpp"
-#include "WorldGenerator.hpp"
-#include "SaveSystem.hpp"
-#include "ChunkSerializer.hpp"
-#include "game/systems/PhysicsSystem.hpp"
-#include "game/systems/JumpSystem.hpp"
-#include "game/systems/ChunkMembershipSystem.hpp"
 
-#include "game/systems/SheepAISystem.hpp"
-#include "game/systems/HealthSystem.hpp"
-#include "game/entities/EntityFactory.hpp"
-#include "game/components/DynamicPositionComponent.hpp"
-#include "game/components/GlobalEntityIdComponent.hpp"
-#include "game/components/InputComponent.hpp"
-#include "game/components/DisconnectedPlayerComponent.hpp"
 #include "common/Types.hpp"
 #include "game/GatewayInfo.hpp"
-#include "common/NetworkProtocol.hpp"
-#include "game/WorldGenerator.hpp"
-#include <entt/entt.hpp>
+#include "game/ChunkRegistry.hpp"
+#include "game/ChunkSerializer.hpp"
+#include "game/entities/EntityFactory.hpp"
+#include <entt/entity/fwd.hpp>
+#include <entt/entity/registry.hpp>
+#include <functional>
 #include <unordered_map>
 #include <set>
-#include <memory>
-#include <functional>
-#include <mutex>
-#include <random>
+#include <vector>
 #include <cstdint>
-#include <thread>
+#include <string>
 #include <atomic>
-#include <chrono>
+#include <mutex>
 #include <memory>
+#include <optional>
 
 namespace voxelmmo {
+
+// Forward declarations
+class Chunk;
+class SaveSystem;
+class WorldGenerator;
+
+enum class EntityType : uint8_t;
+enum class GeneratorType : uint8_t;
 
 /**
  * @brief Authoritative game server.
@@ -60,7 +55,7 @@ public:
      */
     GameEngine(uint32_t cliSeed, GeneratorType cliType, bool seedProvided,
                std::optional<EntityType> testEntityType = std::nullopt,
-               const std::string& gameKey = SaveSystem::DEFAULT_GAME_KEY);
+               const std::string& gameKey = std::string("voxelmmo_default"));
 
     // ── Gateway management ────────────────────────────────────────────────
 
@@ -178,10 +173,10 @@ public:
     void sendSnapshot(GatewayId gwId);
 
     /** @brief Access the world generator for terrain queries. */
-    const WorldGenerator& getWorldGenerator() const { return worldGenerator; }
+    const WorldGenerator& getWorldGenerator() const;
     
     /** @brief Access the world generator (non-const, for tests). */
-    WorldGenerator& getWorldGenerator() { return worldGenerator; }
+    WorldGenerator& getWorldGenerator();
     
     /** @brief Save all active chunks (for shutdown). */
     void saveActiveChunks();
@@ -190,16 +185,16 @@ public:
     void saveGlobalState();
     
     /** @brief Get the SaveSystem (may be nullptr if not initialized). */
-    SaveSystem* getSaveSystem() const { return saveSystem_.get(); }
+    SaveSystem* getSaveSystem() const;
     
     /** @brief Get the base save directory (empty string if not initialized). */
-    std::string getSaveDirectory() const { return saveSystem_ ? saveSystem_->getBaseDir() : ""; }
+    std::string getSaveDirectory() const;
     
     /** @brief Get the seed from SaveSystem (0 if not initialized). */
-    uint32_t getSeed() const { return saveSystem_ ? saveSystem_->getSeed() : 0; }
+    uint32_t getSeed() const;
     
     /** @brief Get the generator type from SaveSystem (NORMAL if not initialized). */
-    GeneratorType getGeneratorType() const { return saveSystem_ ? saveSystem_->getGeneratorType() : GeneratorType::NORMAL; }
+    GeneratorType getGeneratorType() const;
 
     // ── Game loop lifecycle ────────────────────────────────────────────────
 
@@ -245,14 +240,14 @@ public:
     static constexpr int32_t WATCH_RADIUS = 3;
 
 private:
-    entt::registry  registry;
+    entt::registry registry;
 
     ChunkRegistry chunkRegistry;
-    std::unordered_map<GatewayId, GatewayInfo>             gateways;
-    std::unordered_map<PlayerId,  entt::entity>            playerEntities;
+    std::unordered_map<GatewayId, GatewayInfo> gateways;
+    std::unordered_map<PlayerId, entt::entity> playerEntities;
 
-    int32_t  tickCount{0};
-    uint32_t  lastDisconnectCheckTick{0};  ///< Last tick when disconnect system was run
+    int32_t tickCount{0};
+    uint32_t lastDisconnectCheckTick{0};  ///< Last tick when disconnect system was run
 
     OutputCallback outputCallback;
     PlayerOutputCallback playerOutputCallback;
@@ -269,9 +264,6 @@ private:
     /** @brief Monotonically increasing global entity ID counter (starts at 1, 0 reserved). */
     GlobalEntityId nextEntityId_{1};
 
-    /** @brief Acquire a new unique global entity ID. */
-    GlobalEntityId acquireEntityId() { return nextEntityId_++; }
-
     /** @brief Entity factory for deferred entity creation. */
     EntityFactory entityFactory;
 
@@ -281,45 +273,31 @@ private:
     /** @brief Entities marked for deletion that will be destroyed after serialization. */
     std::vector<entt::entity> pendingDeletions_;
     
-    /**
-     * @brief Pending player creation request (enqueued at JOIN, processed in tick).
-     */
+    /** @brief Pending player creation request (enqueued at JOIN, processed in tick). */
     struct PendingPlayerCreation {
         PlayerId playerId;
         EntityType entityType;
     };
-    
-    /** @brief Queue of pending player entity creation requests. */
     std::vector<PendingPlayerCreation> pendingPlayerCreations_;
     
-    /**
-     * @brief Pending voxel deletion request (enqueued on VOXEL_DESTROY message).
-     */
+    /** @brief Pending voxel deletion request (enqueued on VOXEL_DESTROY message). */
     struct PendingVoxelDeletion {
         int32_t vx;
         int32_t vy;
         int32_t vz;
     };
-    
-    /** @brief Queue of pending voxel deletion requests. */
     std::vector<PendingVoxelDeletion> pendingVoxelDeletions_;
     
-    /**
-     * @brief Pending voxel creation request (enqueued on VOXEL_CREATE message).
-     */
+    /** @brief Pending voxel creation request (enqueued on VOXEL_CREATE message). */
     struct PendingVoxelCreation {
         int32_t vx;
         int32_t vy;
         int32_t vz;
         VoxelType voxelType;
     };
-    
-    /** @brief Queue of pending voxel creation requests. */
     std::vector<PendingVoxelCreation> pendingVoxelCreations_;
     
-    /**
-     * @brief Pending bulk voxel deletion request (enqueued on BULK_VOXEL_DESTROY message).
-     */
+    /** @brief Pending bulk voxel deletion request (enqueued on BULK_VOXEL_DESTROY message). */
     struct PendingBulkVoxelDeletion {
         int32_t startX;
         int32_t startY;
@@ -328,13 +306,9 @@ private:
         int32_t endY;
         int32_t endZ;
     };
-    
-    /** @brief Queue of pending bulk voxel deletion requests. */
     std::vector<PendingBulkVoxelDeletion> pendingBulkVoxelDeletions_;
     
-    /**
-     * @brief Pending bulk voxel creation request (enqueued on BULK_VOXEL_CREATE message).
-     */
+    /** @brief Pending bulk voxel creation request (enqueued on BULK_VOXEL_CREATE message). */
     struct PendingBulkVoxelCreation {
         int32_t startX;
         int32_t startY;
@@ -344,12 +318,10 @@ private:
         int32_t endZ;
         VoxelType voxelType;
     };
-    
-    /** @brief Queue of pending bulk voxel creation requests. */
     std::vector<PendingBulkVoxelCreation> pendingBulkVoxelCreations_;
     
     /** @brief Stateless procedural terrain generator for world generation. */
-    WorldGenerator worldGenerator;
+    std::unique_ptr<WorldGenerator> worldGenerator;
     
     /** @brief SaveSystem for loading/saving chunks (must be initialized before run()). */
     std::unique_ptr<SaveSystem> saveSystem_;
@@ -362,71 +334,17 @@ private:
     /** @brief Flag to request shutdown. */
     std::atomic<bool> stopRequested_{false};
 
-    /** @brief Generate a deterministic random seed. */
-    static uint32_t generateRandomSeed();
-
-    /**
-     * @brief Serialise all chunks and broadcast to all gateways.
-     *
-     * All active chunks are serialized into a single concatenated buffer.
-     * The same buffer is broadcast to all connected gateways.
-     * Each chunk gets snapshot (first time) or delta (subsequent) based on
-     * global serialization state tracked by ChunkSerializer.
-     */
+    // Private methods (declared here, defined in cpp)
+    GlobalEntityId acquireEntityId() { return nextEntityId_++; }
     void serializeChunks();
-
-    /**
-     * @brief Destroy TTL-expired entities.
-     * Runs after serialization so DELETE deltas have been sent.
-     * @param tick Current game tick
-     */
     void processPendingDeletions(uint32_t tick);
-
-    /**
-     * @brief Process pending player creation requests.
-     *
-     * Creates player entities directly (without EntityFactory) from the
-     * pendingPlayerCreations_ queue. Called at the start of tick() after
-     * createPendingEntities().
-     */
     void processPendingPlayerCreations();
-
-    /**
-     * @brief Process pending voxel deletion requests.
-     *
-     * Deletes voxels from the world by setting them to AIR.
-     * Called in tick() before serialization so changes are sent to clients.
-     */
     void processPendingVoxelDeletions();
-    
-    /**
-     * @brief Process pending voxel creation requests.
-     *
-     * Creates voxels in the world at the specified positions.
-     * Called in tick() before serialization so changes are sent to clients.
-     */
     void processPendingVoxelCreations();
-    
-    /**
-     * @brief Process pending bulk voxel deletion requests.
-     *
-     * Expands bulk deletions into individual voxel deletions.
-     * Called in tick() before processPendingVoxelDeletions().
-     */
     void processPendingBulkVoxelDeletions();
-    
-    /**
-     * @brief Process pending bulk voxel creation requests.
-     *
-     * Expands bulk creations into individual voxel creations.
-     * Called in tick() before processPendingVoxelCreations().
-     */
     void processPendingBulkVoxelCreations();
-
-    /**
-     * @brief Get the chunk containing the given world position.
-     */
     const Chunk* chunkAt(SubVoxelCoord px, SubVoxelCoord py, SubVoxelCoord pz) noexcept;
+    uint32_t generateRandomSeed();
 };
 
 } // namespace voxelmmo

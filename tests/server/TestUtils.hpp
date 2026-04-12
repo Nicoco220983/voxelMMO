@@ -9,6 +9,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include "game/GameEngine.hpp"
+#include "game/WorldGenerator.hpp"
+#include "game/SaveSystem.hpp"
 #include "game/Chunk.hpp"
 #include "game/ChunkRegistry.hpp"
 #include "game/components/DynamicPositionComponent.hpp"

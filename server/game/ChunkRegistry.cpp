@@ -1,4 +1,5 @@
 #include "game/ChunkRegistry.hpp"
+#include "game/Chunk.hpp"
 #include "game/WorldGenerator.hpp"
 #include "game/SaveSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
@@ -6,6 +7,35 @@
 #include <iostream>
 
 namespace voxelmmo {
+
+ChunkRegistry::ChunkRegistry() = default;
+ChunkRegistry::~ChunkRegistry() = default;
+
+const Chunk* ChunkRegistry::getChunk(ChunkId id) const {
+    auto it = chunks_.find(id);
+    return it != chunks_.end() ? it->second.get() : nullptr;
+}
+
+Chunk* ChunkRegistry::getChunkMutable(ChunkId id) {
+    auto it = chunks_.find(id);
+    return it != chunks_.end() ? it->second.get() : nullptr;
+}
+
+bool ChunkRegistry::hasChunk(ChunkId id) const {
+    return chunks_.find(id) != chunks_.end();
+}
+
+const std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& ChunkRegistry::getAllChunks() const {
+    return chunks_;
+}
+
+std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& ChunkRegistry::getAllChunksMutable() {
+    return chunks_;
+}
+
+void ChunkRegistry::clear() {
+    chunks_.clear();
+}
 
 Chunk* ChunkRegistry::generate(WorldGenerator& generator, ChunkId id, SaveSystem* saveSystem) {
     auto it = chunks_.find(id);

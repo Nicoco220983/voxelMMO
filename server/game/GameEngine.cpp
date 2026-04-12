@@ -1,23 +1,36 @@
 #include "game/GameEngine.hpp"
-#include "game/systems/InputSystem.hpp"
-#include "game/systems/DisconnectedPlayerSystem.hpp"
-#include "game/components/SheepBehaviorComponent.hpp"
-#include "game/components/HealthComponent.hpp"
-#include "game/systems/GoblinAISystem.hpp"
-
-#include "common/NetworkProtocol.hpp"
-#include "common/VoxelTypes.hpp"
-#include "game/components/PlayerComponent.hpp"
-#include "game/components/ChunkMembershipComponent.hpp"
-#include "game/components/GlobalEntityIdComponent.hpp"
-#include "game/components/DisconnectedPlayerComponent.hpp"
+#include "game/WorldGenerator.hpp"
+#include "game/SaveSystem.hpp"
+#include "game/Chunk.hpp"
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
 #include "game/entities/GoblinEntity.hpp"
+#include "game/systems/InputSystem.hpp"
+#include "game/systems/PhysicsSystem.hpp"
+#include "game/systems/JumpSystem.hpp"
+#include "game/systems/ChunkMembershipSystem.hpp"
+#include "game/systems/SheepAISystem.hpp"
+#include "game/systems/GoblinAISystem.hpp"
+#include "game/systems/HealthSystem.hpp"
+#include "game/systems/DisconnectedPlayerSystem.hpp"
+#include "game/components/PlayerComponent.hpp"
+#include "game/components/ChunkMembershipComponent.hpp"
+#include "game/components/DynamicPositionComponent.hpp"
+#include "game/components/GlobalEntityIdComponent.hpp"
+#include "game/components/DisconnectedPlayerComponent.hpp"
+#include "game/components/InputComponent.hpp"
+#include "game/components/HealthComponent.hpp"
+#include "game/components/DirtyComponent.hpp"
+#include "common/NetworkProtocol.hpp"
+#include "common/VoxelTypes.hpp"
+#include "common/EntityType.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
+#include <random>
+#include <chrono>
+#include <thread>
 
 namespace voxelmmo {
 
@@ -36,7 +49,7 @@ GameEngine::GameEngine(uint32_t cliSeed, GeneratorType cliType, bool seedProvide
     
     // Configure WorldGenerator with loaded parameters
     uint32_t effectiveSeed = seedProvided ? saveSystem_->getSeed() : generateRandomSeed();
-    worldGenerator = WorldGenerator(effectiveSeed, saveSystem_->getGeneratorType(), testEntityType);
+    worldGenerator = std::make_unique<WorldGenerator>(effectiveSeed, saveSystem_->getGeneratorType(), testEntityType);
 }
 
 uint32_t GameEngine::generateRandomSeed() {
@@ -66,6 +79,30 @@ void GameEngine::saveGlobalState() {
     }
 }
 
+SaveSystem* GameEngine::getSaveSystem() const {
+    return saveSystem_.get();
+}
+
+std::string GameEngine::getSaveDirectory() const {
+    return saveSystem_ ? saveSystem_->getBaseDir() : "";
+}
+
+uint32_t GameEngine::getSeed() const {
+    return saveSystem_ ? saveSystem_->getSeed() : 0;
+}
+
+GeneratorType GameEngine::getGeneratorType() const {
+    return saveSystem_ ? saveSystem_->getGeneratorType() : GeneratorType::NORMAL;
+}
+
+const WorldGenerator& GameEngine::getWorldGenerator() const {
+    return *worldGenerator;
+}
+
+WorldGenerator& GameEngine::getWorldGenerator() {
+    return *worldGenerator;
+}
+
 // ── Player input ──────────────────────────────────────────────────────────
 
 void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_t size) {
@@ -82,7 +119,6 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
             case InputType::MOVE: {
                 auto it = playerEntities.find(playerId);
                 if (it == playerEntities.end()) return;
-                //if (!registry.valid(it->second)) return;  // Entity may be marked for deletion
                 auto& inp  = registry.get<InputComponent>(it->second);
                 inp.buttons = msg->buttons;
                 inp.yaw     = msg->yaw;
@@ -161,7 +197,6 @@ void GameEngine::teleportPlayer(PlayerId playerId, SubVoxelCoord sx, SubVoxelCoo
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return;
-    //if (!registry.valid(it->second)) return;  // Entity may be marked for deletion
     const auto& dyn = registry.get<DynamicPositionComponent>(it->second);
     DynamicPositionComponent::modify(registry, it->second,
         sx, sy, sz, dyn.vx, dyn.vy, dyn.vz, dyn.grounded, /*dirty=*/true);
@@ -171,7 +206,6 @@ void GameEngine::markPlayerDisconnected(PlayerId playerId) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return;
-    //if (!registry.valid(it->second)) return;  // Entity may be marked for deletion
 
     entt::entity ent = it->second;
 
@@ -189,7 +223,6 @@ bool GameEngine::cancelPlayerDisconnection(PlayerId playerId) {
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     auto it = playerEntities.find(playerId);
     if (it == playerEntities.end()) return false;
-    //if (!registry.valid(it->second)) return false;  // Entity may be marked for deletion
 
     return DisconnectedPlayerSystem::cancelDisconnection(registry, it->second);
 }
@@ -238,10 +271,8 @@ void GameEngine::tick() {
 
     // Create any pending entities at the start of the tick
     createPendingEntities();
-
     // Process pending player creation requests
     processPendingPlayerCreations();
-
     // Process pending voxel deletions and creations
     // Process bulk operations first (they expand into individual operations)
     processPendingBulkVoxelDeletions();
@@ -268,7 +299,8 @@ void GameEngine::tick() {
     // Unified chunk membership update: rebuilds chunk entity sets, handles movement,
     // updates watchingPlayers, and activates chunks
     auto membershipResult = ChunkMembershipSystem::update(
-        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, worldGenerator, entityFactory, tick, saveSystem_.get());
+        gateways, playerEntities, chunkRegistry, registry, WATCH_RADIUS, ACTIVATION_RADIUS, 
+        *worldGenerator, entityFactory, tick, saveSystem_.get());
 
     // Unload unwatched chunks (save first, then unload from memory)
     ChunkMembershipSystem::unloadUnwatchedChunks(chunkRegistry, registry, saveSystem_.get());
@@ -277,7 +309,7 @@ void GameEngine::tick() {
     // Also sends SELF_ENTITY messages to newly created players
     // Also clear dirty flags
     serializeChunks();
-
+    
     // Destroy TTL-expired entities (after their DELETE delta has been serialized)
     processPendingDeletions(tick);
 }
@@ -290,15 +322,13 @@ void GameEngine::processPendingDeletions(uint32_t tick) {
     std::vector<entt::entity> toDestroy;
     
     {
-        // Find entities marked for deletion via DirtyComponent
         auto view = registry.view<DirtyComponent>();
         for (auto ent : view) {
             const auto& dirty = view.get<DirtyComponent>(ent);
             if (dirty.deltaType == DeltaType::DELETE_ENTITY) {
-                // Check TTL if entity has HealthComponent
                 if (auto* health = registry.try_get<HealthComponent>(ent)) {
                     if (!health->shouldDelete(tick)) {
-                        continue; // TTL not expired yet
+                        continue;
                     }
                 }
                 toDestroy.push_back(ent);
@@ -330,52 +360,38 @@ void GameEngine::processPendingDeletions(uint32_t tick) {
     registry.destroy(toDestroy.begin(), toDestroy.end());
 }
 
-// ── Dirty Flags Clearing ───────────────────────────────────────────────────
-
 void GameEngine::processPendingPlayerCreations() {
     for (const auto& req : pendingPlayerCreations_) {
-        // Check if this PlayerId already has an entity (reconnection case).
-        // PlayerId is derived deterministically from session token, so the same
-        // session token always maps to the same PlayerId.
         auto existingIt = playerEntities.find(req.playerId);
         
         if (existingIt != playerEntities.end()) {
-            // Reconnection: recover existing entity
             entt::entity ent = existingIt->second;
             
             if (registry.valid(ent)) {
                 if (auto* health = registry.try_get<HealthComponent>(ent)) {
                     if (health->deleteAtTick > 0) {
-                        // Respawn after death - clear deleteAtTick and let code below create new entity
                         health->deleteAtTick = 0;
                         registry.remove<PlayerComponent>(ent);
-                        // Fall through to create new entity
                     } else {
-                        // Reconnection: recover player entity
-
-                        // Remove disconnected component if present
                         if (registry.all_of<DisconnectedPlayerComponent>(ent)) {
                             registry.remove<DisconnectedPlayerComponent>(ent);
                         }
 
-                        // Mark entity as newly created for serialization (so client gets full state)
                         auto& dirty = registry.get<DirtyComponent>(ent);
                         dirty.markCreated();
                         
-                        // Re-add player entity to its chunk (to sync chunk.presentPlayers)
                         auto& pos = registry.get<DynamicPositionComponent>(ent);
                         const ChunkId chunkId = ChunkId::fromSubVoxelPos(pos.x, pos.y, pos.z);
                         chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
                         
                         std::cout << "[GameEngine] Client " << req.playerId << " connected (reconnect)\n";
-                        continue;  // Skip to next request
+                        continue;
                     }
                 }
             }
         }
         
-        // Create new entity (either new player or respawn after death)
-        const auto* spawnPos = worldGenerator.getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS, saveSystem_.get());
+        const auto* spawnPos = worldGenerator->getPlayerSpawnPos(chunkRegistry, entityFactory, ACTIVATION_RADIUS, saveSystem_.get());
         const GlobalEntityId globalId = acquireEntityId();
         
         entt::entity ent;
@@ -391,7 +407,6 @@ void GameEngine::processPendingPlayerCreations() {
         
         playerEntities[req.playerId] = ent;
         
-        // Add player entity to its chunk
         const ChunkId chunkId = ChunkId::fromSubVoxelPos(spawnPos[0], spawnPos[1], spawnPos[2]);
         chunkRegistry.addPlayerEntity(chunkId, ent, req.playerId);
         
@@ -402,13 +417,11 @@ void GameEngine::processPendingPlayerCreations() {
 
 void GameEngine::processPendingVoxelDeletions() {
     for (const auto& del : pendingVoxelDeletions_) {
-        // Find the chunk containing this voxel
         const ChunkId chunkId = ChunkId::fromVoxelPos(del.vx, del.vy, del.vz);
         Chunk* chunk = chunkRegistry.getChunkMutable(chunkId);
         
-        if (!chunk) continue;  // Chunk not loaded, skip
+        if (!chunk) continue;
         
-        // Convert world voxel coordinates to local chunk coordinates
         const auto cx = (del.vx >> CHUNK_SHIFT_X);
         const auto cy = (del.vy >> CHUNK_SHIFT_Y);
         const auto cz = (del.vz >> CHUNK_SHIFT_Z);
@@ -416,7 +429,6 @@ void GameEngine::processPendingVoxelDeletions() {
         const uint32_t localY = static_cast<uint32_t>(del.vy - (cy << CHUNK_SHIFT_Y));
         const uint32_t localZ = static_cast<uint32_t>(del.vz - (cz << CHUNK_SHIFT_Z));
         
-        // Set voxel to AIR (this also records the delta)
         chunk->world.setVoxel(localX, localY, localZ, VoxelTypes::AIR);
     }
     pendingVoxelDeletions_.clear();
@@ -424,13 +436,11 @@ void GameEngine::processPendingVoxelDeletions() {
 
 void GameEngine::processPendingVoxelCreations() {
     for (const auto& create : pendingVoxelCreations_) {
-        // Find the chunk containing this voxel
         const ChunkId chunkId = ChunkId::fromVoxelPos(create.vx, create.vy, create.vz);
         Chunk* chunk = chunkRegistry.getChunkMutable(chunkId);
         
-        if (!chunk) continue;  // Chunk not loaded, skip
+        if (!chunk) continue;
         
-        // Convert world voxel coordinates to local chunk coordinates
         const auto cx = (create.vx >> CHUNK_SHIFT_X);
         const auto cy = (create.vy >> CHUNK_SHIFT_Y);
         const auto cz = (create.vz >> CHUNK_SHIFT_Z);
@@ -438,7 +448,6 @@ void GameEngine::processPendingVoxelCreations() {
         const uint32_t localY = static_cast<uint32_t>(create.vy - (cy << CHUNK_SHIFT_Y));
         const uint32_t localZ = static_cast<uint32_t>(create.vz - (cz << CHUNK_SHIFT_Z));
         
-        // Set voxel to the requested type (this also records the delta)
         chunk->world.setVoxel(localX, localY, localZ, create.voxelType);
     }
     pendingVoxelCreations_.clear();
@@ -446,7 +455,6 @@ void GameEngine::processPendingVoxelCreations() {
 
 void GameEngine::processPendingBulkVoxelDeletions() {
     for (const auto& bulk : pendingBulkVoxelDeletions_) {
-        // Calculate bounds (inclusive)
         const int32_t minX = std::min(bulk.startX, bulk.endX);
         const int32_t maxX = std::max(bulk.startX, bulk.endX);
         const int32_t minY = std::min(bulk.startY, bulk.endY);
@@ -454,7 +462,6 @@ void GameEngine::processPendingBulkVoxelDeletions() {
         const int32_t minZ = std::min(bulk.startZ, bulk.endZ);
         const int32_t maxZ = std::max(bulk.startZ, bulk.endZ);
         
-        // Expand bulk deletion into individual deletions
         for (int32_t x = minX; x <= maxX; ++x) {
             for (int32_t y = minY; y <= maxY; ++y) {
                 for (int32_t z = minZ; z <= maxZ; ++z) {
@@ -468,7 +475,6 @@ void GameEngine::processPendingBulkVoxelDeletions() {
 
 void GameEngine::processPendingBulkVoxelCreations() {
     for (const auto& bulk : pendingBulkVoxelCreations_) {
-        // Calculate bounds (inclusive)
         const int32_t minX = std::min(bulk.startX, bulk.endX);
         const int32_t maxX = std::max(bulk.startX, bulk.endX);
         const int32_t minY = std::min(bulk.startY, bulk.endY);
@@ -476,7 +482,6 @@ void GameEngine::processPendingBulkVoxelCreations() {
         const int32_t minZ = std::min(bulk.startZ, bulk.endZ);
         const int32_t maxZ = std::max(bulk.startZ, bulk.endZ);
         
-        // Expand bulk creation into individual creations
         for (int32_t x = minX; x <= maxX; ++x) {
             for (int32_t y = minY; y <= maxY; ++y) {
                 for (int32_t z = minZ; z <= maxZ; ++z) {
@@ -486,6 +491,10 @@ void GameEngine::processPendingBulkVoxelCreations() {
         }
     }
     pendingBulkVoxelCreations_.clear();
+}
+
+void GameEngine::sendSnapshot(GatewayId gwId) {
+    (void)gwId;
 }
 
 // ── Game loop lifecycle ────────────────────────────────────────────────────
@@ -515,16 +524,9 @@ void GameEngine::run() {
         std::this_thread::sleep_until(nextTick);
     }
     
-    // Shutdown sequence
     std::cout << "[GameEngine] Stopping game loop...\n";
-    
-    // Save active chunks (unwatched chunks already saved when unloaded)
     std::cout << "[GameEngine] Saving active chunks...\n";
     saveSystem_->saveActiveChunks(chunkRegistry);
-    
-    // Save global state
-    // Note: We don't have direct access to globalState here, it's in main.cpp
-    // The caller should save global state after run() returns
     
     std::cout << "[GameEngine] Game loop stopped\n";
     running_ = false;

@@ -22,6 +22,7 @@ add_executable(voxelmmo
     server/game/EntitySerializer.cpp
     server/game/EntityTypeSerializers.cpp
     server/gateway/GatewayEngine.cpp
+    server/gateway/ChunkState.cpp
     server/game/entities/EntityFactory.cpp
     server/game/entities/PlayerEntity.cpp
     server/game/entities/GhostPlayerEntity.cpp

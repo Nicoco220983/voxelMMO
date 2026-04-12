@@ -2,6 +2,7 @@
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
+#include "game/ChunkRegistry.hpp"
 
 namespace voxelmmo {
 

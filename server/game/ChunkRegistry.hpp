@@ -1,15 +1,13 @@
 #pragma once
-#include "Chunk.hpp"
 #include "common/Types.hpp"
-#include "game/components/PlayerComponent.hpp"
-#include <entt/entt.hpp>
+#include <entt/entity/fwd.hpp>
 #include <unordered_map>
 #include <memory>
 #include <functional>
 
 namespace voxelmmo {
 
-// Forward declarations
+class Chunk;
 class WorldGenerator;
 class EntityFactory;
 class SaveSystem;
@@ -27,8 +25,8 @@ class SaveSystem;
  */
 class ChunkRegistry {
 public:
-    ChunkRegistry() = default;
-    ~ChunkRegistry() = default;
+    ChunkRegistry();
+    ~ChunkRegistry();
 
     // Non-copyable, non-movable (contains registry references)
     ChunkRegistry(const ChunkRegistry&) = delete;
@@ -40,26 +38,18 @@ public:
      * @brief Get a chunk by ID (read-only).
      * @return Pointer to the chunk, or nullptr if not loaded.
      */
-    const Chunk* getChunk(ChunkId id) const {
-        auto it = chunks_.find(id);
-        return it != chunks_.end() ? it->second.get() : nullptr;
-    }
+    const Chunk* getChunk(ChunkId id) const;
 
     /**
      * @brief Get a chunk by ID (non-const access for internal use).
      * @return Pointer to the chunk, or nullptr if not loaded.
      */
-    Chunk* getChunkMutable(ChunkId id) {
-        auto it = chunks_.find(id);
-        return it != chunks_.end() ? it->second.get() : nullptr;
-    }
+    Chunk* getChunkMutable(ChunkId id);
 
     /**
      * @brief Check if a chunk exists (has been generated).
      */
-    bool hasChunk(ChunkId id) const {
-        return chunks_.find(id) != chunks_.end();
-    }
+    bool hasChunk(ChunkId id) const;
 
     /**
      * @brief Generate a chunk's voxel data.
@@ -132,23 +122,17 @@ public:
      * @brief Get all loaded chunks (for iteration).
      * Used by systems that need to process all chunks (serialization, physics).
      */
-    const std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& getAllChunks() const {
-        return chunks_;
-    }
+    const std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& getAllChunks() const;
 
     /**
      * @brief Get all loaded chunks (non-const, for internal use).
      */
-    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& getAllChunksMutable() {
-        return chunks_;
-    }
+    std::unordered_map<ChunkId, std::unique_ptr<Chunk>>& getAllChunksMutable();
 
     /**
      * @brief Clear all chunks and reset state.
      */
-    void clear() {
-        chunks_.clear();
-    }
+    void clear();
 
     /**
      * @brief Check if a chunk is active (entities spawned).
