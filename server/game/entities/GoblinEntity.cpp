@@ -1,8 +1,15 @@
 #include "game/entities/GoblinEntity.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/HealthComponent.hpp"
+#include "common/EntityCatalog.hpp"
 
 namespace voxelmmo::GoblinEntity {
+
+// Auto-registration in EntityCatalog
+namespace {
+    [[maybe_unused]] const EntityRegistrar<GoblinEntityTag>& _goblinReg = 
+        EntityRegistrar<GoblinEntityTag>{};
+}
 
 entt::entity spawn(entt::registry& reg,
                    GlobalEntityId globalId,

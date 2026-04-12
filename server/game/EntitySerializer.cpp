@@ -1,5 +1,5 @@
 #include "game/EntitySerializer.hpp"
-#include "game/EntityTypeSerializers.hpp"
+#include "common/EntityCatalog.hpp"
 #include "game/components/DirtyComponent.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
 #include "game/components/EntityTypeComponent.hpp"
@@ -19,7 +19,10 @@ size_t EntitySerializer::serializeCreate(
     
     // Get entity type and look up the appropriate serializer
     const auto etype = reg.get<EntityTypeComponent>(ent).type;
-    const auto& serializer = getEntitySerializer(etype);
+    const auto* info = EntityCatalog::instance().findById(static_cast<uint8_t>(etype));
+    if (!info || !info->serializeCreate) {
+        return 0;  // Unknown type or no serializer
+    }
     
     // Write delta type prefix for delta contexts (CHUNK_TICK_DELTA CREATE_ENTITY)
     if (forDelta) {
@@ -27,7 +30,7 @@ size_t EntitySerializer::serializeCreate(
     }
     
     // Serialize entity state (no delta type prefix - that's handled above)
-    serializer.serializeCreate(reg, ent, w);
+    info->serializeCreate(reg, ent, w);
     
     return w.offset() - startOffset;
 }
@@ -67,16 +70,21 @@ size_t EntitySerializer::serializeDelta(
     
     // For CREATE_ENTITY and UPDATE_ENTITY, use entity-type-specific serializer
     const auto etype = reg.get<EntityTypeComponent>(ent).type;
-    const auto& serializer = getEntitySerializer(etype);
+    const auto* info = EntityCatalog::instance().findById(static_cast<uint8_t>(etype));
+    if (!info) {
+        return 0;  // Unknown type
+    }
     
     if (dirty.deltaType == DeltaType::CREATE_ENTITY) {
         // Newly created entity: write delta type + full state
         w.write(static_cast<uint8_t>(DeltaType::CREATE_ENTITY));
-        serializer.serializeCreate(reg, ent, w);
-    } else if (dirty.dirtyFlags != 0) {
+        if (info->serializeCreate) {
+            info->serializeCreate(reg, ent, w);
+        }
+    } else if (dirty.dirtyFlags != 0 && info->serializeUpdate) {
         // Updated entity: write delta type + delta state
         w.write(static_cast<uint8_t>(DeltaType::UPDATE_ENTITY));
-        serializer.serializeUpdate(reg, ent, dirty, w);
+        info->serializeUpdate(reg, ent, dirty, w);
     }
     
     return w.offset() - startOffset;

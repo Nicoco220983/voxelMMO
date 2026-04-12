@@ -14,7 +14,14 @@
 namespace voxelmmo {
 struct EntitySpawnRequest;
 struct DirtyComponent;
-}
+
+// Forward declare EntityTraits template from EntityCatalog.hpp
+template<typename T> struct EntityTraits;
+
+// Tag type for EntityTraits specialization
+struct GoblinEntityTag {};
+
+} // namespace voxelmmo
 
 namespace voxelmmo::GoblinEntity {
 
@@ -97,3 +104,17 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
 size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyComponent& dirty, SafeBufWriter& w);
 
 } // namespace voxelmmo::GoblinEntity
+
+namespace voxelmmo {
+
+// EntityTraits specialization for Goblin (must be after function declarations)
+template<>
+struct EntityTraits<GoblinEntityTag> {
+    static constexpr uint8_t typeId = static_cast<uint8_t>(EntityType::GOBLIN);
+    static constexpr std::string_view name = "GOBLIN";
+    static constexpr auto serializeCreate = GoblinEntity::serializeCreate;
+    static constexpr auto serializeUpdate = GoblinEntity::serializeUpdate;
+    static constexpr auto spawnImpl = GoblinEntity::spawnImpl;
+};
+
+} // namespace voxelmmo

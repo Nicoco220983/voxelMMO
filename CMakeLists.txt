@@ -13,6 +13,7 @@ find_package(unofficial-uwebsockets    CONFIG REQUIRED)
 # ── Single server executable (game + gateway in one process by default) ──────
 add_executable(voxelmmo
     server/main.cpp
+    server/common/EntityCatalog.cpp
     server/game/GameEngine.cpp
     server/game/ChunkSerializer.cpp
     server/game/WorldChunk.cpp
@@ -20,7 +21,6 @@ add_executable(voxelmmo
     server/game/ChunkRegistry.cpp
     server/game/SaveSystem.cpp
     server/game/EntitySerializer.cpp
-    server/game/EntityTypeSerializers.cpp
     server/gateway/GatewayEngine.cpp
     server/gateway/ChunkState.cpp
     server/game/entities/EntityFactory.cpp
@@ -71,6 +71,7 @@ add_executable(voxelmmo_tests
     tests/server/test_save_system.cpp
     tests/server/test_save_integration.cpp
     # Server implementation files
+    server/common/EntityCatalog.cpp
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/ChunkSerializer.cpp
@@ -78,7 +79,6 @@ add_executable(voxelmmo_tests
     server/game/SaveSystem.cpp
     server/game/GameEngine.cpp
     server/game/EntitySerializer.cpp
-    server/game/EntityTypeSerializers.cpp
     server/game/entities/EntityFactory.cpp
     server/game/entities/PlayerEntity.cpp
     server/game/entities/GhostPlayerEntity.cpp

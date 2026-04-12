@@ -3,9 +3,16 @@
 #include "game/components/JumpComponent.hpp"
 #include "game/components/WalkComponent.hpp"
 #include "game/components/HealthComponent.hpp"
+#include "common/EntityCatalog.hpp"
 #include <cmath>
 
 namespace voxelmmo::PlayerEntity {
+
+// Auto-registration in EntityCatalog
+namespace {
+    [[maybe_unused]] const EntityRegistrar<PlayerEntityTag>& _playerReg = 
+        EntityRegistrar<PlayerEntityTag>{};
+}
 
 void computeVelocity(const InputComponent& inp, const DynamicPositionComponent& /*dyn*/, 
                      int32_t& nvx, int32_t& nvy, int32_t& nvz,

@@ -16,7 +16,14 @@
 namespace voxelmmo {
 struct EntitySpawnRequest;
 struct DirtyComponent;
-}
+
+// Forward declare EntityTraits template from EntityCatalog.hpp
+template<typename T> struct EntityTraits;
+
+// Tag type for EntityTraits specialization
+struct PlayerEntityTag {};
+
+} // namespace voxelmmo
 
 namespace voxelmmo::PlayerEntity {
 
@@ -90,3 +97,17 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
 size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyComponent& dirty, SafeBufWriter& w);
 
 } // namespace voxelmmo::PlayerEntity
+
+namespace voxelmmo {
+
+// EntityTraits specialization for Player (must be after function declarations)
+template<>
+struct EntityTraits<PlayerEntityTag> {
+    static constexpr uint8_t typeId = static_cast<uint8_t>(EntityType::PLAYER);
+    static constexpr std::string_view name = "PLAYER";
+    static constexpr auto serializeCreate = PlayerEntity::serializeCreate;
+    static constexpr auto serializeUpdate = PlayerEntity::serializeUpdate;
+    static constexpr auto spawnImpl = PlayerEntity::spawnImpl;
+};
+
+} // namespace voxelmmo

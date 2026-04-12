@@ -1,7 +1,14 @@
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/EntityFactory.hpp"
+#include "common/EntityCatalog.hpp"
 
 namespace voxelmmo::GhostPlayerEntity {
+
+// Auto-registration in EntityCatalog
+namespace {
+    [[maybe_unused]] const EntityRegistrar<GhostPlayerEntityTag>& _ghostReg = 
+        EntityRegistrar<GhostPlayerEntityTag>{};
+}
 
 entt::entity spawn(entt::registry& reg,
                    GlobalEntityId globalId,

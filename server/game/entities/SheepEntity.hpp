@@ -14,7 +14,14 @@
 namespace voxelmmo {
 struct EntitySpawnRequest;
 struct DirtyComponent;
-}
+
+// Forward declare EntityTraits template from EntityCatalog.hpp
+template<typename T> struct EntityTraits;
+
+// Tag type for EntityTraits specialization
+struct SheepEntityTag {};
+
+} // namespace voxelmmo
 
 namespace voxelmmo::SheepEntity {
 
@@ -85,3 +92,17 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w);
 size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyComponent& dirty, SafeBufWriter& w);
 
 } // namespace voxelmmo::SheepEntity
+
+namespace voxelmmo {
+
+// EntityTraits specialization for Sheep (must be after function declarations)
+template<>
+struct EntityTraits<SheepEntityTag> {
+    static constexpr uint8_t typeId = static_cast<uint8_t>(EntityType::SHEEP);
+    static constexpr std::string_view name = "SHEEP";
+    static constexpr auto serializeCreate = SheepEntity::serializeCreate;
+    static constexpr auto serializeUpdate = SheepEntity::serializeUpdate;
+    static constexpr auto spawnImpl = SheepEntity::spawnImpl;
+};
+
+} // namespace voxelmmo

@@ -1,8 +1,5 @@
 #pragma once
 #include <cstdint>
-#include <string_view>
-#include <string>
-#include <unordered_map>
 
 namespace voxelmmo {
 
@@ -18,53 +15,5 @@ enum class EntityType : uint8_t {
     SHEEP        = 2,  ///< Passive mob: wanders randomly, blocked by voxels
     GOBLIN       = 3,  ///< Hostile mob: wanders, chases and attacks players
 };
-
-/** @brief Maps EntityType to string name (e.g., EntityType::SHEEP → "SHEEP"). */
-inline const std::unordered_map<EntityType, std::string_view> ENTITY_TYPE_NAMES = {
-    {EntityType::PLAYER,       "PLAYER"},
-    {EntityType::GHOST_PLAYER, "GHOST_PLAYER"},
-    {EntityType::SHEEP,        "SHEEP"},
-    {EntityType::GOBLIN,       "GOBLIN"},
-};
-
-/** @brief Maps lowercase string to EntityType (case-insensitive lookup). */
-inline const std::unordered_map<std::string_view, EntityType> ENTITY_TYPE_BY_NAME = {
-    {"player",       EntityType::PLAYER},
-    {"ghost_player", EntityType::GHOST_PLAYER},
-    {"sheep",        EntityType::SHEEP},
-    {"goblin",       EntityType::GOBLIN},
-};
-
-/**
- * @brief Convert EntityType to human-readable string name.
- * @param type The entity type to convert.
- * @return String view containing the type name (e.g., "PLAYER", "SHEEP").
- *         Returns "UNKNOWN" for unrecognized types.
- */
-inline std::string_view entityTypeToString(EntityType type) {
-    auto it = ENTITY_TYPE_NAMES.find(type);
-    return it != ENTITY_TYPE_NAMES.end() ? it->second : "UNKNOWN";
-}
-
-/**
- * @brief Parse entity type from string name (case-insensitive).
- * @param str The string to parse (e.g., "sheep", "PLAYER").
- * @param outType Output parameter receiving the parsed type.
- * @return true if parsing succeeded, false if string is unrecognized.
- */
-inline bool stringToEntityType(std::string_view str, EntityType& outType) {
-    // Convert to lowercase for lookup
-    std::string lower;
-    lower.reserve(str.size());
-    for (char c : str) {
-        lower.push_back(c >= 'A' && c <= 'Z' ? c + 32 : c);
-    }
-    auto it = ENTITY_TYPE_BY_NAME.find(lower);
-    if (it != ENTITY_TYPE_BY_NAME.end()) {
-        outType = it->second;
-        return true;
-    }
-    return false;
-}
 
 } // namespace voxelmmo

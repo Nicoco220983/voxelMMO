@@ -1,8 +1,15 @@
 #include "game/entities/SheepEntity.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/HealthComponent.hpp"
+#include "common/EntityCatalog.hpp"
 
 namespace voxelmmo::SheepEntity {
+
+// Auto-registration in EntityCatalog
+namespace {
+    [[maybe_unused]] const EntityRegistrar<SheepEntityTag>& _sheepReg = 
+        EntityRegistrar<SheepEntityTag>{};
+}
 
 entt::entity spawn(entt::registry& reg,
                    GlobalEntityId globalId,

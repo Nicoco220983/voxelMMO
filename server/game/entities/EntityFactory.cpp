@@ -1,8 +1,6 @@
 #include "game/entities/EntityFactory.hpp"
-#include "game/entities/PlayerEntity.hpp"
-#include "game/entities/GhostPlayerEntity.hpp"
-#include "game/entities/SheepEntity.hpp"
 #include "game/ChunkRegistry.hpp"
+#include "common/EntityCatalog.hpp"
 
 namespace voxelmmo {
 
@@ -53,9 +51,13 @@ void EntityFactory::createEntities(
 std::unique_ptr<EntityFactory> createDefaultEntityFactory() {
     auto factory = std::make_unique<EntityFactory>();
     
-    factory->registerSpawnImpl(EntityType::GHOST_PLAYER, GhostPlayerEntity::spawnImpl);
-    factory->registerSpawnImpl(EntityType::PLAYER, PlayerEntity::spawnImpl);
-    factory->registerSpawnImpl(EntityType::SHEEP, SheepEntity::spawnImpl);
+    // Register all entity types from EntityCatalog
+    const auto& catalog = EntityCatalog::instance();
+    for (const auto& info : catalog.allTypes()) {
+        if (info.spawnImpl) {
+            factory->registerSpawnImpl(static_cast<EntityType>(info.typeId), info.spawnImpl);
+        }
+    }
     
     return factory;
 }

@@ -3,6 +3,7 @@
 #include "game/SaveSystem.hpp"
 #include "game/WorldGenerator.hpp"
 #include "common/EntityType.hpp"
+#include "common/EntityCatalog.hpp"
 #include <iostream>
 #include <thread>
 #include <atomic>
@@ -91,13 +92,13 @@ int main(int argc, char* argv[]) {
         }
         else if (std::strcmp(arg, "--test-entity-type") == 0 && i + 1 < argc) {
             const char* entityStr = argv[++i];
-            voxelmmo::EntityType type;
-            if (!voxelmmo::stringToEntityType(entityStr, type)) {
+            auto typeOpt = voxelmmo::EntityCatalog::instance().stringToType(entityStr);
+            if (!typeOpt) {
                 std::cerr << "Unknown test entity type: " << entityStr << "\n";
                 printUsage(argv[0]);
                 return 1;
             }
-            testEntityType = type;
+            testEntityType = static_cast<voxelmmo::EntityType>(*typeOpt);
         }
         else if (std::strcmp(arg, "--game-key") == 0 && i + 1 < argc) {
             gameKey = argv[++i];
@@ -150,7 +151,7 @@ int main(int argc, char* argv[]) {
               << ", seed: " << game.getSeed();
     if (game.getGeneratorType() == voxelmmo::GeneratorType::TEST) {
         auto tet = game.getWorldGenerator().getTestEntityType();
-        std::cout << ", test entity: " << (tet ? voxelmmo::entityTypeToString(*tet) : "none");
+        std::cout << ", test entity: " << (tet ? voxelmmo::EntityCatalog::instance().typeToString(static_cast<uint8_t>(*tet)) : "none");
     }
     std::cout << "\n";
     std::cout << "[main] Save directory: " << game.getSaveDirectory() << "\n";
