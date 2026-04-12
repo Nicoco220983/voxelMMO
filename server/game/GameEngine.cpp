@@ -3,6 +3,7 @@
 #include "game/systems/DisconnectedPlayerSystem.hpp"
 #include "game/components/SheepBehaviorComponent.hpp"
 #include "game/components/HealthComponent.hpp"
+#include "game/systems/GoblinAISystem.hpp"
 
 #include "common/NetworkProtocol.hpp"
 #include "common/VoxelTypes.hpp"
@@ -13,6 +14,7 @@
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
+#include "game/entities/GoblinEntity.hpp"
 #include <algorithm>
 #include <cmath>
 #include <iostream>
@@ -26,6 +28,7 @@ GameEngine::GameEngine(uint32_t cliSeed, GeneratorType cliType, bool seedProvide
     entityFactory.registerSpawnImpl(EntityType::GHOST_PLAYER, GhostPlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::PLAYER, PlayerEntity::spawnImpl);
     entityFactory.registerSpawnImpl(EntityType::SHEEP, SheepEntity::spawnImpl);
+    entityFactory.registerSpawnImpl(EntityType::GOBLIN, GoblinEntity::spawnImpl);
     
     // Initialize SaveSystem and load/create global state
     saveSystem_ = std::make_unique<SaveSystem>(gameKey);
@@ -249,6 +252,7 @@ void GameEngine::tick() {
 
     InputSystem::apply(registry);
     SheepAISystem::apply(registry, tick);
+    GoblinAISystem::apply(registry, tick);
     PhysicsSystem::apply(registry, chunkRegistry, static_cast<uint32_t>(tickCount));
     JumpSystem::apply(registry, static_cast<uint32_t>(tickCount), PlayerEntity::PLAYER_JUMP_VY);
 

@@ -1,6 +1,6 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
-import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, SHEEP_BEHAVIOR_BIT, HEALTH_BIT } from '../types.js'
+import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, AI_BEHAVIOR_BIT, HEALTH_BIT } from '../types.js'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { SheepBehaviorComponent } from '../components/SheepBehaviorComponent.js'
 import { HealthComponent } from '../components/HealthComponent.js'
@@ -231,7 +231,7 @@ export class SheepEntity extends BaseEntity {
    */
   static deserializeComponents(self, reader, componentMask, messageTick) {
     if (componentMask & POSITION_BIT) DynamicPositionComponent.deserialize(self?.motion, reader, messageTick)
-    if (componentMask & SHEEP_BEHAVIOR_BIT) SheepBehaviorComponent.deserialize(self?.behavior, reader, messageTick)
+    if (componentMask & AI_BEHAVIOR_BIT) SheepBehaviorComponent.deserialize(self?.behavior, reader, messageTick)
     if (componentMask & HEALTH_BIT) HealthComponent.deserialize(self?.health, reader, messageTick)
   }
 }

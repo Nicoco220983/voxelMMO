@@ -2,6 +2,7 @@
 #include "game/entities/PlayerEntity.hpp"
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/SheepEntity.hpp"
+#include "game/entities/GoblinEntity.hpp"
 
 namespace voxelmmo {
 
@@ -27,6 +28,11 @@ const EntitySerializerTable ENTITY_SERIALIZER_TABLE[] = {
     {
         &SheepEntity::serializeCreate,
         &SheepEntity::serializeUpdate
+    },
+    // EntityType::GOBLIN = 3
+    {
+        &GoblinEntity::serializeCreate,
+        &GoblinEntity::serializeUpdate
     }
 };
 

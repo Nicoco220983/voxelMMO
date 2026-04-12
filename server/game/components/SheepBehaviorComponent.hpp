@@ -6,8 +6,10 @@
 
 namespace voxelmmo {
 
-/** @brief Bit for DirtyComponent to track sheep behavior changes. */
-inline constexpr uint8_t SHEEP_BEHAVIOR_BIT = 1 << 1;
+/** @brief Bit for DirtyComponent to track AI behavior changes (shared by sheep, goblin, etc.). */
+inline constexpr uint8_t AI_BEHAVIOR_BIT = 1 << 1;
+// Deprecated alias for backward compatibility
+inline constexpr uint8_t SHEEP_BEHAVIOR_BIT = AI_BEHAVIOR_BIT;
 
 /**
  * @brief Sheep AI state component.
@@ -55,7 +57,7 @@ struct SheepBehaviorComponent {
         c.targetX = tx;
         c.targetZ = tz;
         c.yaw = newYaw;
-        if (dirty) reg.get<DirtyComponent>(ent).mark(SHEEP_BEHAVIOR_BIT);
+        if (dirty) reg.get<DirtyComponent>(ent).mark(AI_BEHAVIOR_BIT);
     }
 };
 

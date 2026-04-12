@@ -4,20 +4,20 @@ import { BaseComponent } from './BaseComponent.js'
 /** @typedef {import('../utils.js').BufReader} BufReader */
 
 /**
- * @class SheepBehaviorComponent
+ * @class GoblinBehaviorComponent
  * @extends BaseComponent
- * @description Client-side mirror of server sheep behavior state.
+ * @description Client-side mirror of server goblin behavior state.
  *
- * States: 0 = IDLE, 1 = WALKING
- * Note: Goblin uses same dirty bit (AI_BEHAVIOR_BIT) but different component.
+ * States: 0 = IDLE, 1 = WALKING, 2 = CHASE, 3 = ATTACK
+ * Note: Uses same dirty bit (AI_BEHAVIOR_BIT) as SheepBehaviorComponent on server.
  */
-export class SheepBehaviorComponent extends BaseComponent {
+export class GoblinBehaviorComponent extends BaseComponent {
   /** @type {Readonly<{state: number}>} Default values for CREATE deserialization */
   static DEFAULT = Object.freeze({
     state: 0  // IDLE
   })
 
-  /** @type {number} 0 = IDLE, 1 = WALKING */
+  /** @type {number} 0 = IDLE, 1 = WALKING, 2 = CHASE, 3 = ATTACK */
   state = 0
 
   /**
@@ -25,11 +25,11 @@ export class SheepBehaviorComponent extends BaseComponent {
    * Called during CREATE_ENTITY deserialization before selective component reading.
    */
   resetToDefaults() {
-    this.state = SheepBehaviorComponent.DEFAULT.state
+    this.state = GoblinBehaviorComponent.DEFAULT.state
   }
 
   /**
-   * @param {SheepBehaviorComponent?} self
+   * @param {GoblinBehaviorComponent?} self
    * @param {BufReader} reader
    * @param {number} messageTick Server tick from the chunk message header.
    */
@@ -37,13 +37,13 @@ export class SheepBehaviorComponent extends BaseComponent {
     const state = reader.readUint8()
     if(self) self.state = state
     if(!self) {
-      console.debug('[SheepBehaviorComponent] discarded')
+      console.debug('[GoblinBehaviorComponent] discarded')
       return
     }
 
     self.markUpdated(messageTick)
 
-    console.debug('[SheepBehaviorComponent] deserialized:', {
+    console.debug('[GoblinBehaviorComponent] deserialized:', {
       state: self.state,
     })
   }

@@ -1,6 +1,7 @@
 // @ts-check
 import { BaseEntity } from './entities/BaseEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
+import { GoblinEntity } from './entities/GoblinEntity.js'
 import { PlayerEntity } from './entities/PlayerEntity.js'
 import { EntityType } from './types.js'
 
@@ -70,6 +71,8 @@ export class EntityRegistry {
     let entity = null
     if (entityType === EntityType.SHEEP) {
       entity = new SheepEntity(entityId, this.scene)
+    } else if (entityType === EntityType.GOBLIN) {
+      entity = new GoblinEntity(entityId, this.scene)
     } else if (entityType === EntityType.PLAYER || entityType === EntityType.GHOST_PLAYER) {
       const isSelf = entityId === this.selfEntityId
       entity = new PlayerEntity(entityId, entityType, this.scene, isSelf)

@@ -16,6 +16,7 @@
 
 import { PlayerEntity } from './entities/PlayerEntity.js'
 import { SheepEntity } from './entities/SheepEntity.js'
+import { GoblinEntity } from './entities/GoblinEntity.js'
 
 /**
  * @typedef {Object} EntityDeserializerTable
@@ -44,6 +45,11 @@ export const ENTITY_DESERIALIZER_TABLE = [
   {
     deserializeCreate: SheepEntity.deserializeCreate.bind(SheepEntity),
     deserializeUpdate: SheepEntity.deserializeUpdate.bind(SheepEntity)
+  },
+  // EntityType::GOBLIN = 3
+  {
+    deserializeCreate: GoblinEntity.deserializeCreate.bind(GoblinEntity),
+    deserializeUpdate: GoblinEntity.deserializeUpdate.bind(GoblinEntity)
   }
 ]
 

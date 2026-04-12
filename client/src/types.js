@@ -57,6 +57,7 @@ export const EntityType = Object.freeze({
   PLAYER:       0,  // Full-physics player (gravity + collision)
   GHOST_PLAYER: 1,  // Ghost player (noclip, no gravity)
   SHEEP:        2,  // Passive mob: wanders randomly, blocked by voxels
+  GOBLIN:       3,  // Hostile mob: wanders, chases and attacks players
 })
 
 /** @type {Record<number, string>} Maps EntityType value to name. */
@@ -64,6 +65,7 @@ const ENTITY_TYPE_NAMES = Object.freeze({
   [EntityType.PLAYER]:       'PLAYER',
   [EntityType.GHOST_PLAYER]: 'GHOST_PLAYER',
   [EntityType.SHEEP]:        'SHEEP',
+  [EntityType.GOBLIN]:       'GOBLIN',
 })
 
 /** @type {Record<string, number>} Maps lowercase name to EntityType value. */
@@ -71,6 +73,7 @@ const ENTITY_TYPE_BY_NAME = Object.freeze({
   'player':       EntityType.PLAYER,
   'ghost_player': EntityType.GHOST_PLAYER,
   'sheep':        EntityType.SHEEP,
+  'goblin':       EntityType.GOBLIN,
 })
 
 /**
@@ -257,7 +260,9 @@ export function voxelIndexToString(voxelIndex) {
 // ── Component dirty-bit constants (must match server component headers) ──
 
 /** @type {number} */ export const POSITION_BIT = 1 << 0
-/** @type {number} */ export const SHEEP_BEHAVIOR_BIT = 1 << 1
+/** @type {number} */ export const AI_BEHAVIOR_BIT = 1 << 1  // Shared by sheep, goblin, etc.
+/** @type {number} */ export const SHEEP_BEHAVIOR_BIT = AI_BEHAVIOR_BIT  // Backward compat
+/** @type {number} */ export const GOBLIN_BEHAVIOR_BIT = AI_BEHAVIOR_BIT  // Same bit, shared
 /** @type {number} */ export const HEALTH_BIT = 1 << 2
 
 // Note: Entity lifecycle is tracked via DeltaType (CREATE_ENTITY, UPDATE_ENTITY, DELETE_ENTITY, CHUNK_CHANGE_ENTITY)

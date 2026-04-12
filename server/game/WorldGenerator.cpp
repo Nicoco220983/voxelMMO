@@ -241,41 +241,72 @@ void WorldGenerator::generateEntities(ChunkId chunkId, EntityFactory& entityFact
     }
     
     // ── NORMAL mode: procedural entity spawning ──────────────────────────────
-    // Only spawn sheep in surface chunks (cy where dirt exists: typically 0 or 1)
+    // Only spawn entities in surface chunks (cy where dirt exists: typically 0 or 1)
     if (cy < 0 || cy > 1) return;
     
     // Hash chunk coords for deterministic spawning
     const uint32_t hash = static_cast<uint32_t>(cx * 73856093 ^ cz * 19349663);
     
-    // 30% chance to spawn sheep in eligible chunks
-    if ((hash % 100) >= 30) return;
+    // ── Spawn sheep (30% chance) ─────────────────────────────────────────────
+    if ((hash % 100) < 30) {
+        // Spawn 1-3 sheep per chunk
+        const int sheepCount = 1 + (hash % 3);
+        
+        for (int i = 0; i < sheepCount; ++i) {
+            // Deterministic position within chunk
+            const uint32_t posHash = hash + i * 1234567;
+            const int32_t localX = static_cast<int32_t>(posHash % CHUNK_SIZE_X);
+            const int32_t localZ = static_cast<int32_t>((posHash / CHUNK_SIZE_X) % CHUNK_SIZE_Z);
+            
+            // Find surface height at this position
+            const int voxelX = cx * CHUNK_SIZE_X + localX;
+            const int voxelZ = cz * CHUNK_SIZE_Z + localZ;
+            const int32_t surfaceY = getSurfaceY(voxelX, voxelZ, chunkRegistry);
+            
+            // Only spawn if surface is in this chunk's Y range
+            const int32_t worldY = surfaceY + 1;  // Spawn one block above grass
+            if (worldY < cy * CHUNK_SIZE_Y || worldY >= (cy + 1) * CHUNK_SIZE_Y) continue;
+            
+            // Convert to sub-voxel coordinates
+            const int32_t sx = (cx * CHUNK_SIZE_X + localX) << SUBVOXEL_BITS;
+            const int32_t sy = worldY << SUBVOXEL_BITS;
+            const int32_t sz = (cz * CHUNK_SIZE_Z + localZ) << SUBVOXEL_BITS;
+            
+            // Queue sheep spawn in factory (deferred creation)
+            entityFactory.spawnAI(EntityType::SHEEP, sx, sy, sz, tick + i);
+        }
+    }
     
-    // Spawn 1-3 sheep per chunk
-    const int sheepCount = 1 + (hash % 3);
-    
-    for (int i = 0; i < sheepCount; ++i) {
-        // Deterministic position within chunk
-        const uint32_t posHash = hash + i * 1234567;
-        const int32_t localX = static_cast<int32_t>(posHash % CHUNK_SIZE_X);
-        const int32_t localZ = static_cast<int32_t>((posHash / CHUNK_SIZE_X) % CHUNK_SIZE_Z);
+    // ── Spawn goblins (15% chance, separate from sheep) ──────────────────────
+    // Use different hash multiplier to avoid correlation with sheep spawns
+    const uint32_t goblinHash = static_cast<uint32_t>(cx * 23456789 ^ cz * 87654321);
+    if ((goblinHash % 100) < 15) {
+        // Spawn 1-2 goblins per chunk
+        const int goblinCount = 1 + (goblinHash % 2);
         
-        // Find surface height at this position
-        const int voxelX = cx * CHUNK_SIZE_X + localX;
-        const int voxelZ = cz * CHUNK_SIZE_Z + localZ;
-        const int32_t surfaceY = getSurfaceY(voxelX, voxelZ, chunkRegistry);
-        
-        // Only spawn if surface is in this chunk's Y range
-        const int32_t worldY = surfaceY + 1;  // Spawn one block above grass
-        if (worldY < cy * CHUNK_SIZE_Y || worldY >= (cy + 1) * CHUNK_SIZE_Y) continue;
-        
-        // Convert to sub-voxel coordinates
-        const int32_t sx = (cx * CHUNK_SIZE_X + localX) << SUBVOXEL_BITS;
-        const int32_t sy = worldY << SUBVOXEL_BITS;
-        const int32_t sz = (cz * CHUNK_SIZE_Z + localZ) << SUBVOXEL_BITS;
-        
-        // Queue sheep spawn in factory (deferred creation)
-        // Entities will be created later via entityFactory.createEntities(registry, acquireId)
-        entityFactory.spawnAI(EntityType::SHEEP, sx, sy, sz, tick + i);
+        for (int i = 0; i < goblinCount; ++i) {
+            // Deterministic position within chunk (offset from sheep positions)
+            const uint32_t posHash = goblinHash + i * 7654321 + 1000;
+            const int32_t localX = static_cast<int32_t>(posHash % CHUNK_SIZE_X);
+            const int32_t localZ = static_cast<int32_t>((posHash / CHUNK_SIZE_X) % CHUNK_SIZE_Z);
+            
+            // Find surface height at this position
+            const int voxelX = cx * CHUNK_SIZE_X + localX;
+            const int voxelZ = cz * CHUNK_SIZE_Z + localZ;
+            const int32_t surfaceY = getSurfaceY(voxelX, voxelZ, chunkRegistry);
+            
+            // Only spawn if surface is in this chunk's Y range
+            const int32_t worldY = surfaceY + 1;  // Spawn one block above grass
+            if (worldY < cy * CHUNK_SIZE_Y || worldY >= (cy + 1) * CHUNK_SIZE_Y) continue;
+            
+            // Convert to sub-voxel coordinates
+            const int32_t sx = (cx * CHUNK_SIZE_X + localX) << SUBVOXEL_BITS;
+            const int32_t sy = worldY << SUBVOXEL_BITS;
+            const int32_t sz = (cz * CHUNK_SIZE_Z + localZ) << SUBVOXEL_BITS;
+            
+            // Queue goblin spawn in factory (deferred creation)
+            entityFactory.spawnAI(EntityType::GOBLIN, sx, sy, sz, tick + i);
+        }
     }
 }
 

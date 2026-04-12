@@ -16,6 +16,7 @@ enum class EntityType : uint8_t {
     PLAYER       = 0,  ///< Full-physics player (gravity + collision)
     GHOST_PLAYER = 1,  ///< Ghost player (noclip, no gravity)
     SHEEP        = 2,  ///< Passive mob: wanders randomly, blocked by voxels
+    GOBLIN       = 3,  ///< Hostile mob: wanders, chases and attacks players
 };
 
 /** @brief Maps EntityType to string name (e.g., EntityType::SHEEP → "SHEEP"). */
@@ -23,6 +24,7 @@ inline const std::unordered_map<EntityType, std::string_view> ENTITY_TYPE_NAMES 
     {EntityType::PLAYER,       "PLAYER"},
     {EntityType::GHOST_PLAYER, "GHOST_PLAYER"},
     {EntityType::SHEEP,        "SHEEP"},
+    {EntityType::GOBLIN,       "GOBLIN"},
 };
 
 /** @brief Maps lowercase string to EntityType (case-insensitive lookup). */
@@ -30,6 +32,7 @@ inline const std::unordered_map<std::string_view, EntityType> ENTITY_TYPE_BY_NAM
     {"player",       EntityType::PLAYER},
     {"ghost_player", EntityType::GHOST_PLAYER},
     {"sheep",        EntityType::SHEEP},
+    {"goblin",       EntityType::GOBLIN},
 };
 
 /**
