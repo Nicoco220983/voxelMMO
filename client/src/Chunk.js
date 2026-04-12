@@ -156,6 +156,14 @@ export class Chunk {
       return def?.isSolid !== false  // default to solid if not specified
     }
 
+    // Helper to check if a voxel is opaque (for face culling)
+    const isOpaque = (/** @type {number} */ vx, /** @type {number} */ vy, /** @type {number} */ vz) => {
+      const vt = get(vx, vy, vz)
+      if (vt === 0) return false
+      const def = getVoxelDef(vt)
+      return def?.isOpaque !== false  // default to opaque if not specified
+    }
+
     for (let y = 0; y < CHUNK_SIZE_Y; y++) {
       for (let x = 0; x < CHUNK_SIZE_X; x++) {
         for (let z = 0; z < CHUNK_SIZE_Z; z++) {
@@ -163,7 +171,6 @@ export class Chunk {
           if (vtype === 0) continue
 
           const def = getVoxelDef(vtype)
-          const isVoxelSolid = def?.isSolid !== false
 
           // Per-voxel brightness jitter [0.88 .. 1.12] from world position hash
           const jitter = 0.88 + 0.24 * voxelHash(cx * CHUNK_SIZE_X + x,
@@ -179,16 +186,11 @@ export class Chunk {
               FACE_DIRS, FACE_SHADE, FACE_NORMALS, FACE_VERTS
             })
           } else {
-            // Normal solid voxel: render faces where neighbor is air/non-solid
+            // Normal solid voxel: render faces where neighbor is transparent/non-opaque
             for (let face = 0; face < 6; face++) {
               const [dx, dy, dz] = FACE_DIRS[face]
-              const neighborType = get(x + dx, y + dy, z + dz)
-              if (neighborType !== 0) {
-                // Neighbor exists — check if it's solid
-                const neighborDef = getVoxelDef(neighborType)
-                if (neighborDef?.isSolid !== false) continue
-                // Neighbor is non-solid, render this face
-              }
+              // Skip face if neighbor is opaque (it would hide this face)
+              if (isOpaque(x + dx, y + dy, z + dz)) continue
 
               const { u0, v0, u1, v1 } = getVoxelUvs(vtype, face)
               const faceUvs = [

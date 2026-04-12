@@ -1,9 +1,9 @@
 // @ts-check
 import { VoxelType } from '../VoxelTypes.js'
+import { createVoxel } from './BaseVoxel.js'
 
-/** @type {import('./index.js').VoxelDef} */
-export const StoneVoxel = {
+export const StoneVoxel = createVoxel({
   type: VoxelType.STONE,
   name: 'stone',
   textures: 'stone',
-}
+})

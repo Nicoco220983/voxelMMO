@@ -30,9 +30,12 @@
  *   Face order: +X(0), -X(1), +Y(2), -Y(3), +Z(4), -Z(5).
  * @property {boolean} [isSolid=true] - Whether this voxel is solid (blocks movement, can attach to).
  *   Non-solid voxels (like ladders) render differently.
+ * @property {boolean} [isOpaque=true] - Whether this voxel is opaque (completely fills the block volume).
+ *   Used for face culling: opaque neighbors hide shared faces; transparent neighbors don't.
  * @property {function(RenderContext): void} [renderCustom] - Custom render function (if provided, used instead of default cube faces).
  */
 
+import { BaseVoxel, createVoxel } from './BaseVoxel.js'
 import { BasicVoxel } from './BasicVoxel.js'
 import { StoneVoxel } from './StoneVoxel.js'
 import { DirtVoxel } from './DirtVoxel.js'
@@ -42,6 +45,7 @@ import { SlimeVoxel } from './SlimeVoxel.js'
 import { MudVoxel } from './MudVoxel.js'
 import { LadderVoxel } from './LadderVoxel.js'
 
+export { BaseVoxel, createVoxel }
 export { BasicVoxel, StoneVoxel, DirtVoxel, PlanksVoxel, BricksVoxel, SlimeVoxel, MudVoxel, LadderVoxel }
 
 /** @type {VoxelDef[]} */

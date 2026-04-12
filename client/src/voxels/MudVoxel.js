@@ -1,9 +1,9 @@
 // @ts-check
 import { VoxelType } from '../VoxelTypes.js'
+import { createVoxel } from './BaseVoxel.js'
 
-/** @type {import('./index.js').VoxelDef} */
-export const MudVoxel = {
+export const MudVoxel = createVoxel({
   type: VoxelType.MUD,
   name: 'mud',
   textures: 'mud',
-}
+})

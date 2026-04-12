@@ -103,5 +103,6 @@ export const LadderVoxel = {
   name: 'ladder',
   textures: 'ladder',
   isSolid: false,
+  isOpaque: false,
   renderCustom: renderLadderCustom,
 }

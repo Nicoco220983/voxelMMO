@@ -1,9 +1,9 @@
 // @ts-check
 import { VoxelType } from '../VoxelTypes.js'
+import { createVoxel } from './BaseVoxel.js'
 
-/** @type {import('./index.js').VoxelDef} */
-export const PlanksVoxel = {
+export const PlanksVoxel = createVoxel({
   type: VoxelType.PLANKS,
   name: 'planks',
   textures: 'planks',
-}
+})

@@ -1,9 +1,9 @@
 // @ts-check
 import { VoxelType } from '../VoxelTypes.js'
+import { createVoxel } from './BaseVoxel.js'
 
-/** @type {import('./index.js').VoxelDef} */
-export const SlimeVoxel = {
+export const SlimeVoxel = createVoxel({
   type: VoxelType.SLIME,
   name: 'slime',
   textures: 'slime',
-}
+})
