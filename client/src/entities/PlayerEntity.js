@@ -1,6 +1,8 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
-import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, HEALTH_BIT } from '../types.js'
+import { EntityType } from '../EntityCatalog.js'
+import { SUBVOXEL_SIZE, TICK_RATE } from '../types.js'
+import { POSITION_BIT, HEALTH_BIT } from '../components/ComponentBits.js'
 import * as THREE from 'three'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { HealthComponent } from '../components/HealthComponent.js'
@@ -29,6 +31,14 @@ import { HealthComponent } from '../components/HealthComponent.js'
  * The self player entity is invisible (mesh not added to scene).
  */
 export class PlayerEntity extends BaseEntity {
+  // ─── Movement constants (must match server Types.hpp) ───────────────────────
+  /** Ghost player move speed in voxels/s (server: GHOST_MOVE_SPEED=256 sub-vox/tick) */
+  static GHOST_MOVE_SPEED_VOXELS = 20.0
+  /** Player walk speed in voxels/s (server: PLAYER_WALK_SPEED=77 sub-vox/tick) */
+  static PLAYER_WALK_SPEED_VOXELS = 6.0
+  /** Player initial jump velocity in voxels/s (server: 110 sub-vox/tick) */
+  static PLAYER_JUMP_VY_VOXELS = 110 / 256 * TICK_RATE  // ≈ 8.6 voxels/s
+
   /** @type {THREE.Group|null} */
   mesh = null
 

@@ -46,54 +46,6 @@
  * @typedef {number} PlayerId
  */
 
-// ── Game EntityType (must stay in sync with server EntityType.hpp) ───────────
-
-/**
- * Known entity types (must stay in sync with server EntityType.hpp).
- * @readonly
- * @enum {number}
- */
-export const EntityType = Object.freeze({
-  PLAYER:       0,  // Full-physics player (gravity + collision)
-  GHOST_PLAYER: 1,  // Ghost player (noclip, no gravity)
-  SHEEP:        2,  // Passive mob: wanders randomly, blocked by voxels
-  GOBLIN:       3,  // Hostile mob: wanders, chases and attacks players
-})
-
-/** @type {Record<number, string>} Maps EntityType value to name. */
-const ENTITY_TYPE_NAMES = Object.freeze({
-  [EntityType.PLAYER]:       'PLAYER',
-  [EntityType.GHOST_PLAYER]: 'GHOST_PLAYER',
-  [EntityType.SHEEP]:        'SHEEP',
-  [EntityType.GOBLIN]:       'GOBLIN',
-})
-
-/** @type {Record<string, number>} Maps lowercase name to EntityType value. */
-const ENTITY_TYPE_BY_NAME = Object.freeze({
-  'player':       EntityType.PLAYER,
-  'ghost_player': EntityType.GHOST_PLAYER,
-  'sheep':        EntityType.SHEEP,
-  'goblin':       EntityType.GOBLIN,
-})
-
-/**
- * Convert EntityType enum value to human-readable string name.
- * @param {number} type - The entity type value.
- * @returns {string} The type name (e.g., "PLAYER", "SHEEP") or "UNKNOWN".
- */
-export function entityTypeToString(type) {
-  return ENTITY_TYPE_NAMES[type] ?? 'UNKNOWN'
-}
-
-/**
- * Parse entity type from string name (case-insensitive).
- * @param {string} str - The string to parse (e.g., "sheep", "PLAYER").
- * @returns {number|null} The EntityType value, or null if unrecognized.
- */
-export function stringToEntityType(str) {
-  return ENTITY_TYPE_BY_NAME[str.toLowerCase()] ?? null
-}
-
 // ── Chunk dimensions (must stay in sync with server Types.hpp) ───────────────
 
 /** @type {number} */ export const CHUNK_SIZE_Y      = 32
@@ -251,19 +203,6 @@ export function voxelIndexToString(voxelIndex) {
 /** @type {number} */ export const GRAVITY           = 9.81    // m/s² (reference)
 /** @type {number} */ export const GRAVITY_DECREMENT = 6       // sub-voxels/tick² (mirrors server)
 
-// ── Input-system speed mirrors (must match server Types.hpp) ─────────────────
-
-/** @type {number} */ export const GHOST_MOVE_SPEED_VOXELS  = 20.0  // voxels/s (server: GHOST_MOVE_SPEED=256 sub-vox/tick)
-/** @type {number} */ export const PLAYER_WALK_SPEED_VOXELS = 6.0   // voxels/s (server: PLAYER_WALK_SPEED=77 sub-vox/tick)
-/** @type {number} */ export const PLAYER_JUMP_VY_VOXELS    = 110 / 256 * TICK_RATE  // ≈ 8.6 voxels/s initial vy
-
-// ── Component dirty-bit constants (must match server component headers) ──
-
-/** @type {number} */ export const POSITION_BIT = 1 << 0
-/** @type {number} */ export const AI_BEHAVIOR_BIT = 1 << 1  // Shared by sheep, goblin, etc.
-/** @type {number} */ export const SHEEP_BEHAVIOR_BIT = AI_BEHAVIOR_BIT  // Backward compat
-/** @type {number} */ export const GOBLIN_BEHAVIOR_BIT = AI_BEHAVIOR_BIT  // Same bit, shared
-/** @type {number} */ export const HEALTH_BIT = 1 << 2
-
 // Note: Entity lifecycle is tracked via DeltaType (CREATE_ENTITY, UPDATE_ENTITY, DELETE_ENTITY, CHUNK_CHANGE_ENTITY)
 // in the message itself, not via component flags. See NetworkProtocol.js for DeltaType enum.
+// Component dirty-bit constants are defined in components/ComponentBits.js

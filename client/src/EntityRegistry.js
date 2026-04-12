@@ -1,9 +1,6 @@
 // @ts-check
 import { BaseEntity } from './entities/BaseEntity.js'
-import { SheepEntity } from './entities/SheepEntity.js'
-import { GoblinEntity } from './entities/GoblinEntity.js'
-import { PlayerEntity } from './entities/PlayerEntity.js'
-import { EntityType } from './types.js'
+import { EntityType, getEntityClass } from './EntityCatalog.js'
 
 /** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
 /** @typedef {import('./types.js').ChunkId} ChunkId */
@@ -60,6 +57,7 @@ export class EntityRegistry {
 
   /**
    * Create an entity and register it in both global registry and chunk membership.
+   * Uses EntityCatalog to look up the entity class based on entity type.
    * @param {ChunkRegistry} chunkRegistry
    * @param {GlobalEntityId} entityId
    * @param {EntityType} entityType
@@ -68,18 +66,21 @@ export class EntityRegistry {
    */
   createEntity(chunkRegistry, entityId, entityType, chunkId) {
     console.debug('[EntityRegistry] Creating entity:', { entityId, entityType })
-    let entity = null
-    if (entityType === EntityType.SHEEP) {
-      entity = new SheepEntity(entityId, this.scene)
-    } else if (entityType === EntityType.GOBLIN) {
-      entity = new GoblinEntity(entityId, this.scene)
-    } else if (entityType === EntityType.PLAYER || entityType === EntityType.GHOST_PLAYER) {
-      const isSelf = entityId === this.selfEntityId
-      entity = new PlayerEntity(entityId, entityType, this.scene, isSelf)
-    } else {
+    
+    const entry = getEntityClass(entityType)
+    if (!entry) {
       console.error('[EntityRegistry] Unknown entity type:', entityType, 'for entity', entityId)
       return null
     }
+
+    let entity = null
+    if (entityType === EntityType.PLAYER || entityType === EntityType.GHOST_PLAYER) {
+      const isSelf = entityId === this.selfEntityId
+      entity = new entry.entityClass(entityId, entityType, this.scene, isSelf)
+    } else {
+      entity = new entry.entityClass(entityId, this.scene)
+    }
+    
     this.#entities.set(entityId, entity)
     entity.chunkId = chunkId
     const chunk = chunkRegistry.getOrCreate(chunkId)

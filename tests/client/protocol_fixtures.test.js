@@ -1,7 +1,7 @@
 // @ts-check
 import { describe, it, expect } from 'vitest'
 import { NetworkProtocol, ClientMessageType, ServerMessageType, InputButton, InputType } from '../../client/src/NetworkProtocol.js'
-import { EntityType } from '../../client/src/types.js'
+import { EntityType } from '../../client/src/EntityCatalog.js'
 import { 
   loadHexFixture, 
   loadInputFixture, 

@@ -1,5 +1,5 @@
 // @ts-check
-import { getEntityDeserializer } from './EntityTypeDeserializers.js'
+import { getEntityClass } from './EntityCatalog.js'
 import { lz4Decompress, BufReader } from './utils.js'
 
 /** @typedef {import('./ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
@@ -85,7 +85,7 @@ export class EntityDeserializer {
       const entityType = reader.readUint8()
       const componentMask = reader.readUint8()
 
-      const deserializer = getEntityDeserializer(entityType)
+      const deserializer = getEntityClass(entityType)
       if (!deserializer) {
         console.error('[EntityDeserializer] Unknown entity type:', entityType, 'for entity', entityId)
         continue
@@ -224,7 +224,7 @@ export class EntityDeserializer {
           continue
         }
 
-        const deserializer = getEntityDeserializer(entityType)
+        const deserializer = getEntityClass(entityType)
         if (!deserializer) {
           console.error('[EntityDeserializer] Unknown entity type:', entityType, 'for entity', entityId)
           continue

@@ -1,6 +1,8 @@
 // @ts-check
 import { BaseEntity } from './BaseEntity.js'
-import { EntityType, SUBVOXEL_SIZE, POSITION_BIT, AI_BEHAVIOR_BIT, HEALTH_BIT } from '../types.js'
+import { EntityType } from '../EntityCatalog.js'
+import { SUBVOXEL_SIZE } from '../types.js'
+import { POSITION_BIT, AI_BEHAVIOR_BIT, HEALTH_BIT } from '../components/ComponentBits.js'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { GoblinBehaviorComponent } from '../components/GoblinBehaviorComponent.js'
 import { HealthComponent } from '../components/HealthComponent.js'

@@ -1,9 +1,8 @@
 // @ts-check
 import { RenderManager } from './RenderManager.js'
 import { GameClient } from './GameClient.js'
-import {
-  SUBVOXEL_SIZE, TICK_RATE, EntityType,
-} from './types.js'
+import { SUBVOXEL_SIZE, TICK_RATE } from './types.js'
+import { EntityType } from './EntityCatalog.js'
 import { Hotbar } from './ui/Hotbar.js'
 import { VoxelHighlight } from './ui/VoxelHighlight.js'
 import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
