@@ -11,7 +11,10 @@
 #include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
 #include "common/VoxelPhysicProps.hpp"
+#include "common/VoxelTypes.hpp"
 #include <entt/entt.hpp>
+#include <array>
+#include <span>
 
 namespace voxelmmo {
 struct EntitySpawnRequest;
@@ -44,6 +47,10 @@ namespace voxelmmo::PlayerEntity {
 inline constexpr int32_t PLAYER_WALK_SPEED = 77;   ///<  6 vox/s × SUBVOXEL_SIZE × TICK_DT
 inline constexpr int32_t PLAYER_JUMP_VY    = 90;   ///< gives ≈ 3.9 voxel jump height
 inline constexpr uint16_t DEFAULT_HEALTH   = 100;  ///< Default player health points
+
+/** @brief Players don't spawn naturally in the world. */
+inline constexpr std::array<VoxelType, 0> SPAWNABLE_VOXELS = {};
+inline constexpr float SPAWN_PROBABILITY_PER_VOXEL = 0.0f;
 
 /**
  * @brief Compute player velocity from input buttons and yaw.
@@ -108,6 +115,8 @@ struct EntityTraits<PlayerEntityTag> {
     static constexpr auto serializeCreate = PlayerEntity::serializeCreate;
     static constexpr auto serializeUpdate = PlayerEntity::serializeUpdate;
     static constexpr auto spawnImpl = PlayerEntity::spawnImpl;
+    static constexpr std::span<const VoxelType> spawnableVoxels = PlayerEntity::SPAWNABLE_VOXELS;
+    static constexpr float spawnProbabilityPerVoxel = PlayerEntity::SPAWN_PROBABILITY_PER_VOXEL;
 };
 
 } // namespace voxelmmo

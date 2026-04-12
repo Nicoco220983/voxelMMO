@@ -1,11 +1,14 @@
 #pragma once
 #include "common/Types.hpp"
+#include "common/VoxelTypes.hpp"
+#include "common/EntityType.hpp"
 #include <cstdint>
 #include <optional>
 #include <string_view>
 #include <unordered_map>
 #include <vector>
 #include <functional>
+#include <span>
 
 // Forward declarations - use entt's fwd header if available, otherwise minimal forward decl
 #include <entt/entity/fwd.hpp>
@@ -21,6 +24,14 @@ using SerializeUpdateFn = size_t(*)(entt::registry&, entt::entity, const DirtyCo
 using SpawnImplFn = std::function<entt::entity(entt::registry&, GlobalEntityId, const EntitySpawnRequest&)>;
 
 /**
+ * @brief Spawn metadata for a registered entity type.
+ */
+struct EntitySpawnInfo {
+    std::span<const VoxelType> spawnableVoxels;  ///< Voxel types this entity can spawn on
+    float spawnProbabilityPerVoxel;              ///< Spawn probability per candidate voxel
+};
+
+/**
  * @brief Metadata for a registered entity type.
  */
 struct EntityTypeInfo {
@@ -29,6 +40,7 @@ struct EntityTypeInfo {
     SerializeCreateFn serializeCreate; ///< Full state serialization
     SerializeUpdateFn serializeUpdate; ///< Delta state serialization
     SpawnImplFn spawnImpl;             ///< Factory spawn function
+    EntitySpawnInfo spawnInfo;         ///< Spawn metadata
 };
 
 /**
@@ -96,10 +108,37 @@ public:
      */
     std::optional<uint8_t> stringToType(std::string_view str) const;
     
+    /**
+     * @brief Get all entity types that can spawn on a specific voxel type.
+     * @param voxel The voxel type to check.
+     * @return Span of entity type IDs that can spawn on this voxel.
+     */
+    std::span<const EntityType> getSpawnableEntities(VoxelType voxel) const;
+    
+    /**
+     * @brief Get spawn probability for an entity type.
+     * @param typeId The entity type ID.
+     * @return Probability per voxel, or 0.0f if not found or not spawnable.
+     */
+    float getSpawnProbability(uint8_t typeId) const;
+    
+    /**
+     * @brief Check if a voxel type can spawn any entities.
+     * @param voxel The voxel type to check.
+     * @return true if at least one entity type can spawn on this voxel.
+     */
+    bool isSpawnableVoxel(VoxelType voxel) const;
+    
 private:
     EntityCatalog() = default;
     std::vector<EntityTypeInfo> types_;
     std::unordered_map<uint8_t, size_t> byId_;  ///< typeId -> index in types_
+    
+    // Cached mapping from voxel type to spawnable entity types
+    mutable std::unordered_map<VoxelType, std::vector<EntityType>> voxelToEntities_;
+    mutable bool spawnCacheBuilt_ = false;
+    
+    void buildSpawnCache() const;
 };
 
 /**
@@ -130,7 +169,8 @@ struct EntityRegistrar {
             Traits::name,
             Traits::serializeCreate,
             Traits::serializeUpdate,
-            Traits::spawnImpl
+            Traits::spawnImpl,
+            {Traits::spawnableVoxels, Traits::spawnProbabilityPerVoxel}
         });
     }
 };

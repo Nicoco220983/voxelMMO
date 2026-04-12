@@ -9,7 +9,10 @@
 #include "game/components/SheepBehaviorComponent.hpp"
 #include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
+#include "common/VoxelTypes.hpp"
 #include <entt/entt.hpp>
+#include <array>
+#include <span>
 
 namespace voxelmmo {
 struct EntitySpawnRequest;
@@ -35,6 +38,12 @@ inline constexpr int32_t SHEEP_WALK_SPEED = 38;  // ~0.15 voxels/tick
 
 /** @brief Default health for sheep entities. */
 inline constexpr uint16_t DEFAULT_HEALTH = 20;
+
+/** @brief Voxel types sheep can spawn on. */
+inline constexpr std::array<VoxelType, 1> SPAWNABLE_VOXELS = {VoxelTypes::DIRT};
+
+/** @brief Spawn probability per candidate voxel (0.3% = 0.003f). */
+inline constexpr float SPAWN_PROBABILITY_PER_VOXEL = 0.003f;
 
 /**
  * @brief Spawn a sheep entity.
@@ -103,6 +112,8 @@ struct EntityTraits<SheepEntityTag> {
     static constexpr auto serializeCreate = SheepEntity::serializeCreate;
     static constexpr auto serializeUpdate = SheepEntity::serializeUpdate;
     static constexpr auto spawnImpl = SheepEntity::spawnImpl;
+    static constexpr std::span<const VoxelType> spawnableVoxels = SheepEntity::SPAWNABLE_VOXELS;
+    static constexpr float spawnProbabilityPerVoxel = SheepEntity::SPAWN_PROBABILITY_PER_VOXEL;
 };
 
 } // namespace voxelmmo

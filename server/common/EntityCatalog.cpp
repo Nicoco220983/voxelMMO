@@ -70,4 +70,34 @@ std::optional<uint8_t> EntityCatalog::stringToType(std::string_view str) const {
     return info ? std::optional<uint8_t>(info->typeId) : std::nullopt;
 }
 
+void EntityCatalog::buildSpawnCache() const {
+    if (spawnCacheBuilt_) return;
+    
+    for (const auto& info : types_) {
+        for (VoxelType voxel : info.spawnInfo.spawnableVoxels) {
+            voxelToEntities_[voxel].push_back(static_cast<EntityType>(info.typeId));
+        }
+    }
+    spawnCacheBuilt_ = true;
+}
+
+std::span<const EntityType> EntityCatalog::getSpawnableEntities(VoxelType voxel) const {
+    buildSpawnCache();
+    auto it = voxelToEntities_.find(voxel);
+    if (it != voxelToEntities_.end()) {
+        return std::span(it->second.data(), it->second.size());
+    }
+    return {};
+}
+
+float EntityCatalog::getSpawnProbability(uint8_t typeId) const {
+    auto* info = findById(typeId);
+    return info ? info->spawnInfo.spawnProbabilityPerVoxel : 0.0f;
+}
+
+bool EntityCatalog::isSpawnableVoxel(VoxelType voxel) const {
+    buildSpawnCache();
+    return voxelToEntities_.find(voxel) != voxelToEntities_.end();
+}
+
 } // namespace voxelmmo

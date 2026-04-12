@@ -10,8 +10,11 @@
 #include "game/components/PhysicsModeComponent.hpp"
 #include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
+#include "common/VoxelTypes.hpp"
 #include <entt/entt.hpp>
 #include <cmath>
+#include <array>
+#include <span>
 
 namespace voxelmmo {
 struct EntitySpawnRequest;
@@ -42,6 +45,10 @@ namespace voxelmmo::GhostPlayerEntity {
  * @return Entity handle.
  */
 inline constexpr int32_t GHOST_MOVE_SPEED = 256;  ///< 20 vox/s × SUBVOXEL_SIZE × TICK_DT
+
+/** @brief Ghost players don't spawn naturally in the world. */
+inline constexpr std::array<VoxelType, 0> SPAWNABLE_VOXELS = {};
+inline constexpr float SPAWN_PROBABILITY_PER_VOXEL = 0.0f;
 
 /**
  * @brief Compute ghost player velocity from input buttons, yaw and pitch.
@@ -117,6 +124,8 @@ struct EntityTraits<GhostPlayerEntityTag> {
     static constexpr auto serializeCreate = GhostPlayerEntity::serializeCreate;
     static constexpr auto serializeUpdate = GhostPlayerEntity::serializeUpdate;
     static constexpr auto spawnImpl = GhostPlayerEntity::spawnImpl;
+    static constexpr std::span<const VoxelType> spawnableVoxels = GhostPlayerEntity::SPAWNABLE_VOXELS;
+    static constexpr float spawnProbabilityPerVoxel = GhostPlayerEntity::SPAWN_PROBABILITY_PER_VOXEL;
 };
 
 } // namespace voxelmmo

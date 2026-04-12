@@ -9,7 +9,10 @@
 #include "game/components/GoblinBehaviorComponent.hpp"
 #include "common/NetworkProtocol.hpp"
 #include "common/Types.hpp"
+#include "common/VoxelTypes.hpp"
 #include <entt/entt.hpp>
+#include <array>
+#include <span>
 
 namespace voxelmmo {
 struct EntitySpawnRequest;
@@ -53,6 +56,12 @@ inline constexpr uint32_t ATTACK_COOLDOWN_TICKS = 60;
 
 /** @brief Time before dropping aggro when target out of range (ticks at 20tps = 1s). */
 inline constexpr uint32_t AGGRO_TIMEOUT_TICKS = 20;
+
+/** @brief Voxel types goblins can spawn on. */
+inline constexpr std::array<VoxelType, 1> SPAWNABLE_VOXELS = {VoxelTypes::DIRT};
+
+/** @brief Spawn probability per candidate voxel (0.1% = 0.001f). */
+inline constexpr float SPAWN_PROBABILITY_PER_VOXEL = 0.001f;
 
 /**
  * @brief Spawn a goblin entity.
@@ -115,6 +124,8 @@ struct EntityTraits<GoblinEntityTag> {
     static constexpr auto serializeCreate = GoblinEntity::serializeCreate;
     static constexpr auto serializeUpdate = GoblinEntity::serializeUpdate;
     static constexpr auto spawnImpl = GoblinEntity::spawnImpl;
+    static constexpr std::span<const VoxelType> spawnableVoxels = GoblinEntity::SPAWNABLE_VOXELS;
+    static constexpr float spawnProbabilityPerVoxel = GoblinEntity::SPAWN_PROBABILITY_PER_VOXEL;
 };
 
 } // namespace voxelmmo
