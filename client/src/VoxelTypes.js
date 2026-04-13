@@ -11,13 +11,14 @@
  * @enum {number}
  */
 export const VoxelType = Object.freeze({
-  AIR:    0,
-  BASIC:  1,
-  STONE:  2,
-  DIRT:   3,
-  PLANKS: 4,
-  BRICKS: 5,
-  SLIME:  6,  // Bouncy surface
-  MUD:    7,  // Slow movement
-  LADDER: 8,  // Climbable
+  AIR:         0,
+  BASIC:       1,
+  STONE:       2,
+  DIRT:        3,
+  PLANKS:      4,
+  BRICKS:      5,
+  SLIME:       6,  // Bouncy surface
+  MUD:         7,  // Slow movement
+  LADDER:      8,  // Climbable
+  GOBLIN_BED:  9,  // Spawns a goblin when chunk activates
 })

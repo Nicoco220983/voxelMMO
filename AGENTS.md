@@ -68,16 +68,21 @@ Chunk coord = sub-voxel position >> 13 (arithmetic shift handles negatives).
 
 **server/common/**
 - `Types.hpp` — ChunkId, VoxelIndex, VoxelType, GlobalEntityId, PlayerId, GatewayId; chunk dims; SUBVOXEL_SIZE, CHUNK_SHIFT_*; physics constants
-- `EntityType.hpp` — enum PLAYER=0, GHOST_PLAYER=1, SHEEP=2
+- `EntityType.hpp` — enum PLAYER=0, GHOST_PLAYER=1, SHEEP=2, GOBLIN=3
+- `VoxelTypes.hpp` — named voxel type constants (AIR=0, BASIC=1, STONE=2, DIRT=3, PLANKS=4, BRICKS=5, SLIME=6, MUD=7, LADDER=8, GOBLIN_BED=9)
+- `VoxelCatalog.hpp/cpp` — singleton registry for voxel type metadata; similar to EntityCatalog; supports `onChunkActivate` callbacks for voxel-defined behavior (e.g., GOBLIN_BED spawns goblins)
+- `EntityCatalog.hpp` — singleton registry for entity types with serialization and spawn functions
 - `NetworkProtocol.hpp` — ServerMessageType, DeltaType, ClientMessageType, `InputButton`/`InputType` enums; message format: `[type(1)][size(2)]` header, chunk messages add `[chunk_id(8)][tick(4)]` = 15 bytes
 - `ChunkSerializer.hpp` — per-tick serialization buffers (chunkBuf, selfEntityBuf, scratch); used by GameEngine
 - `gateway/ChunkState.hpp` — gateway-side per-chunk unified buffer for caching state
-- `VoxelTypes.hpp` — named voxel type constants (AIR=0, STONE=1, DIRT=2, GRASS=3)
 - `SafeBufWriter.hpp` — safe sequential binary write helper (auto-growing, bounds-checked)
 
 **server/game/entities/**
-- `{Player,GhostPlayer,Sheep}Entity.hpp` — spawn factories per entity type
-- `EntityFactory.hpp` — `playerFactories` map for player spawning
+- `{Player,GhostPlayer,Sheep,Goblin}Entity.hpp` — spawn factories per entity type
+- `EntityFactory.hpp` — entity spawn queue for deferred creation
+
+**server/game/voxels/**
+- `GoblinBedVoxel.hpp/cpp` — GOBLIN_BED voxel with `onChunkActivate` callback; spawns exactly one goblin per bed on chunk activation
 
 **server/game/GameEngine.hpp/cpp** — main game loop; owns `registry`, `chunkRegistry`, `gateways[]`, `playerEntities[]`, `ser` (ChunkSerializer); tick flow: Input → AI → Physics → ChunkCrossings → UpdateChunks → RebuildWatched → Serialize → Dispatch. Provides `run()` to start the game loop in a separate thread and `stop()` for graceful shutdown.
 

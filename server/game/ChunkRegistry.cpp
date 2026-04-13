@@ -4,6 +4,8 @@
 #include "game/SaveSystem.hpp"
 #include "game/entities/EntityFactory.hpp"
 #include "game/components/DirtyComponent.hpp"
+#include "common/VoxelCatalog.hpp"
+#include "common/VoxelTypes.hpp"
 #include <iostream>
 
 namespace voxelmmo {
@@ -98,10 +100,25 @@ Chunk* ChunkRegistry::activate(ChunkId id, WorldGenerator& generator, EntityFact
     }
 
     chunk->activated = true;
-    
+
     // Generate entities for the newly activated chunk
     generator.generateEntities(id, entityFactory, tick, *this);
-    
+
+    // Invoke voxel-specific activation callbacks
+    // WorldGenerator handles the loop and calls per-voxel callbacks
+    auto& voxelCatalog = VoxelCatalog::instance();
+
+    for (int y = 0; y < CHUNK_SIZE_Y; ++y) {
+        for (int x = 0; x < CHUNK_SIZE_X; ++x) {
+            for (int z = 0; z < CHUNK_SIZE_Z; ++z) {
+                VoxelType vt = chunk->world.getVoxel(x, y, z);
+                if (auto callback = voxelCatalog.getOnActivate(vt)) {
+                    callback(id, *chunk, x, y, z, entityFactory, tick);
+                }
+            }
+        }
+    }
+
     return chunk;
 }
 

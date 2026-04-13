@@ -14,6 +14,7 @@ find_package(unofficial-uwebsockets    CONFIG REQUIRED)
 add_executable(voxelmmo
     server/main.cpp
     server/common/EntityCatalog.cpp
+    server/common/VoxelCatalog.cpp
     server/game/GameEngine.cpp
     server/game/ChunkSerializer.cpp
     server/game/WorldChunk.cpp
@@ -28,6 +29,7 @@ add_executable(voxelmmo
     server/game/entities/GhostPlayerEntity.cpp
     server/game/entities/SheepEntity.cpp
     server/game/entities/GoblinEntity.cpp
+    server/game/voxels/GoblinBedVoxel.cpp
     server/game/systems/ChunkMembershipSystem.cpp
     server/game/systems/GoblinAISystem.cpp
     server/game/systems/HealthSystem.cpp
@@ -72,6 +74,7 @@ add_executable(voxelmmo_tests
     tests/server/test_save_integration.cpp
     # Server implementation files
     server/common/EntityCatalog.cpp
+    server/common/VoxelCatalog.cpp
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
     server/game/ChunkSerializer.cpp
@@ -84,6 +87,7 @@ add_executable(voxelmmo_tests
     server/game/entities/GhostPlayerEntity.cpp
     server/game/entities/SheepEntity.cpp
     server/game/entities/GoblinEntity.cpp
+    server/game/voxels/GoblinBedVoxel.cpp
     server/game/systems/ChunkMembershipSystem.cpp
     server/game/systems/HealthSystem.cpp
     server/game/systems/DisconnectedPlayerSystem.cpp

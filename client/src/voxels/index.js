@@ -44,9 +44,10 @@ import { BricksVoxel } from './BricksVoxel.js'
 import { SlimeVoxel } from './SlimeVoxel.js'
 import { MudVoxel } from './MudVoxel.js'
 import { LadderVoxel } from './LadderVoxel.js'
+import { GoblinBedVoxel } from './GoblinBedVoxel.js'
 
 export { BaseVoxel, createVoxel }
-export { BasicVoxel, StoneVoxel, DirtVoxel, PlanksVoxel, BricksVoxel, SlimeVoxel, MudVoxel, LadderVoxel }
+export { BasicVoxel, StoneVoxel, DirtVoxel, PlanksVoxel, BricksVoxel, SlimeVoxel, MudVoxel, LadderVoxel, GoblinBedVoxel }
 
 /** @type {VoxelDef[]} */
 export const VOXEL_DEFS = [
@@ -58,6 +59,7 @@ export const VOXEL_DEFS = [
   SlimeVoxel,
   MudVoxel,
   LadderVoxel,
+  GoblinBedVoxel,
 ]
 
 /** @type {Map<number, VoxelDef>} */

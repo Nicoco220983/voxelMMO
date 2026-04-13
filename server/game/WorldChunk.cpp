@@ -1,4 +1,5 @@
 #include "game/WorldChunk.hpp"
+#include "common/VoxelCatalog.hpp"
 #include <cstring>
 
 namespace voxelmmo {
