@@ -87,7 +87,7 @@ export class GoblinEntity extends LivingEntity {
   #createMesh() {
     const group = new THREE.Group()
 
-    const HEIGHT_OFFSET = 0.1
+    const HEIGHT_OFFSET = -0.2
 
     // Materials - goblin green with darker green for details
     const skinMat = new THREE.MeshLambertMaterial({ color: 0x4a8c2a })  // Goblin green

@@ -30,9 +30,9 @@ import * as THREE from 'three'
  *   - Eyes: small black boxes at y=0.3
  */
 /** Bounding box half-extents in sub-voxels (must match server SheepEntity.hpp) */
-const SHEEP_BBOX_HX = 128   // 0.5 voxels
-const SHEEP_BBOX_HY = 205   // 0.8 voxels (taller for easier targeting)
-const SHEEP_BBOX_HZ = 192   // 0.75 voxels
+const SHEEP_BBOX_HX = 150   // 0.6 voxels
+const SHEEP_BBOX_HY = 128   // 0.5 voxels
+const SHEEP_BBOX_HZ = 150   // 0.6 voxels
 
 export class SheepEntity extends LivingEntity {
   /** @type {SheepBehaviorComponent} */
@@ -74,7 +74,7 @@ export class SheepEntity extends LivingEntity {
   #createMesh() {
     const group = new THREE.Group()
 
-    const HEIGHT_OFFSET = 0.2
+    const HEIGHT_OFFSET = 0.1
 
     // Materials
     const woolMat = new THREE.MeshLambertMaterial({ color: 0xeeeeee })
