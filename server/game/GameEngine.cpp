@@ -14,6 +14,7 @@
 #include "game/systems/GoblinAISystem.hpp"
 #include "game/systems/HealthSystem.hpp"
 #include "game/systems/DisconnectedPlayerSystem.hpp"
+#include "game/systems/CombatSystem.hpp"
 #include "game/components/PlayerComponent.hpp"
 #include "game/components/ChunkMembershipComponent.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
@@ -22,6 +23,7 @@
 #include "game/components/InputComponent.hpp"
 #include "game/components/HealthComponent.hpp"
 #include "game/components/DirtyComponent.hpp"
+#include "game/components/ToolComponent.hpp"
 #include "common/NetworkProtocol.hpp"
 #include "common/VoxelTypes.hpp"
 #include "common/EntityType.hpp"
@@ -150,6 +152,16 @@ void GameEngine::handlePlayerInput(PlayerId playerId, const uint8_t* data, size_
                     msg->endX, msg->endY, msg->endZ,
                     msg->voxelType
                 });
+                break;
+            }
+            case InputType::TOOL_USE: {
+                // Enqueue tool use request for processing in tick()
+                pendingToolUses_.push_back({playerId, msg->toolId, msg->yaw, msg->pitch});
+                break;
+            }
+            case InputType::TOOL_SELECT: {
+                // Enqueue tool selection request for processing in tick()
+                pendingToolSelects_.push_back({playerId, msg->toolId});
                 break;
             }
         }
@@ -282,6 +294,13 @@ void GameEngine::tick() {
     processPendingVoxelCreations();
 
     InputSystem::apply(registry);
+    
+    // Process tool selections (authoritative - server updates ToolComponent)
+    processPendingToolSelects();
+    
+    // Process tool uses (combat)
+    processPendingToolUses();
+    
     SheepAISystem::apply(registry, tick);
     GoblinAISystem::apply(registry, tick);
     PhysicsSystem::apply(registry, chunkRegistry, static_cast<uint32_t>(tickCount));
@@ -491,6 +510,35 @@ void GameEngine::processPendingBulkVoxelCreations() {
         }
     }
     pendingBulkVoxelCreations_.clear();
+}
+
+void GameEngine::processPendingToolSelects() {
+    for (const auto& select : pendingToolSelects_) {
+        auto it = playerEntities.find(select.playerId);
+        if (it == playerEntities.end()) continue;
+        
+        entt::entity ent = it->second;
+        if (!registry.valid(ent)) continue;
+        
+        // Ensure entity has ToolComponent
+        if (!registry.try_get<ToolComponent>(ent)) {
+            registry.emplace<ToolComponent>(ent);
+        }
+        
+        // Update tool (dirty flag will send via chunk delta)
+        ToolComponent::modify(registry, ent, select.toolId, /*dirty=*/true);
+    }
+    pendingToolSelects_.clear();
+}
+
+void GameEngine::processPendingToolUses() {
+    for (const auto& use : pendingToolUses_) {
+        CombatSystem::processToolUse(registry, playerEntities,
+                                     use.playerId, use.toolId,
+                                     use.yaw, use.pitch,
+                                     static_cast<uint32_t>(tickCount));
+    }
+    pendingToolUses_.clear();
 }
 
 void GameEngine::sendSnapshot(GatewayId gwId) {

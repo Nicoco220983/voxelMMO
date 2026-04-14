@@ -48,14 +48,15 @@ export class KeyboardController extends BaseController {
   /**
    * @param {HTMLElement} domElement - Element to capture pointer lock on click.
    * @param {Object} options
-   * @param {import('../ui/ToolContext.js').ToolContext} options.toolContext - Tool context for dependency access
+   * @param {import('../ui/VoxelHighlight.js').VoxelHighlight} options.voxelHighlight - Voxel highlight system
+   * @param {import('../ui/BulkVoxelsSelection.js').BulkVoxelsSelection} options.bulkSelection - Bulk selection system
    * @param {import('../ui/Hotbar.js').Hotbar} options.hotbar - Hotbar UI component
    */
   /** @type {Function} */
   #boundWindowKeyDown
 
-  constructor(domElement, { toolContext, hotbar }) {
-    super({ toolContext, hotbar })
+  constructor(domElement, { voxelHighlight, bulkSelection, hotbar }) {
+    super({ voxelHighlight, bulkSelection, hotbar })
     this.yaw = 0
     this.pitch = -0.3
     this.#domElement = domElement

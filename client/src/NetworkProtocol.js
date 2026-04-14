@@ -65,6 +65,8 @@ export const InputType = Object.freeze({
   VOXEL_CREATE: 2,       // Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
   BULK_VOXEL_DESTROY: 3, // Bulk voxel destroy: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) = 24 bytes payload
   BULK_VOXEL_CREATE: 4,  // Bulk voxel create: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) + voxelType(1) = 25 bytes payload
+  TOOL_USE: 5,           // Tool use: toolId(1) + yaw(4) + pitch(4) = 10 bytes payload
+  TOOL_SELECT: 6,        // Tool selection: toolId(1) = 1 byte payload
 })
 
 /**
@@ -105,6 +107,10 @@ export class NetworkProtocol {
         return this.serializeInputVoxelDestroy(args[0], args[1], args[2])
       case InputType.VOXEL_CREATE:
         return this.serializeInputVoxelCreate(args[0], args[1], args[2], args[3])
+      case InputType.TOOL_USE:
+        return this.serializeInputToolUse(args[0], args[1], args[2])
+      case InputType.TOOL_SELECT:
+        return this.serializeInputToolSelect(args[0])
       default:
         throw new Error(`Unknown inputType: ${inputType}`)
     }
@@ -245,6 +251,42 @@ export class NetworkProtocol {
     return buf
   }
 
+  /**
+   * Serialize a TOOL_USE input frame (14 bytes).
+   * Wire: type(1) + size(2) + inputType(1) + toolId(1) + yaw float32LE(4) + pitch float32LE(4).
+   * @param {number} toolId  Tool type ID.
+   * @param {number} yaw     Yaw angle in radians (aim direction).
+   * @param {number} pitch   Pitch angle in radians (aim direction).
+   * @returns {ArrayBuffer}
+   */
+  static serializeInputToolUse(toolId, yaw, pitch) {
+    const buf = new ArrayBuffer(14)
+    const v   = new DataView(buf)
+    v.setUint8(0,   ClientMessageType.INPUT)
+    v.setUint16(1,  14, true)  // size
+    v.setUint8(3,   InputType.TOOL_USE)
+    v.setUint8(4,   toolId)
+    v.setFloat32(5, yaw,   true)
+    v.setFloat32(9, pitch, true)
+    return buf
+  }
+
+  /**
+   * Serialize a TOOL_SELECT input frame (5 bytes).
+   * Wire: type(1) + size(2) + inputType(1) + toolId(1).
+   * @param {number} toolId  Tool type ID.
+   * @returns {ArrayBuffer}
+   */
+  static serializeInputToolSelect(toolId) {
+    const buf = new ArrayBuffer(5)
+    const v   = new DataView(buf)
+    v.setUint8(0,   ClientMessageType.INPUT)
+    v.setUint16(1,  5, true)  // size
+    v.setUint8(3,   InputType.TOOL_SELECT)
+    v.setUint8(4,   toolId)
+    return buf
+  }
+
   // ── Server → Client (deserialization) ──────────────────────────────────────
 
   /**
@@ -313,4 +355,5 @@ export class NetworkProtocol {
     // bytes 11-14: reserved for future use, ignored
     return { entityId, tick }
   }
+
 }

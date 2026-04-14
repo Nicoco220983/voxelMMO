@@ -65,6 +65,8 @@ enum class InputType : uint8_t {
     VOXEL_CREATE = 2,       ///< Voxel create: vx(4) + vy(4) + vz(4) + voxelType(1) = 13 bytes payload
     BULK_VOXEL_DESTROY = 3, ///< Bulk voxel destroy: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) = 24 bytes payload
     BULK_VOXEL_CREATE = 4,  ///< Bulk voxel create: startX(4)+Y(4)+Z(4) + endX(4)+Y(4)+Z(4) + voxelType(1) = 25 bytes payload
+    TOOL_USE = 5,           ///< Tool use: toolId(1) + yaw(4) + pitch(4) = 10 bytes payload
+    TOOL_SELECT = 6,        ///< Tool selection: toolId(1) = 1 byte payload
 };
 
 /**
@@ -93,8 +95,8 @@ struct InputMessage {
     InputType inputType;  ///< Type of input (determines which fields are valid)
     // MOVE type fields:
     uint8_t   buttons;  ///< InputButton bitmask (valid if inputType == MOVE)
-    float     yaw;      ///< radians (valid if inputType == MOVE)
-    float     pitch;    ///< radians (valid if inputType == MOVE)
+    float     yaw;      ///< radians (valid if inputType == MOVE or TOOL_USE)
+    float     pitch;    ///< radians (valid if inputType == MOVE or TOOL_USE)
     // VOXEL_DESTROY/VOXEL_CREATE type fields:
     int32_t   vx;       ///< World voxel X (valid if inputType == VOXEL_DESTROY or VOXEL_CREATE)
     int32_t   vy;       ///< World voxel Y (valid if inputType == VOXEL_DESTROY or VOXEL_CREATE)
@@ -108,6 +110,8 @@ struct InputMessage {
     int32_t   endX;     ///< End voxel X (valid for bulk types)
     int32_t   endY;     ///< End voxel Y (valid for bulk types)
     int32_t   endZ;     ///< End voxel Z (valid for bulk types)
+    // TOOL_USE/TOOL_SELECT type fields:
+    uint8_t   toolId;   ///< Tool type ID (valid if inputType == TOOL_USE or TOOL_SELECT)
 };
 
 /** Parsed payload of a ClientMessageType::JOIN frame. */
@@ -194,6 +198,18 @@ inline std::optional<InputMessage> parseInput(const uint8_t* data, size_t size) 
             std::memcpy(&m.endY, data + 20, sizeof(int32_t));
             std::memcpy(&m.endZ, data + 24, sizeof(int32_t));
             m.voxelType = static_cast<VoxelType>(data[28]);
+            break;
+
+        case InputType::TOOL_USE:
+            if (size < 14) return std::nullopt;
+            m.toolId = data[4];
+            std::memcpy(&m.yaw,   data + 5, sizeof(float));
+            std::memcpy(&m.pitch, data + 9, sizeof(float));
+            break;
+
+        case InputType::TOOL_SELECT:
+            if (size < 5) return std::nullopt;
+            m.toolId = data[4];
             break;
             
         default:

@@ -1,5 +1,6 @@
 #include "game/entities/GhostPlayerEntity.hpp"
 #include "game/entities/EntityFactory.hpp"
+#include "game/components/ToolComponent.hpp"
 #include "common/EntityCatalog.hpp"
 
 namespace voxelmmo::GhostPlayerEntity {
@@ -26,6 +27,7 @@ entt::entity spawn(entt::registry& reg,
     reg.emplace<PlayerComponent>(ent, playerId);
     reg.emplace<BoundingBoxComponent>(ent, PLAYER_BBOX_HX, PLAYER_BBOX_HY, PLAYER_BBOX_HZ);
     reg.emplace<PhysicsModeComponent>(ent, PhysicsMode::GHOST);
+    reg.emplace<ToolComponent>(ent);  // Default: HAND tool
 
     return ent;
 }
@@ -45,6 +47,9 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) 
     const auto& pos = reg.get<DynamicPositionComponent>(ent);
     if (pos.isNonDefault()) flags |= POSITION_BIT;
 
+    const auto* tool = reg.try_get<ToolComponent>(ent);
+    if (tool && tool->isNonDefault()) flags |= TOOL_BIT;
+
     const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
     w.write(gid.id);
     w.write(static_cast<uint8_t>(EntityType::GHOST_PLAYER));
@@ -54,14 +59,17 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) 
     if (flags & POSITION_BIT) {
         DynamicPositionComponent::serialize(reg, ent, POSITION_BIT, w);
     }
+    if (flags & TOOL_BIT) {
+        tool->serializeFields(w);
+    }
 
     return w.offset() - startOffset;
 }
 
 size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyComponent& dirty, SafeBufWriter& w) {
-    const uint8_t flags = dirty.dirtyFlags & POSITION_BIT;
+    const uint8_t flags = dirty.dirtyFlags & (POSITION_BIT | TOOL_BIT);
 
-    // Nothing to serialize if position hasn't changed
+    // Nothing to serialize if no tracked components are dirty
     if (flags == 0) {
         return 0;
     }
@@ -73,6 +81,11 @@ size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyCompone
     w.write(static_cast<uint8_t>(EntityType::GHOST_PLAYER));
     w.write(flags);
     DynamicPositionComponent::serialize(reg, ent, flags, w);
+    if (flags & TOOL_BIT) {
+        if (const auto* tool = reg.try_get<ToolComponent>(ent)) {
+            tool->serializeFields(w);
+        }
+    }
 
     return w.offset() - startOffset;
 }

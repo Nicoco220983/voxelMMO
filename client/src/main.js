@@ -6,10 +6,13 @@ import { EntityType } from './EntityCatalog.js'
 import { Hotbar } from './ui/Hotbar.js'
 import { VoxelHighlight } from './ui/VoxelHighlight.js'
 import { BulkVoxelsSelection } from './ui/BulkVoxelsSelection.js'
-import { ToolContext } from './ui/ToolContext.js'
 import { DeathScreen } from './ui/DeathScreen.js'
 import { createController } from './controllers/ControllerManager.js'
 import { voxelTexturesReady } from './VoxelTextures.js'
+import { HandTool } from './tools/HandTool.js'
+import { SelectVoxelTool } from './tools/SelectVoxelTool.js'
+import { ToolType, registerTool, getToolClass } from './ToolCatalog.js'
+import { Tool } from './tools/Tool.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -55,8 +58,12 @@ function getOrCreateSessionToken() {
 
 const _sessionToken = getOrCreateSessionToken()
 
-const client = new GameClient(`ws://${location.host}/ws`, scene)
+const client = new GameClient(`ws://${location.host}/ws`, scene, camera)
 window.gameClient = client  // Expose for entity prediction
+
+// ── Tool Registration ───────────────────────────────────────────────────────
+// Register server-authoritative tools so ToolCatalog can look them up
+registerTool(ToolType.HAND, HandTool)
 
 // ── Death Screen ────────────────────────────────────────────────────────────
 const deathScreen = new DeathScreen(() => {
@@ -87,19 +94,30 @@ const voxelHighlight = new VoxelHighlight(scene)
 // ── Bulk Voxels Selection ─────────────────────────────────────────────────
 const bulkSelection = new BulkVoxelsSelection(scene)
 
-// ── Tool Context (centralized tool state) ─────────────────────────────────
-const toolContext = new ToolContext({ voxelHighlight, bulkSelection })
-
 // ── Hotbar ─────────────────────────────────────────────────────────────────
-const hotbar = new Hotbar({ toolContext, chunkRegistry: client.chunkRegistry })
+// Hotbar UI for tool slot selection (DOM only, no 3D visuals)
+// Reads selfEntity.toolId to highlight selected slot
+const hotbar = new Hotbar({ gameClient: client })
 
-// Handle tool unselection (ESC/BACK pressed)
-hotbar.onToolUnselected = () => {
-  // ToolContext.currentTool is updated by Hotbar
+// Set chunk registry on SelectVoxelTool for copy/paste operations
+const selectVoxelTool = hotbar.slots[1]
+if (selectVoxelTool instanceof SelectVoxelTool) {
+  selectVoxelTool.setChunkRegistry(client.chunkRegistry)
 }
 
+// ── Tool Visual System ─────────────────────────────────────────────────────
+// Static Tool class manages first-person visuals via Tool.updateVisualSystem()
+Tool.initVisualSystem(scene, camera)
+// Hook up Tool.getToolClass to our ToolCatalog
+Tool.getToolClass = getToolClass
+
 // ── Controller (keyboard or touch) ────────────────────────────────────────
-const controller = createController(renderer.domElement, { toolContext, hotbar })
+// Controller gets direct references to voxelHighlight and bulkSelection
+const controller = createController(renderer.domElement, { 
+  voxelHighlight, 
+  bulkSelection, 
+  hotbar 
+})
 
 // Set game client reference for controller to access player entity
 controller.setGameClient(client)
@@ -160,6 +178,17 @@ function animate() {
   // Update entity animations (sheep leg swing, player mesh position, etc.)
   client.updateEntities(dt)
 
+  // ── Hotbar render ───────────────────────────────────────────────────────
+  // Updates UI slots based on selfEntity.toolId
+  hotbar.render()
+  
+  // ── Tool Visual update ──────────────────────────────────────────────────
+  // Static Tool class manages first-person visuals
+  const self = client.selfEntity
+  if (self) {
+    Tool.updateVisualSystem(self.toolId, self.toolLastUsedTick, client.renderTick)
+  }
+
   client.pruneDistantChunks(posInfo.vposX, posInfo.vposZ)
   if (texturesReady) client.rebuildDirtyChunks()
 
@@ -183,8 +212,7 @@ function animate() {
   hud.textContent =
     `${healthText}pos  ${posInfo.vposX.toFixed(1)}  ${posInfo.vposY.toFixed(1)}  ${posInfo.vposZ.toFixed(1)}   fps ${currentFps}`
 
-  // ── Reset controller frame state ────────────────────────────────────────
-  // Resets one-shot flags (toolActivated, selectedSlotIndex, etc.)
+  // ── Frame state reset ───────────────────────────────────────────────────
   controller.resetFrameState(dt)
 }
 

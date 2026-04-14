@@ -85,7 +85,7 @@ export class GameClient {
    * @param {string}      url    Full WebSocket URL, e.g. "ws://localhost:8080".
    * @param {THREE.Scene} scene  The Three.js scene to add/remove chunk meshes into.
    */
-  constructor(url, scene) {
+  constructor(url, scene, camera) {
     this.#url   = url
     this.#scene = scene
     this.#entityRegistry.setScene(scene)
@@ -95,6 +95,17 @@ export class GameClient {
         chunk.dirty = true
       }
     })
+  }
+
+  /**
+   * Send tool selection to server.
+   * Called by Hotbar when user selects a tool.
+   * @param {number} toolId
+   */
+  sendToolSelect(toolId) {
+    if (this.#socket?.readyState === WebSocket.OPEN) {
+      this.#socket.send(NetworkProtocol.serializeInputToolSelect(toolId))
+    }
   }
 
   /**
@@ -398,8 +409,18 @@ export class GameClient {
         console.debug('[GameClient] rx', MSG_TYPE_NAMES[type] ?? type,
           `chunk(${cx},${cy},${cz})`, view.byteLength + 'B',
           `voxels=${voxelCount}`, `entities=${entityCount}`)
+
+        // Tool state is synced via chunk deltas (selfEntity.toolId)
       }
     }
+  }
+
+  /**
+   * Get the current tool ID from the self entity (or null if not known).
+   * @returns {number|null}
+   */
+  getSelfToolId() {
+    return this.selfEntity?.toolId ?? null
   }
 
   /**

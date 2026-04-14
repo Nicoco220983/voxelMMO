@@ -1,797 +1,372 @@
 // @ts-check
-
+import { HandTool } from '../tools/HandTool.js'
 import { SelectVoxelTool } from '../tools/SelectVoxelTool.js'
 import { CreateVoxelTool } from '../tools/CreateVoxelTool.js'
-import { VoxelType } from '../VoxelTypes.js'
-import { StoneVoxel, DirtVoxel, BasicVoxel, PlanksVoxel, BricksVoxel, MudVoxel, SlimeVoxel, LadderVoxel, GoblinBedVoxel } from '../voxels/index.js'
-
-/** @typedef {import('../tools/Tool.js').Tool} Tool */
-/** @typedef {import('../voxels/index.js').VoxelDef} VoxelDef */
-/** @typedef {import('./ToolContext.js').ToolContext} ToolContext */
-/** @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry */
+import { ToolType, getToolClass } from '../ToolCatalog.js'
 
 /**
- * Hotbar UI component - bottom row of selectable slots.
- * Supports three modes:
- * - 'tools': normal tool selection (keyboard 1-0, touch slots)
- * - 'voxels': voxel type selection when CreateVoxelTool is active
- * - 'select': sub-mode selection when SelectVoxelTool is active (destroy/copy/paste)
+ * @typedef {import('../tools/Tool.js').Tool} Tool
+ * @typedef {import('../GameClient.js').GameClient} GameClient
+ */
+
+/**
+ * Hotbar UI component for tool selection.
  * 
- * ESC/BACK behavior:
- * - If in voxel/select mode: exit that mode AND unselect tool
- * - Else if tool selected: unselect tool
- * - Else: let event propagate
+ * SRP: UI slots only. Manages DOM elements for tool selection.
+ * No 3D visual management - that's handled by ToolVisualManager.
+ * Reads selection from selfEntity.toolId.
  */
 export class Hotbar {
-  /** @type {HTMLElement} */
-  container
-  
-  /** @type {HTMLElement|null} */
-  #backButton = null
-  
-  /** @type {Array<Tool|null>} */
-  slots
-  
-  /** @type {number} Currently selected slot index (0-9), or -1 if none */
-  selectedIndex
-  
+  /** @type {GameClient|null} */
+  #gameClient = null
+
   /** @type {HTMLElement[]} */
   slotElements
 
-  // Mode state
-  /** @type {'tools'|'voxels'|'select'|'rotate'} */
-  #mode = 'tools'
-  /** @type {Array<Tool|null>} Saved slots when entering special mode */
-  #savedSlots = []
-  /** @type {import('../tools/CreateVoxelTool.js').CreateVoxelTool|null} */
-  #createVoxelTool = null
-  /** @type {import('../tools/SelectVoxelTool.js').SelectVoxelTool|null} */
-  #selectVoxelTool = null
-  /** @type {VoxelDef[]} */
-  #voxelItems = []
+  /** @type {Array<Tool|null>} */
+  slots
 
-  // Select mode items
-  /** @type {Array<{id: string, label: string, icon: string}>} */
-  #selectItems = [
-    { id: 'destroy', label: 'Destroy', icon: '✕' },
-    { id: 'copy', label: 'Copy', icon: '⎘' },
-    { id: 'paste', label: 'Paste', icon: '⎗' },
-  ]
+  /** @type {number} */
+  #lastToolId = -1
 
-  // Rotate mode items (for paste rotation)
-  /** @type {Array<{id: string, label: string, icon: string, action: string}>} */
-  #rotateItems = [
-    { id: 'rotateX', label: 'Rotate X', icon: '↻X', action: 'rotateX' },
-    { id: 'rotateY', label: 'Rotate Y', icon: '↻Y', action: 'rotateY' },
-  ]
+  /** @type {Tool|null} */
+  #currentTool = null
 
-  // Callbacks
-  /** @type {Function|null} Called when ESC/BACK exits special mode or unselects tool */
-  onToolUnselected = null
+
 
   /**
-   * Voxel types available in the CreateVoxelTool hotbar.
-   * Player can customize this list.
-   * @type {VoxelDef[]}
+   * @param {Object} options
+   * @param {GameClient|null} [options.gameClient]
    */
-  voxelItems
-
-  /** @type {ToolContext|null} */
-  #toolContext = null
-
-  /** @type {ChunkRegistry|null} */
-  #chunkRegistry = null
-
-  /**
-   * @param {Object} [options]
-   * @param {ToolContext} [options.toolContext] - Tool context to update on selection changes
-   * @param {ChunkRegistry} [options.chunkRegistry] - Chunk registry to inject into tools
-   */
-  constructor({ toolContext = null, chunkRegistry = null } = {}) {
-    this.#toolContext = toolContext
-    this.#chunkRegistry = chunkRegistry
-    this.selectedIndex = -1  // -1 means no selection
+  constructor({ gameClient = null } = {}) {
+    this.#gameClient = gameClient
     this.slotElements = []
-    // Initialize with 10 empty slots
     this.slots = Array(10).fill(null)
-
-    // Initialize voxel items for CreateVoxelTool (can be customized by player)
-    this.voxelItems = [
-      StoneVoxel,
-      DirtVoxel,
-      BasicVoxel,
-      PlanksVoxel,
-      BricksVoxel,
-      MudVoxel,
-      SlimeVoxel,
-      LadderVoxel,
-      GoblinBedVoxel,
-    ]
-
-    this.container = document.createElement('div')
-    this.container.id = 'hotbar'
-    this.#createBackButton()
-    this.render()
-    document.body.appendChild(this.container)
-
-    // Set up default tools
-    this.setSlot(1, new SelectVoxelTool())   // Key "2"
-    this.setSlot(2, new CreateVoxelTool())  // Key "3"
+    
+    this.createDOM()
+    this.#setDefaultTools()
   }
 
   /**
-   * Create the BACK button for touch mode (hidden by default).
+   * Set up default tools in slots.
    * @private
    */
-  #createBackButton() {
-    this.#backButton = document.createElement('div')
-    this.#backButton.className = 'hotbar-back-btn'
-    this.#backButton.innerHTML = '<span class="hotbar-key">q</span><span class="hotbar-icon">←</span>'
-    this.#backButton.style.display = 'none'
-    this.#backButton.addEventListener('pointerdown', (e) => {
-      e.preventDefault()
-      this.handleQ()
-    })
-    this.container.appendChild(this.#backButton)
-  }
-
-  render() {
-    // Clear slot elements (keep back button)
-    const slotsToRemove = this.container.querySelectorAll('.hotbar-slot')
-    slotsToRemove.forEach(el => el.remove())
-    this.slotElements = []
-
-    this.slots.forEach((slot, index) => {
-      const slotEl = document.createElement('div')
-      slotEl.className = 'hotbar-slot'
-      if (index === this.selectedIndex) {
-        slotEl.classList.add('selected')
-      }
-
-      const numberEl = document.createElement('span')
-      numberEl.className = 'hotbar-key'
-      numberEl.textContent = index === 9 ? '0' : String(index + 1)
-
-      const iconEl = document.createElement('span')
-      iconEl.className = 'hotbar-icon'
-      iconEl.textContent = slot ? slot.icon : ''
-
-      slotEl.appendChild(numberEl)
-      slotEl.appendChild(iconEl)
-      this.container.appendChild(slotEl)
-      this.slotElements.push(slotEl)
-
-      // Touch selection
-      slotEl.addEventListener('pointerdown', (e) => {
-        e.preventDefault()
-        this.selectSlot(index)
-      })
-    })
+  #setDefaultTools() {
+    this.slots[0] = new HandTool()      // Key "1"
+    this.slots[1] = new SelectVoxelTool() // Key "2"
+    this.slots[2] = new CreateVoxelTool() // Key "3"
+    this.render()
   }
 
   /**
-   * Set a tool at a specific slot index.
-   * Re-renders the hotbar to show the tool's icon.
-   * @param {number} index - Slot index (0-9)
-   * @param {Tool} tool - The tool to assign (or null to clear)
+   * Create the hotbar DOM elements.
    */
-  setSlot(index, tool) {
-    if (index < 0 || index > 9) return
-    this.slots[index] = tool
+  createDOM() {
+    let hotbar = document.getElementById('hotbar')
+    if (!hotbar) {
+      hotbar = document.createElement('div')
+      hotbar.id = 'hotbar'
+      document.body.appendChild(hotbar)
+    }
+
+    hotbar.innerHTML = ''
+    this.slotElements = []
+
+    for (let i = 0; i < 10; i++) {
+      const slot = document.createElement('div')
+      slot.className = 'hotbar-slot'
+      slot.dataset.index = String(i)
+
+      const number = document.createElement('span')
+      number.className = 'hotbar-number'
+      number.textContent = String((i + 1) % 10)
+      slot.appendChild(number)
+
+      const icon = document.createElement('span')
+      icon.className = 'hotbar-icon'
+      slot.appendChild(icon)
+
+      hotbar.appendChild(slot)
+      this.slotElements.push(slot)
+    }
+  }
+
+  /**
+   * Get the currently selected slot index based on selfEntity.toolId.
+   * @returns {number} Slot index (0-9) or -1 if no match
+   * @private
+   */
+  #getSelectedSlotIndex() {
+    const currentToolId = this.#gameClient?.selfEntity?.toolId
     
-    // Update the DOM element if it exists
-    if (this.slotElements[index]) {
-      const iconEl = this.slotElements[index].querySelector('.hotbar-icon')
-      if (iconEl) {
-        iconEl.textContent = tool ? tool.icon : ''
+    // If no tool selected yet (null), default to HandTool (slot 0)
+    // Server spawns players with HAND tool by default, but doesn't serialize
+    // default ToolComponent values, so client initially sees null
+    if (currentToolId === null || currentToolId === undefined) {
+      // HandTool is always in slot 0 by default
+      const handTool = this.slots[0]
+      if (handTool && handTool.getToolType?.() === ToolType.HAND) {
+        return 0
+      }
+      return -1
+    }
+    
+    // Find slot with matching tool type
+    for (let i = 0; i < this.slots.length; i++) {
+      const tool = this.slots[i]
+      if (!tool) continue
+      
+      const toolType = tool.getToolType?.()
+      if (toolType === currentToolId) {
+        return i
+      }
+    }
+    
+    return -1
+  }
+
+  /**
+   * Get the current tool based on selfEntity.toolId.
+   * For client-side tools, returns the slot's tool instance.
+   * @returns {Tool|null}
+   * @private
+   */
+  #getCurrentTool() {
+    const selectedIndex = this.#getSelectedSlotIndex()
+    if (selectedIndex >= 0) {
+      return this.slots[selectedIndex]
+    }
+    return null
+  }
+
+  /**
+   * Render the hotbar UI based on current state.
+   * Called each frame or when state changes.
+   */
+  render() {
+    const currentToolId = this.#gameClient?.selfEntity?.toolId ?? ToolType.NONE
+    const selectedIndex = this.#getSelectedSlotIndex()
+    const currentTool = this.#getCurrentTool()
+    
+    // Check if tool changed
+    if (currentToolId !== this.#lastToolId) {
+      this.#onToolChanged(currentToolId, currentTool)
+    }
+    
+    // Get expanded view from current tool (if any)
+    const expandedView = currentTool?.getExpandedView?.()
+    
+    // Render each slot
+    for (let i = 0; i < 10; i++) {
+      const slotEl = this.slotElements[i]
+      const icon = slotEl.querySelector('.hotbar-icon')
+      
+      // Clear previous state
+      icon.textContent = ''
+      icon.style.backgroundImage = ''
+      slotEl.title = ''
+      
+      if (expandedView) {
+        // Expanded mode: show tool's expanded view items
+        this.#renderExpandedSlot(icon, slotEl, i, expandedView, selectedIndex)
+      } else {
+        // Normal mode: show tool icon
+        this.#renderToolSlot(icon, slotEl, i, selectedIndex)
       }
     }
   }
 
   /**
-   * Get the tool at a specific slot index.
-   * @param {number} index - Slot index (0-9)
-   * @returns {Tool|null}
+   * Render a slot in expanded view mode.
+   * @private
    */
-  getSlot(index) {
-    if (index < 0 || index > 9) return null
-    return this.slots[index]
+  #renderExpandedSlot(icon, slotEl, index, expandedView, selectedIndex) {
+    const item = expandedView.items[index]
+    
+    if (item) {
+      if (expandedView.type === 'voxels') {
+        // Voxel mode: show voxel texture
+        const textureName = typeof item.textures === 'string' 
+          ? item.textures 
+          : item.textures?.default ?? ''
+        
+        if (textureName) {
+          icon.style.backgroundImage = `url(/assets/voxels/${textureName}.png)`
+          icon.style.backgroundSize = 'cover'
+          icon.style.imageRendering = 'pixelated'
+        } else {
+          icon.textContent = item.name?.[0]?.toUpperCase() || '?'
+        }
+        slotEl.title = item.name || `Voxel ${item.type}`
+      } else if (expandedView.type === 'select') {
+        // Select mode: show option icon
+        icon.textContent = item.icon
+        slotEl.title = item.name
+      }
+    }
+    
+    // Highlight selected slot
+    slotEl.classList.toggle('selected', index === expandedView.selectedIndex)
   }
 
   /**
-   * Select a slot by index (0-9)
-   * In voxel/select mode, this updates the tool's state but stays in that mode.
-   * @param {number} index
+   * Render a slot in normal tool mode.
+   * @private
+   */
+  #renderToolSlot(icon, slotEl, index, selectedIndex) {
+    const tool = this.slots[index]
+    
+    if (tool) {
+      icon.textContent = tool.icon || ''
+      slotEl.title = tool.name || ''
+    }
+    
+    // Highlight selected slot
+    slotEl.classList.toggle('selected', index === selectedIndex)
+  }
+
+  /**
+   * Handle tool change.
+   * @private
+   */
+  #onToolChanged(toolId, tool) {
+    this.#lastToolId = toolId
+    this.#currentTool = tool
+  }
+
+  /**
+   * Handle keydown events for hotbar (number keys 1-0, ESC).
+   * Called by KeyboardController.
+   * @param {KeyboardEvent} e
+   * @returns {boolean} true if handled
+   */
+  handleKeyDown(e) {
+    // Number keys 1-0 for slot selection
+    const slotMap = {
+      'Digit1': 0, 'Digit2': 1, 'Digit3': 2, 'Digit4': 3, 'Digit5': 4,
+      'Digit6': 5, 'Digit7': 6, 'Digit8': 7, 'Digit9': 8, 'Digit0': 9,
+      'Numpad1': 0, 'Numpad2': 1, 'Numpad3': 2, 'Numpad4': 3, 'Numpad5': 4,
+      'Numpad6': 5, 'Numpad7': 6, 'Numpad8': 7, 'Numpad9': 8, 'Numpad0': 9,
+    }
+
+    if (slotMap[e.code] !== undefined) {
+      this.selectSlot(slotMap[e.code])
+      return true
+    }
+
+    // ESC clears selection
+    if (e.code === 'Escape') {
+      this.clearSelection()
+      return true
+    }
+
+    return false
+  }
+
+  /**
+   * Handle slot selection (key press).
+   * 
+   * If the current tool has an expanded view and the selected slot
+   * is within the expanded items, handle it as an expanded view selection.
+   * 
+   * @param {number} index - Slot index (0-9)
    */
   selectSlot(index) {
     if (index < 0 || index > 9) return
 
-    // In voxel mode, selecting a voxel item updates the tool but stays in voxel mode
-    if (this.#mode === 'voxels') {
-      const voxelItem = this.slots[index]
-      if (voxelItem && this.#createVoxelTool) {
-        this.#createVoxelTool.setVoxelType(voxelItem.type)
-        
-        // Update visual selection
-        if (this.slotElements[this.selectedIndex]) {
-          this.slotElements[this.selectedIndex].classList.remove('selected')
-        }
-        this.selectedIndex = index
-        if (this.slotElements[this.selectedIndex]) {
-          this.slotElements[this.selectedIndex].classList.add('selected')
-        }
-      }
+    const currentTool = this.#getCurrentTool()
+    const expandedView = currentTool?.getExpandedView?.()
+    
+    // Check if we're in expanded view and selecting an expanded item
+    if (expandedView && index < expandedView.items.length) {
+      // Handle expanded view selection
+      currentTool.onExpandedViewSelect?.(index)
+      this.render()
       return
     }
 
-    // In select mode, selecting updates the sub-mode
-    if (this.#mode === 'select') {
-      const selectItem = this.slots[index]
-      if (selectItem && this.#selectVoxelTool) {
-        // Update the select tool's mode
-        /** @type {any} */
-        const item = selectItem
-        this.#selectVoxelTool.setMode(item.id)
-        
-        // Update visual selection
-        if (this.slotElements[this.selectedIndex]) {
-          this.slotElements[this.selectedIndex].classList.remove('selected')
-        }
-        this.selectedIndex = index
-        if (this.slotElements[this.selectedIndex]) {
-          this.slotElements[this.selectedIndex].classList.add('selected')
-        }
-        
-        // If paste mode selected, enter rotate mode
-        if (item.id === 'paste' && this.#selectVoxelTool.hasCopyBuffer()) {
-          this.enterRotateMode(this.#selectVoxelTool)
-        }
-      }
-      return
-    }
-
-    // In rotate mode, selecting triggers rotation actions
-    if (this.#mode === 'rotate') {
-      const rotateItem = this.slots[index]
-      if (rotateItem && this.#selectVoxelTool) {
-        /** @type {any} */
-        const item = rotateItem
-        if (item.action === 'rotateX') {
-          this.#selectVoxelTool.rotateX()
-        } else if (item.action === 'rotateY') {
-          this.#selectVoxelTool.rotateY()
-        }
-        
-        // Update visual selection briefly (no persistent selection in rotate mode)
-        if (this.slotElements[this.selectedIndex]) {
-          this.slotElements[this.selectedIndex].classList.remove('selected')
-        }
-        this.selectedIndex = index
-        if (this.slotElements[this.selectedIndex]) {
-          this.slotElements[this.selectedIndex].classList.add('selected')
-        }
-        
-        // Clear selection after a short delay
-        setTimeout(() => {
-          if (this.slotElements[this.selectedIndex]) {
-            this.slotElements[this.selectedIndex].classList.remove('selected')
-          }
-          this.selectedIndex = -1
-        }, 150)
-      }
-      return
-    }
-
-    // Normal tool mode
-    if (this.slotElements[this.selectedIndex]) {
-      const oldTool = this.slots[this.selectedIndex]
-      if (oldTool) {
-        oldTool.onDeselect?.()
-        if (oldTool.needsVoxelMode()) {
-          this.exitVoxelMode()
-        }
-        if (oldTool.needsSelectMode()) {
-          this.exitSelectMode()
-        }
-      }
-      this.slotElements[this.selectedIndex].classList.remove('selected')
-    }
-
-    this.selectedIndex = index
-
-    if (this.slotElements[this.selectedIndex]) {
-      const newTool = this.slots[this.selectedIndex]
-      if (newTool) {
-        newTool.onSelect?.()
-        if (newTool.needsVoxelMode()) {
-          this.enterVoxelMode(newTool)
-        } else if (newTool.needsSelectMode()) {
-          this.enterSelectMode(newTool)
-        }
-      }
-      this.slotElements[this.selectedIndex].classList.add('selected')
-    }
-
-    // Update toolContext with the selected tool (handles onSelect/onDeselect lifecycle)
-    const selectedTool = this.getSelectedSlot().tool
-    if (this.#toolContext) {
-      this.#toolContext.selectTool(selectedTool)
-    }
-    // Inject ChunkRegistry into tools that need it (duck typing)
-    if (selectedTool?.setChunkRegistry && this.#chunkRegistry) {
-      selectedTool.setChunkRegistry(this.#chunkRegistry)
-    }
+    // Normal tool selection
+    const requestedTool = this.slots[index]
+    if (!requestedTool) return
+    
+    const toolId = requestedTool.getToolType?.() ?? ToolType.NONE
+    
+    // Send to server (all tools now have server-side IDs)
+    this.#gameClient?.sendToolSelect(toolId)
+    
+    // Update UI immediately for responsiveness
+    // (Server will eventually confirm with same value)
+    this.render()
   }
 
   /**
    * Clear the current selection (no tool selected).
    */
   clearSelection() {
-    if (this.selectedIndex >= 0 && this.slotElements[this.selectedIndex]) {
-      const tool = this.slots[this.selectedIndex]
-      if (tool) {
-        tool.onDeselect?.()
-        if (tool.needsVoxelMode()) {
-          this.exitVoxelMode()
-        }
-        if (tool.needsSelectMode()) {
-          this.exitSelectMode()
-        }
-      }
-      this.slotElements[this.selectedIndex].classList.remove('selected')
-    }
-    this.selectedIndex = -1
-
-    // Update toolContext - no tool selected (handles onDeselect lifecycle)
-    if (this.#toolContext) {
-      this.#toolContext.selectTool(null)
-    }
-
-    if (this.onToolUnselected) {
-      this.onToolUnselected()
-    }
+    // Notify current tool it's being deselected
+    const currentTool = this.#getCurrentTool()
+    currentTool?.onDeselect?.()
+    
+    // Send NONE to server
+    this.#gameClient?.sendToolSelect(ToolType.NONE)
+    this.render()
   }
 
   /**
-   * Check if any slot/tool is currently selected.
+   * Check if a tool is currently selected.
    * @returns {boolean}
    */
   hasSelection() {
-    return this.selectedIndex >= 0
+    return this.#getSelectedSlotIndex() >= 0
   }
 
   /**
-   * Check if currently in voxel mode.
-   * @returns {boolean}
-   */
-  isInVoxelMode() {
-    return this.#mode === 'voxels'
-  }
-
-  /**
-   * Check if currently in select mode.
-   * @returns {boolean}
-   */
-  isInSelectMode() {
-    return this.#mode === 'select'
-  }
-
-  /**
-   * Enter voxel selection mode.
-   * Saves current slots and fills hotbar with this.voxelItems.
-   * @param {import('../tools/CreateVoxelTool.js').CreateVoxelTool} createVoxelTool - The tool to configure
-   */
-  enterVoxelMode(createVoxelTool) {
-    if (this.#mode === 'voxels') return
-    
-    this.#mode = 'voxels'
-    this.#savedSlots = [...this.slots]
-    this.#createVoxelTool = createVoxelTool
-    
-    // Fill slots with voxel items
-    this.slots = Array(10).fill(null)
-    this.voxelItems.forEach((item, i) => {
-      if (i < 10) this.slots[i] = item
-    })
-    
-    // Show back button
-    if (this.#backButton) {
-      this.#backButton.style.display = 'flex'
-    }
-    
-    // Preserve selection if the voxel type matches, otherwise clear
-    const currentVoxelType = createVoxelTool.getVoxelType()
-    const matchingIndex = this.voxelItems.findIndex(item => item.type === currentVoxelType)
-    this.selectedIndex = matchingIndex >= 0 ? matchingIndex : -1
-    
-    this.renderVoxelMode()
-  }
-
-  /**
-   * Exit voxel selection mode and restore original tools.
-   */
-  exitVoxelMode() {
-    if (this.#mode !== 'voxels') return
-    
-    this.#mode = 'tools'
-    this.slots = [...this.#savedSlots]
-    this.#voxelItems = []
-    this.#createVoxelTool = null
-    
-    // Hide back button
-    if (this.#backButton) {
-      this.#backButton.style.display = 'none'
-    }
-    
-    this.selectedIndex = -1
-    this.render()
-  }
-
-  /**
-   * Enter select mode.
-   * Saves current slots and fills hotbar with destroy/copy/paste options.
-   * @param {import('../tools/SelectVoxelTool.js').SelectVoxelTool} selectVoxelTool - The tool to configure
-   */
-  enterSelectMode(selectVoxelTool) {
-    if (this.#mode === 'select') return
-    
-    this.#mode = 'select'
-    this.#savedSlots = [...this.slots]
-    this.#selectVoxelTool = selectVoxelTool
-    
-    // Fill slots with select mode items (destroy/copy/paste)
-    this.slots = Array(10).fill(null)
-    this.#selectItems.forEach((item, i) => {
-      if (i < 10) {
-        // Store as a mock object with the properties we need
-        this.slots[i] = /** @type {any} */ ({
-          icon: item.icon,
-          id: item.id,
-          name: item.label,
-        })
-      }
-    })
-    
-    // Show back button
-    if (this.#backButton) {
-      this.#backButton.style.display = 'flex'
-    }
-    
-    // Select the current mode of the tool
-    const currentMode = selectVoxelTool.getMode()
-    const matchingIndex = this.#selectItems.findIndex(item => item.id === currentMode)
-    this.selectedIndex = matchingIndex >= 0 ? matchingIndex : 0
-    
-    this.renderSelectMode()
-  }
-
-  /**
-   * Enter rotate mode (for paste rotation controls).
-   * Fills hotbar with rotation options.
-   * Note: Does NOT save slots - #savedSlots should keep tools slots for eventual exit.
-   * @param {import('../tools/SelectVoxelTool.js').SelectVoxelTool} selectVoxelTool - The tool to configure
-   */
-  enterRotateMode(selectVoxelTool) {
-    if (this.#mode === 'rotate') return
-    
-    // Don't save slots here - #savedSlots should still contain tools slots
-    // from when we entered select mode. We'll use it when exiting select mode.
-    
-    this.#mode = 'rotate'
-    this.#selectVoxelTool = selectVoxelTool
-    
-    // Fill slots with rotate mode items
-    this.slots = Array(10).fill(null)
-    this.#rotateItems.forEach((item, i) => {
-      if (i < 10) {
-        this.slots[i] = /** @type {any} */ ({
-          icon: item.icon,
-          id: item.id,
-          name: item.label,
-          action: item.action,
-        })
-      }
-    })
-    
-    // Show back button
-    if (this.#backButton) {
-      this.#backButton.style.display = 'flex'
-    }
-    
-    this.selectedIndex = -1  // No initial selection in rotate mode
-    this.renderRotateMode()
-  }
-
-  /**
-   * Exit rotate mode and return to select mode.
-   */
-  exitRotateMode() {
-    if (this.#mode !== 'rotate') return
-    
-    // Go back to select mode
-    this.#mode = 'select'
-    
-    // Restore select mode slots (NOT from #savedSlots - that has tools slots)
-    this.slots = Array(10).fill(null)
-    this.#selectItems.forEach((item, i) => {
-      if (i < 10) {
-        this.slots[i] = /** @type {any} */ ({
-          icon: item.icon,
-          id: item.id,
-          name: item.label,
-        })
-      }
-    })
-    
-    // Restore selection to paste mode
-    if (this.#selectVoxelTool) {
-      const pasteIndex = this.#selectItems.findIndex(item => item.id === 'paste')
-      this.selectedIndex = pasteIndex >= 0 ? pasteIndex : 0
-    } else {
-      this.selectedIndex = -1
-    }
-    
-    this.renderSelectMode()
-  }
-
-  /**
-   * Check if currently in rotate mode.
-   * @returns {boolean}
-   */
-  isInRotateMode() {
-    return this.#mode === 'rotate'
-  }
-
-  /**
-   * Exit select mode and restore original tools.
-   */
-  exitSelectMode() {
-    if (this.#mode !== 'select') return
-    
-    this.#mode = 'tools'
-    this.slots = [...this.#savedSlots]
-    this.#selectVoxelTool = null
-    
-    // Hide back button
-    if (this.#backButton) {
-      this.#backButton.style.display = 'none'
-    }
-    
-    this.selectedIndex = -1
-    this.render()
-  }
-
-  /**
-   * Render the hotbar in voxel mode (shows voxel textures as icons).
-   */
-  renderVoxelMode() {
-    // Clear slot elements (keep back button)
-    const slotsToRemove = this.container.querySelectorAll('.hotbar-slot')
-    slotsToRemove.forEach(el => el.remove())
-    this.slotElements = []
-
-    this.slots.forEach((slot, index) => {
-      const slotEl = document.createElement('div')
-      slotEl.className = 'hotbar-slot'
-      if (index === this.selectedIndex) {
-        slotEl.classList.add('selected')
-      }
-
-      const numberEl = document.createElement('span')
-      numberEl.className = 'hotbar-key'
-      numberEl.textContent = index === 9 ? '0' : String(index + 1)
-
-      const iconEl = document.createElement('span')
-      iconEl.className = 'hotbar-icon'
-      
-      // Show voxel texture as icon
-      if (slot) {
-        const voxelDef = slot
-        const textureName = typeof voxelDef.textures === 'string' 
-          ? voxelDef.textures 
-          : voxelDef.textures.default ?? ''
-        iconEl.style.backgroundImage = `url(/assets/voxels/${textureName}.png)`
-        iconEl.style.backgroundSize = 'cover'
-        iconEl.style.imageRendering = 'pixelated'
-        iconEl.style.display = 'inline-block'
-        iconEl.style.width = '32px'
-        iconEl.style.height = '32px'
-        iconEl.textContent = ''  // Clear any text content
-      }
-
-      slotEl.appendChild(numberEl)
-      slotEl.appendChild(iconEl)
-      this.container.appendChild(slotEl)
-      this.slotElements.push(slotEl)
-
-      // Touch selection
-      slotEl.addEventListener('pointerdown', (e) => {
-        e.preventDefault()
-        this.selectSlot(index)
-      })
-    })
-  }
-
-  /**
-   * Render the hotbar in select mode (shows destroy/copy/paste icons).
-   */
-  renderSelectMode() {
-    // Clear slot elements (keep back button)
-    const slotsToRemove = this.container.querySelectorAll('.hotbar-slot')
-    slotsToRemove.forEach(el => el.remove())
-    this.slotElements = []
-
-    this.slots.forEach((slot, index) => {
-      const slotEl = document.createElement('div')
-      slotEl.className = 'hotbar-slot'
-      if (index === this.selectedIndex) {
-        slotEl.classList.add('selected')
-      }
-
-      const numberEl = document.createElement('span')
-      numberEl.className = 'hotbar-key'
-      numberEl.textContent = index === 9 ? '0' : String(index + 1)
-
-      const iconEl = document.createElement('span')
-      iconEl.className = 'hotbar-icon'
-      iconEl.textContent = slot ? slot.icon : ''
-
-      slotEl.appendChild(numberEl)
-      slotEl.appendChild(iconEl)
-      this.container.appendChild(slotEl)
-      this.slotElements.push(slotEl)
-
-      // Touch selection
-      slotEl.addEventListener('pointerdown', (e) => {
-        e.preventDefault()
-        this.selectSlot(index)
-      })
-    })
-  }
-
-  /**
-   * Render the hotbar in rotate mode (shows rotation controls).
-   */
-  renderRotateMode() {
-    // Clear slot elements (keep back button)
-    const slotsToRemove = this.container.querySelectorAll('.hotbar-slot')
-    slotsToRemove.forEach(el => el.remove())
-    this.slotElements = []
-
-    this.slots.forEach((slot, index) => {
-      const slotEl = document.createElement('div')
-      slotEl.className = 'hotbar-slot rotate-slot'
-      if (index === this.selectedIndex) {
-        slotEl.classList.add('selected')
-      }
-
-      const numberEl = document.createElement('span')
-      numberEl.className = 'hotbar-key'
-      // Show R and F keys for rotation
-      if (index === 0) numberEl.textContent = 'r'
-      else if (index === 1) numberEl.textContent = 'f'
-      else numberEl.textContent = index === 9 ? '0' : String(index + 1)
-
-      const iconEl = document.createElement('span')
-      iconEl.className = 'hotbar-icon'
-      iconEl.textContent = slot ? slot.icon : ''
-
-      slotEl.appendChild(numberEl)
-      slotEl.appendChild(iconEl)
-      this.container.appendChild(slotEl)
-      this.slotElements.push(slotEl)
-
-      // Touch selection
-      slotEl.addEventListener('pointerdown', (e) => {
-        e.preventDefault()
-        this.selectSlot(index)
-      })
-    })
-  }
-
-  /**
-   * Handle Q key press to exit special mode and/or unselect tool.
-   * @param {KeyboardEvent} [e] - Optional keyboard event to prevent default
-   * @returns {boolean} true if handled
-   */
-  handleQ(e) {
-    if (this.#mode === 'voxels') {
-      this.exitVoxelMode()
-      this.clearSelection()
-      if (e) e.preventDefault()
-      return true
-    }
-    
-    // Rotate mode exits to select mode, not fully out
-    if (this.#mode === 'rotate') {
-      this.exitRotateMode()
-      if (e) e.preventDefault()
-      return true
-    }
-    
-    if (this.#mode === 'select') {
-      this.exitSelectMode()
-      this.clearSelection()
-      if (e) e.preventDefault()
-      return true
-    }
-    
-    if (this.hasSelection()) {
-      this.clearSelection()
-      if (e) e.preventDefault()
-      return true
-    }
-    
-    return false
-  }
-
-  /**
-   * Handle keyboard input for slot selection.
-   * @param {KeyboardEvent} e
-   * @returns {boolean} true if the key was handled
-   */
-  handleKeyDown(e) {
-    // Number keys 1-9 map to slots 0-8
-    if (e.code >= 'Digit1' && e.code <= 'Digit9') {
-      const slotIndex = parseInt(e.code.slice(5)) - 1
-      this.selectSlot(slotIndex)
-      return true
-    }
-    // Number key 0 maps to slot 9
-    if (e.code === 'Digit0') {
-      this.selectSlot(9)
-      return true
-    }
-    // Numpad keys
-    if (e.code >= 'Numpad1' && e.code <= 'Numpad9') {
-      const slotIndex = parseInt(e.code.slice(6)) - 1
-      this.selectSlot(slotIndex)
-      return true
-    }
-    if (e.code === 'Numpad0') {
-      this.selectSlot(9)
-      return true
-    }
-    return false
-  }
-
-  /**
-   * Get the currently selected slot info.
-   * In voxel/select mode, returns the actual tool, not the mode item.
+   * Get the currently selected slot data.
    * @returns {{index: number, tool: Tool|null}}
    */
   getSelectedSlot() {
-    if (this.selectedIndex < 0) {
-      return { index: -1, tool: null }
-    }
-    
-    // In voxel mode, return the CreateVoxelTool, not the voxel definition
-    if (this.#mode === 'voxels') {
-      return {
-        index: this.selectedIndex,
-        tool: this.#createVoxelTool,
-      }
-    }
-    
-    // In select mode, return the SelectVoxelTool, not the mode item
-    if (this.#mode === 'select') {
-      return {
-        index: this.selectedIndex,
-        tool: this.#selectVoxelTool,
-      }
-    }
-    
-    // In rotate mode, return the SelectVoxelTool
-    if (this.#mode === 'rotate') {
-      return {
-        index: this.selectedIndex,
-        tool: this.#selectVoxelTool,
-      }
-    }
-    
+    const index = this.#getSelectedSlotIndex()
     return {
-      index: this.selectedIndex,
-      tool: this.slots[this.selectedIndex],
+      index,
+      tool: index >= 0 ? this.slots[index] : null
     }
+  }
+
+  /**
+   * Set a tool in a specific slot.
+   * @param {number} index - Slot index (0-9)
+   * @param {Tool} tool - The tool to set
+   */
+  setTool(index, tool) {
+    if (index < 0 || index > 9) return
+    this.slots[index] = tool
+    this.render()
+  }
+
+  /**
+   * Remove a tool from a slot.
+   * @param {number} index - Slot index (0-9)
+   */
+  removeTool(index) {
+    if (index < 0 || index > 9) return
+    this.slots[index] = null
+    this.render()
+  }
+
+
+
+  /**
+   * Get the current tool instance.
+   * @returns {Tool|null}
+   */
+  getCurrentTool() {
+    return this.#getCurrentTool()
+  }
+
+  /**
+   * Clean up resources.
+   */
+  destroy() {
+    // Nothing to clean up - no 3D visuals managed here
   }
 }

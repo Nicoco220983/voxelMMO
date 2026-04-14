@@ -11,6 +11,7 @@ namespace voxelmmo {
  *   - POSITION_BIT = 1 << 0 (DynamicPositionComponent.hpp)
  *   - SHEEP_BEHAVIOR_BIT = 1 << 1 (SheepBehaviorComponent.hpp)
  *   - HEALTH_BIT = 1 << 2 (HealthComponent.hpp)
+ *   - TOOL_BIT = 1 << 3 (ToolComponent.hpp)
  *
  * Delta types: Each entity record in a delta message has a DeltaType:
  *   - CREATE_ENTITY (0): entity newly spawned or moved from elsewhere

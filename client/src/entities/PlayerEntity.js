@@ -2,7 +2,7 @@
 import { BaseEntity } from './BaseEntity.js'
 import { EntityType } from '../EntityCatalog.js'
 import { SUBVOXEL_SIZE, TICK_RATE } from '../types.js'
-import { POSITION_BIT, HEALTH_BIT } from '../components/ComponentBits.js'
+import { POSITION_BIT, HEALTH_BIT, TOOL_BIT } from '../components/ComponentBits.js'
 import * as THREE from 'three'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { HealthComponent } from '../components/HealthComponent.js'
@@ -47,6 +47,12 @@ export class PlayerEntity extends BaseEntity {
 
   /** @type {boolean} True if this is the local player (self) */
   isSelf = false
+
+  /** @type {number|null} Tool ID (for self entity tracking) */
+  toolId = null
+
+  /** @type {number} Last used tick (for cooldown tracking) */
+  toolLastUsedTick = 0
 
   /** @type {THREE.Group|null} Left arm pivot group */
   leftArm = null
@@ -397,5 +403,14 @@ export class PlayerEntity extends BaseEntity {
   static deserializeComponents(self, reader, componentMask, messageTick) {
     if (componentMask & POSITION_BIT) DynamicPositionComponent.deserialize(self?.motion, reader, messageTick)
     if (componentMask & HEALTH_BIT) HealthComponent.deserialize(self?.health, reader, messageTick)
+    if (componentMask & TOOL_BIT) {
+      // Read tool data: toolId u8 + lastUsedTick u32
+      if (self) {
+        self.toolId = reader.readUint8()
+        self.toolLastUsedTick = reader.readUint32()
+      } else {
+        reader.skip(5)
+      }
+    }
   }
 }

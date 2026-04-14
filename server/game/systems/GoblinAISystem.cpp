@@ -1,4 +1,5 @@
 #include "game/systems/GoblinAISystem.hpp"
+#include "game/systems/CombatSystem.hpp"
 #include "game/entities/GoblinEntity.hpp"
 #include "game/components/GoblinBehaviorComponent.hpp"
 #include "game/components/DynamicPositionComponent.hpp"
@@ -13,6 +14,11 @@ namespace GoblinAISystem {
 
 using namespace GoblinEntity;
 
+// Thresholds for velocity/yaw changes to reduce network spam
+constexpr int32_t MIN_VELOCITY_DELTA = 1;    // ~0.2 voxels/tick
+constexpr float MIN_YAW_DELTA = 0.1f;         // ~6 degrees
+constexpr int32_t MIN_TARGET_POS_DELTA = 100; // ~0.4 voxels
+
 void apply(entt::registry& reg, uint32_t currentTick) {
     auto view = reg.view<GoblinBehaviorComponent, DynamicPositionComponent, EntityTypeComponent>();
     
@@ -23,7 +29,8 @@ void apply(entt::registry& reg, uint32_t currentTick) {
     {
         if (etype.type != EntityType::GOBLIN) return;
 
-        // Helper lambda to find nearest player within aggro radius
+        // ========== Helper Lambdas ==========
+        
         auto findNearestPlayer = [&]() -> std::pair<entt::entity, int32_t> {
             entt::entity nearest = entt::null;
             int32_t nearestDistSq = GOBLIN_AGGRO_RADIUS * GOBLIN_AGGRO_RADIUS;
@@ -34,7 +41,7 @@ void apply(entt::registry& reg, uint32_t currentTick) {
                 const int32_t dx = playerPos.x - dyn.x;
                 const int32_t dy = playerPos.y - dyn.y;
                 const int32_t dz = playerPos.z - dyn.z;
-                const int32_t distSq = dx * dx + dy * dy + dz * dz;
+                const int32_t distSq = dx*dx + dy*dy + dz*dz;
                 
                 if (distSq < nearestDistSq) {
                     nearestDistSq = distSq;
@@ -44,66 +51,172 @@ void apply(entt::registry& reg, uint32_t currentTick) {
             return {nearest, nearestDistSq};
         };
 
-        // Helper to get GlobalEntityId from entity
         auto getGlobalId = [&](entt::entity target) -> uint32_t {
             if (target == entt::null || !reg.valid(target)) return 0;
-            const auto& gid = reg.get<GlobalEntityIdComponent>(target);
-            return gid.id;
+            return reg.get<GlobalEntityIdComponent>(target).id;
         };
 
-        // State machine
+        auto findByGlobalId = [&](uint32_t globalId) -> entt::entity {
+            if (globalId == 0) return entt::null;
+            auto gidView = reg.view<GlobalEntityIdComponent>();
+            for (auto e : gidView) {
+                if (gidView.get<GlobalEntityIdComponent>(e).id == globalId) return e;
+            }
+            return entt::null;
+        };
+
+        // Compute chase motion. Returns true if velocity/yaw changed enough.
+        auto computeChaseMotion = [&](const DynamicPositionComponent& targetPos, int32_t speed,
+                                      int32_t& outVx, int32_t& outVz, float& outYaw) -> bool {
+            const int32_t dx = targetPos.x - dyn.x;
+            const int32_t dz = targetPos.z - dyn.z;
+            const int32_t distSq = dx*dx + dz*dz;
+            
+            if (distSq == 0) {
+                outVx = 0;
+                outVz = 0;
+                outYaw = behavior.yaw;
+                return (dyn.vx != 0 || dyn.vz != 0);
+            }
+            
+            const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
+            const float dist = std::sqrt(static_cast<float>(distSq));
+            const int32_t vx = static_cast<int32_t>((dx / dist) * speed);
+            const int32_t vz = static_cast<int32_t>((dz / dist) * speed);
+            
+            const bool vxChanged = std::abs(vx - dyn.vx) > MIN_VELOCITY_DELTA;
+            const bool vzChanged = std::abs(vz - dyn.vz) > MIN_VELOCITY_DELTA;
+            const bool yawChanged = std::abs(yaw - behavior.yaw) > MIN_YAW_DELTA;
+            
+            outVx = vxChanged ? vx : dyn.vx;
+            outVz = vzChanged ? vz : dyn.vz;
+            outYaw = yawChanged ? yaw : behavior.yaw;
+            
+            return vxChanged || vzChanged || yawChanged;
+        };
+
+        auto enterChase = [&](entt::entity targetEnt, const DynamicPositionComponent& targetPos) {
+            int32_t newVx, newVz;
+            float newYaw;
+            bool motionChanged = computeChaseMotion(targetPos, GOBLIN_CHASE_SPEED, newVx, newVz, newYaw);
+            bool stateChanged = behavior.state != GoblinBehaviorComponent::State::CHASE;
+            
+            if (stateChanged || motionChanged) {
+                GoblinBehaviorComponent::modifyWithTarget(reg, ent,
+                    GoblinBehaviorComponent::State::CHASE,
+                    currentTick + 10,
+                    targetPos.x, targetPos.z,
+                    newYaw,
+                    getGlobalId(targetEnt),
+                    currentTick + AGGRO_TIMEOUT_TICKS,
+                    /*dirty=*/true);
+                
+                DynamicPositionComponent::modify(reg, ent,
+                    dyn.x, dyn.y, dyn.z,
+                    newVx, dyn.vy, newVz,
+                    dyn.grounded,
+                    /*dirty=*/true);
+            }
+        };
+
+        auto enterAttack = [&](const DynamicPositionComponent& targetPos) {
+            int32_t newVx, newVz;
+            float newYaw;
+            computeChaseMotion(targetPos, GOBLIN_CHASE_SPEED, newVx, newVz, newYaw);
+            
+            GoblinBehaviorComponent::modifyWithTarget(reg, ent,
+                GoblinBehaviorComponent::State::ATTACK,
+                currentTick + 5,
+                targetPos.x, targetPos.z,
+                newYaw,
+                behavior.targetEntityId,
+                currentTick + AGGRO_TIMEOUT_TICKS,
+                /*dirty=*/true);
+            
+            DynamicPositionComponent::modify(reg, ent,
+                dyn.x, dyn.y, dyn.z,
+                0, dyn.vy, 0,
+                dyn.grounded,
+                /*dirty=*/true);
+        };
+
+        auto enterIdle = [&]() {
+            GoblinBehaviorComponent::modify(reg, ent,
+                GoblinBehaviorComponent::State::IDLE,
+                currentTick + 60,
+                dyn.x, dyn.z,
+                behavior.yaw,
+                /*dirty=*/true);
+            
+            DynamicPositionComponent::modify(reg, ent,
+                dyn.x, dyn.y, dyn.z,
+                0, dyn.vy, 0,
+                dyn.grounded,
+                /*dirty=*/true);
+        };
+
+        auto extendAttack = [&](const DynamicPositionComponent& targetPos) {
+            bool targetChanged = std::abs(behavior.targetX - targetPos.x) > MIN_TARGET_POS_DELTA || 
+                                 std::abs(behavior.targetZ - targetPos.z) > MIN_TARGET_POS_DELTA;
+            
+            if (targetChanged) {
+                GoblinBehaviorComponent::modifyWithTarget(reg, ent,
+                    GoblinBehaviorComponent::State::ATTACK,
+                    currentTick + 5,
+                    targetPos.x, targetPos.z,
+                    behavior.yaw,
+                    behavior.targetEntityId,
+                    currentTick + AGGRO_TIMEOUT_TICKS,
+                    /*dirty=*/true);
+            }
+        };
+
+        auto tryAttackDamage = [&]() {
+            entt::entity targetEnt = findByGlobalId(behavior.targetEntityId);
+            if (targetEnt == entt::null || !reg.valid(targetEnt)) return;
+            
+            const auto& targetPos = reg.get<DynamicPositionComponent>(targetEnt);
+            int32_t dx = targetPos.x - dyn.x;
+            int32_t dy = targetPos.y - dyn.y;
+            int32_t dz = targetPos.z - dyn.z;
+            int32_t distSq = dx*dx + dy*dy + dz*dz;
+            
+            if (distSq <= GOBLIN_ATTACK_RADIUS * GOBLIN_ATTACK_RADIUS) {
+                CombatSystem::processAIAttack(reg, ent, targetEnt,
+                    GOBLIN_ATTACK_DAMAGE, GOBLIN_KNOCKBACK, behavior.yaw, currentTick);
+            }
+        };
+
+        // ========== Main AI Logic ==========
+        
+        // First: determine if we should be chasing someone
+        auto [nearestPlayer, nearestDistSq] = findNearestPlayer();
+        bool shouldChase = nearestPlayer != entt::null;
+        
+        // Handle based on current state
         switch (behavior.state) {
             case GoblinBehaviorComponent::State::IDLE:
             case GoblinBehaviorComponent::State::WALKING: {
-                // Check for nearby players first (highest priority)
-                auto [nearestPlayer, distSq] = findNearestPlayer();
-                
-                if (nearestPlayer != entt::null) {
-                    // Player detected! Switch to CHASE
+                if (shouldChase) {
+                    // Switch to chase mode immediately
                     const auto& playerPos = reg.get<DynamicPositionComponent>(nearestPlayer);
-                    const int32_t dx = playerPos.x - dyn.x;
-                    const int32_t dz = playerPos.z - dyn.z;
-                    const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
+                    enterChase(nearestPlayer, playerPos);
+                } else if (currentTick >= behavior.stateEndTick) {
+                    // Wander logic - state transition
+                    uint32_t nextDuration = 120 + (currentTick % 181);
                     
-                    GoblinBehaviorComponent::modifyWithTarget(reg, ent,
-                        GoblinBehaviorComponent::State::CHASE,
-                        currentTick + 10,  // Re-evaluate chase soon
-                        playerPos.x, playerPos.z,
-                        yaw,
-                        getGlobalId(nearestPlayer),
-                        currentTick + AGGRO_TIMEOUT_TICKS,
-                        /*dirty=*/true);
-                    
-                    // Set chase velocity
-                    const float dist = std::sqrt(static_cast<float>(distSq));
-                    const int32_t vx = dist > 0 ? static_cast<int32_t>((dx / dist) * GOBLIN_CHASE_SPEED) : 0;
-                    const int32_t vz = dist > 0 ? static_cast<int32_t>((dz / dist) * GOBLIN_CHASE_SPEED) : 0;
-                    
-                    DynamicPositionComponent::modify(reg, ent,
-                        dyn.x, dyn.y, dyn.z,
-                        vx, dyn.vy, vz,
-                        dyn.grounded,
-                        /*dirty=*/true);
-                    return;
-                }
-
-                // No player nearby - wander like sheep
-                if (currentTick >= behavior.stateEndTick) {
-                    const uint32_t nextDuration = 120 + (currentTick % 181);  // 2-5s
-
                     if (behavior.state == GoblinBehaviorComponent::State::IDLE) {
-                        // IDLE -> WALKING: pick random target
-                        const int32_t radius = 5 * SUBVOXEL_SIZE;
-                        const int32_t dx = (static_cast<int32_t>(currentTick * 12345) % (2 * radius)) - radius;
-                        const int32_t dz = (static_cast<int32_t>(currentTick * 67890) % (2 * radius)) - radius;
+                        // Pick random wander target
+                        int32_t radius = 5 * SUBVOXEL_SIZE;
+                        int32_t dx = (static_cast<int32_t>(currentTick * 12345) % (2 * radius)) - radius;
+                        int32_t dz = (static_cast<int32_t>(currentTick * 67890) % (2 * radius)) - radius;
+                        int32_t targetX = dyn.x + dx;
+                        int32_t targetZ = dyn.z + dz;
+                        float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
                         
-                        const int32_t targetX = dyn.x + dx;
-                        const int32_t targetZ = dyn.z + dz;
-                        const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
-                        
-                        const float dist = std::sqrt(static_cast<float>(dx * dx + dz * dz));
-                        const int32_t vx = dist > 0 ? static_cast<int32_t>((dx / dist) * GOBLIN_WALK_SPEED) : 0;
-                        const int32_t vz = dist > 0 ? static_cast<int32_t>((dz / dist) * GOBLIN_WALK_SPEED) : 0;
+                        float dist = std::sqrt(static_cast<float>(dx*dx + dz*dz));
+                        int32_t vx = dist > 0 ? static_cast<int32_t>((dx / dist) * GOBLIN_WALK_SPEED) : 0;
+                        int32_t vz = dist > 0 ? static_cast<int32_t>((dz / dist) * GOBLIN_WALK_SPEED) : 0;
                         
                         GoblinBehaviorComponent::modify(reg, ent,
                             GoblinBehaviorComponent::State::WALKING,
@@ -118,7 +231,7 @@ void apply(entt::registry& reg, uint32_t currentTick) {
                             dyn.grounded,
                             /*dirty=*/true);
                     } else {
-                        // WALKING -> IDLE: stop moving
+                        // Stop walking
                         GoblinBehaviorComponent::modify(reg, ent,
                             GoblinBehaviorComponent::State::IDLE,
                             currentTick + nextDuration,
@@ -137,189 +250,62 @@ void apply(entt::registry& reg, uint32_t currentTick) {
             }
 
             case GoblinBehaviorComponent::State::CHASE: {
-                // Check if target still valid and within aggro range
+                // Validate current target
+                entt::entity targetEnt = findByGlobalId(behavior.targetEntityId);
                 bool lostTarget = true;
-                entt::entity targetEnt = entt::null;
                 
-                // Find target entity by GlobalEntityId
-                if (behavior.targetEntityId != 0) {
-                    auto gidView = reg.view<GlobalEntityIdComponent>();
-                    for (auto e : gidView) {
-                        if (gidView.get<GlobalEntityIdComponent>(e).id == behavior.targetEntityId) {
-                            targetEnt = e;
-                            break;
-                        }
-                    }
-                }
-
                 if (targetEnt != entt::null && reg.valid(targetEnt)) {
                     const auto& targetPos = reg.get<DynamicPositionComponent>(targetEnt);
-                    const int32_t dx = targetPos.x - dyn.x;
-                    const int32_t dy = targetPos.y - dyn.y;
-                    const int32_t dz = targetPos.z - dyn.z;
-                    const int32_t distSq = dx * dx + dy * dy + dz * dz;
-
+                    int32_t dx = targetPos.x - dyn.x;
+                    int32_t dy = targetPos.y - dyn.y;
+                    int32_t dz = targetPos.z - dyn.z;
+                    int32_t distSq = dx*dx + dy*dy + dz*dz;
+                    
                     if (distSq <= GOBLIN_AGGRO_RADIUS * GOBLIN_AGGRO_RADIUS) {
                         lostTarget = false;
                         
-                        // Check if in attack range
                         if (distSq <= GOBLIN_ATTACK_RADIUS * GOBLIN_ATTACK_RADIUS) {
-                            // Switch to ATTACK
-                            const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
-                            
-                            GoblinBehaviorComponent::modifyWithTarget(reg, ent,
-                                GoblinBehaviorComponent::State::ATTACK,
-                                currentTick + 5,  // Brief attack state (0.25s)
-                                targetPos.x, targetPos.z,
-                                yaw,
-                                behavior.targetEntityId,
-                                currentTick + AGGRO_TIMEOUT_TICKS,
-                                /*dirty=*/true);
-                            
-                            // Stop moving for attack
-                            DynamicPositionComponent::modify(reg, ent,
-                                dyn.x, dyn.y, dyn.z,
-                                0, dyn.vy, 0,
-                                dyn.grounded,
-                                /*dirty=*/true);
-                            return;
+                            // In attack range - switch to attack
+                            enterAttack(targetPos);
+                        } else {
+                            // Continue chasing - update motion with thresholds
+                            enterChase(targetEnt, targetPos);
                         }
-
-                        // Continue chasing - update direction toward target
-                        const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
-                        const float dist = std::sqrt(static_cast<float>(distSq));
-                        const int32_t vx = dist > 0 ? static_cast<int32_t>((dx / dist) * GOBLIN_CHASE_SPEED) : 0;
-                        const int32_t vz = dist > 0 ? static_cast<int32_t>((dz / dist) * GOBLIN_CHASE_SPEED) : 0;
-                        
-                        // Update chase target and extend aggro timeout
-                        GoblinBehaviorComponent::modifyWithTarget(reg, ent,
-                            GoblinBehaviorComponent::State::CHASE,
-                            currentTick + 10,  // Re-evaluate soon
-                            targetPos.x, targetPos.z,
-                            yaw,
-                            behavior.targetEntityId,
-                            currentTick + AGGRO_TIMEOUT_TICKS,
-                            /*dirty=*/true);
-                        
-                        DynamicPositionComponent::modify(reg, ent,
-                            dyn.x, dyn.y, dyn.z,
-                            vx, dyn.vy, vz,
-                            dyn.grounded,
-                            /*dirty=*/true);
                     }
                 }
-
-                // Lost target or timed out
+                
+                // Lost target or timeout
                 if (lostTarget || currentTick >= behavior.aggroCooldownTick) {
-                    // Return to IDLE
-                    GoblinBehaviorComponent::modify(reg, ent,
-                        GoblinBehaviorComponent::State::IDLE,
-                        currentTick + 60,  // 3s idle
-                        dyn.x, dyn.z,
-                        behavior.yaw,
-                        /*dirty=*/true);
-                    
-                    DynamicPositionComponent::modify(reg, ent,
-                        dyn.x, dyn.y, dyn.z,
-                        0, dyn.vy, 0,
-                        dyn.grounded,
-                        /*dirty=*/true);
+                    enterIdle();
                 }
                 break;
             }
 
             case GoblinBehaviorComponent::State::ATTACK: {
-                // Check if we can perform attack (cooldown expired)
+                // Deal damage if cooldown expired
                 if (currentTick >= behavior.attackCooldownTick) {
-                    // Find target entity
-                    entt::entity targetEnt = entt::null;
-                    if (behavior.targetEntityId != 0) {
-                        auto gidView = reg.view<GlobalEntityIdComponent>();
-                        for (auto e : gidView) {
-                            if (gidView.get<GlobalEntityIdComponent>(e).id == behavior.targetEntityId) {
-                                targetEnt = e;
-                                break;
-                            }
-                        }
+                    tryAttackDamage();
+                    
+                    if (behavior.attackCooldownTick != currentTick + ATTACK_COOLDOWN_TICKS) {
+                        GoblinBehaviorComponent::setAttackCooldown(reg, ent, 
+                            currentTick + ATTACK_COOLDOWN_TICKS, /*dirty=*/true);
                     }
-
-                    // Deal damage if target valid and still in range
-                    if (targetEnt != entt::null && reg.valid(targetEnt)) {
-                        const auto& targetPos = reg.get<DynamicPositionComponent>(targetEnt);
-                        const int32_t dx = targetPos.x - dyn.x;
-                        const int32_t dy = targetPos.y - dyn.y;
-                        const int32_t dz = targetPos.z - dyn.z;
-                        const int32_t distSq = dx * dx + dy * dy + dz * dz;
-
-                        if (distSq <= GOBLIN_ATTACK_RADIUS * GOBLIN_ATTACK_RADIUS) {
-                            // Deal damage
-                            HealthComponent::applyDamage(reg, targetEnt, GOBLIN_ATTACK_DAMAGE, currentTick);
-                        }
-                    }
-
-                    // Set next attack cooldown
-                    GoblinBehaviorComponent::setAttackCooldown(reg, ent, 
-                        currentTick + ATTACK_COOLDOWN_TICKS, /*dirty=*/true);
                 }
-
+                
                 // Transition out of attack state
                 if (currentTick >= behavior.stateEndTick) {
-                    // Check if target still in aggro range
-                    auto [nearestPlayer, distSq] = findNearestPlayer();
-                    
-                    if (nearestPlayer != entt::null && distSq <= GOBLIN_AGGRO_RADIUS * GOBLIN_AGGRO_RADIUS) {
-                        // If still in attack range, stay in attack (extend) instead of moving closer
-                        if (distSq <= GOBLIN_ATTACK_RADIUS * GOBLIN_ATTACK_RADIUS) {
-                            // Extend attack state - don't move, wait for next attack cooldown
-                            GoblinBehaviorComponent::modifyWithTarget(reg, ent,
-                                GoblinBehaviorComponent::State::ATTACK,
-                                currentTick + 5,  // Extend 0.25s
-                                behavior.targetX, behavior.targetZ,
-                                behavior.yaw,
-                                behavior.targetEntityId,
-                                currentTick + AGGRO_TIMEOUT_TICKS,
-                                /*dirty=*/true);
-                            // Keep velocity at 0 (already stopped)
+                    if (shouldChase && nearestDistSq <= GOBLIN_AGGRO_RADIUS * GOBLIN_AGGRO_RADIUS) {
+                        const auto& playerPos = reg.get<DynamicPositionComponent>(nearestPlayer);
+                        
+                        if (nearestDistSq <= GOBLIN_ATTACK_RADIUS * GOBLIN_ATTACK_RADIUS) {
+                            // Still in attack range - extend attack
+                            extendAttack(playerPos);
                         } else {
-                            // Return to CHASE (target moved out of attack range but in aggro)
-                            const auto& playerPos = reg.get<DynamicPositionComponent>(nearestPlayer);
-                            const int32_t dx = playerPos.x - dyn.x;
-                            const int32_t dz = playerPos.z - dyn.z;
-                            const float yaw = std::atan2(static_cast<float>(dx), static_cast<float>(dz));
-                            
-                            GoblinBehaviorComponent::modifyWithTarget(reg, ent,
-                                GoblinBehaviorComponent::State::CHASE,
-                                currentTick + 10,
-                                playerPos.x, playerPos.z,
-                                yaw,
-                                getGlobalId(nearestPlayer),
-                                currentTick + AGGRO_TIMEOUT_TICKS,
-                                /*dirty=*/true);
-                            
-                            const float dist = std::sqrt(static_cast<float>(distSq));
-                            const int32_t vx = dist > 0 ? static_cast<int32_t>((dx / dist) * GOBLIN_CHASE_SPEED) : 0;
-                            const int32_t vz = dist > 0 ? static_cast<int32_t>((dz / dist) * GOBLIN_CHASE_SPEED) : 0;
-                            
-                            DynamicPositionComponent::modify(reg, ent,
-                                dyn.x, dyn.y, dyn.z,
-                                vx, dyn.vy, vz,
-                                dyn.grounded,
-                                /*dirty=*/true);
+                            // Back to chase
+                            enterChase(nearestPlayer, playerPos);
                         }
                     } else {
-                        // Return to IDLE
-                        GoblinBehaviorComponent::modify(reg, ent,
-                            GoblinBehaviorComponent::State::IDLE,
-                            currentTick + 60,
-                            dyn.x, dyn.z,
-                            behavior.yaw,
-                            /*dirty=*/true);
-                        
-                        DynamicPositionComponent::modify(reg, ent,
-                            dyn.x, dyn.y, dyn.z,
-                            0, dyn.vy, 0,
-                            dyn.grounded,
-                            /*dirty=*/true);
+                        enterIdle();
                     }
                 }
                 break;

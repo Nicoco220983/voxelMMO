@@ -3,8 +3,8 @@
 /**
  * @typedef {import('../ui/Hotbar.js').Hotbar} Hotbar
  * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
+ * @typedef {import('../ui/BulkVoxelsSelection.js').BulkVoxelsSelection} BulkVoxelsSelection
  * @typedef {import('../GameClient.js').GameClient} GameClient
- * @typedef {import('../ui/ToolContext.js').ToolContext} ToolContext
  * @typedef {import('../ChunkRegistry.js').ChunkRegistry} ChunkRegistry
  */
 
@@ -43,10 +43,16 @@ export class BaseController {
   selectedSlotIndex = null
 
   /**
-   * Tool context providing access to current tool, voxel highlight, and bulk selection.
-   * @type {ToolContext}
+   * Voxel highlight system for targeting.
+   * @type {VoxelHighlight}
    */
-  toolContext
+  voxelHighlight
+
+  /**
+   * Bulk selection system for multi-voxel operations.
+   * @type {BulkVoxelsSelection}
+   */
+  bulkSelection
 
   /**
    * Hotbar UI component for slot selection.
@@ -56,11 +62,13 @@ export class BaseController {
 
   /**
    * @param {Object} options
-   * @param {ToolContext} options.toolContext - Tool context for dependency access
+   * @param {VoxelHighlight} options.voxelHighlight - Voxel highlight system
+   * @param {BulkVoxelsSelection} options.bulkSelection - Bulk selection system
    * @param {Hotbar} options.hotbar - Hotbar UI component
    */
-  constructor({ toolContext, hotbar }) {
-    this.toolContext = toolContext
+  constructor({ voxelHighlight, bulkSelection, hotbar }) {
+    this.voxelHighlight = voxelHighlight
+    this.bulkSelection = bulkSelection
     this.hotbar = hotbar
   }
 
@@ -126,15 +134,14 @@ export class BaseController {
 
 
 
-  // ── Mode management (delegates to VoxelHighlight) ─────────────────────────
+  // ── Mode management ──────────────────────────────────────────────────────
 
   /**
    * Check if currently in builder mode.
-   * Delegates to VoxelHighlight.
    * @returns {boolean}
    */
   isBuilderMode() {
-    return this.toolContext.voxelHighlight?.isBuilderMode() ?? false
+    return this.voxelHighlight?.isBuilderMode() ?? false
   }
 
   /**
@@ -142,7 +149,7 @@ export class BaseController {
    * @returns {boolean}
    */
   isBulkActive() {
-    return this.toolContext.bulkSelection.isActive()
+    return this.bulkSelection.isActive()
   }
 
   /**
@@ -150,7 +157,7 @@ export class BaseController {
    * @returns {{x: number, y: number, z: number}|null}
    */
   getBuilderTarget() {
-    return this.toolContext.voxelHighlight?.getCurrentTarget() ?? null
+    return this.voxelHighlight?.getCurrentTarget() ?? null
   }
 
   /**
@@ -158,7 +165,7 @@ export class BaseController {
    * @returns {{x: number, y: number, z: number}|null}
    */
   getBulkStart() {
-    return this.toolContext.bulkSelection.getStartPos()
+    return this.bulkSelection.getStartPos()
   }
 
   /**
@@ -168,11 +175,10 @@ export class BaseController {
    * @returns {boolean} true if mode changed
    */
   enterBuilderMode(initialTarget) {
-    const voxelHighlight = this.toolContext.voxelHighlight
-    if (!voxelHighlight || voxelHighlight.isBuilderMode()) return false
+    if (!this.voxelHighlight || this.voxelHighlight.isBuilderMode()) return false
 
-    voxelHighlight.setMode(voxelHighlight.constructor.BUILDER)
-    voxelHighlight.initBuilderTarget(initialTarget)
+    this.voxelHighlight.setMode(this.voxelHighlight.constructor.BUILDER)
+    this.voxelHighlight.initBuilderTarget(initialTarget)
     this.modeChanged = true
     return true
   }
@@ -183,11 +189,10 @@ export class BaseController {
    * @returns {boolean} true if mode changed
    */
   exitBuilderMode() {
-    const voxelHighlight = this.toolContext.voxelHighlight
-    if (!voxelHighlight) return false
+    if (!this.voxelHighlight) return false
 
-    const wasBuilder = voxelHighlight.isBuilderMode()
-    voxelHighlight.setMode(voxelHighlight.constructor.NORMAL)
+    const wasBuilder = this.voxelHighlight.isBuilderMode()
+    this.voxelHighlight.setMode(this.voxelHighlight.constructor.NORMAL)
     this.exitBulkMode()
 
     if (wasBuilder) {
@@ -204,7 +209,7 @@ export class BaseController {
    * @returns {boolean} true if activated
    */
   activateBulkMode(color = 0xFF0000) {
-    this.toolContext.bulkSelection.activate(color)
+    this.bulkSelection.activate(color)
     return true
   }
 
@@ -216,7 +221,7 @@ export class BaseController {
    * @returns {boolean} true if activated
    */
   enterBulkModeWithStart(startPos, color = 0xFF0000) {
-    this.toolContext.bulkSelection.start(startPos, color)
+    this.bulkSelection.start(startPos, color)
     return true
   }
 
@@ -224,7 +229,7 @@ export class BaseController {
    * Exit bulk mode (clear all bulk state).
    */
   exitBulkMode() {
-    this.toolContext.bulkSelection.exit()
+    this.bulkSelection.exit()
   }
 
   /**
@@ -234,7 +239,7 @@ export class BaseController {
    * @returns {{consumed: boolean, complete: boolean, start: {x: number, y: number, z: number}|null, end: {x: number, y: number, z: number}|null}}
    */
   onBulkAction(targetPos) {
-    return this.toolContext.bulkSelection.onAction(targetPos)
+    return this.bulkSelection.onAction(targetPos)
   }
 
   /**
@@ -290,7 +295,7 @@ export class BaseController {
    * @param {boolean} [keys.rotateY] - Rotate around Y axis requested
    */
   handleRotationInput(keys) {
-    const currentTool = this.toolContext.currentTool
+    const currentTool = this.hotbar.getCurrentTool()
     
     // Only process rotation when in paste mode with a tool that supports it
     if (!currentTool?.isPasteMode || !currentTool.isPasteMode()) {
@@ -322,7 +327,7 @@ export class BaseController {
    * @param {number} dz
    */
   moveBuilderTarget(dx, dy, dz) {
-    this.toolContext.voxelHighlight?.moveBuilderTarget(dx, dy, dz)
+    this.voxelHighlight?.moveBuilderTarget(dx, dy, dz)
   }
 
   // ── BaseController methods ───────────────────────────────────────────────
@@ -330,11 +335,9 @@ export class BaseController {
   /**
    * Comprehensive sync that handles all controller-related state updates.
    * This is the central entry point called once per frame from main.js.
-   * Includes: tool unselection, hotbar selection, pending inputs, targeting,
-   * voxel highlighting, bulk selection, input sending, and camera sync.
    * 
    * @param {VoxelHighlight} highlightSystem
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    * @param {number} dt - Delta time in seconds
    * @returns {{posX: number, posY: number, posZ: number, vposX: number, vposY: number, vposZ: number}} Player position info
@@ -346,30 +349,33 @@ export class BaseController {
     // ── Hotbar selection from controller ────────────────────────────────────
     this.#syncHotbarSelection()
 
-    // ── Get current target from VoxelHighlight (handles both normal and builder modes) ─
-    const toolMode = this.toolContext.getHighlightMode()
-    const toolColor = this.toolContext.getHighlightColor()
-    const toolSubMode = this.toolContext.getToolMode()
+    // ── Get current tool from hotbar ────────────────────────────────────────
+    const currentTool = this.hotbar.getCurrentTool()
+
+    // ── Get current target from VoxelHighlight ──────────────────────────────
+    const toolMode = currentTool?.getHighlightMode() ?? 'none'
+    const toolColor = currentTool?.getHighlightColor() ?? 0xFFFFFF
+    const toolSubMode = currentTool?.getMode?.() ?? null
     const currentTarget = highlightSystem.getTarget(camera, chunkRegistry, toolMode, toolSubMode)
 
     // ── Process pending inputs (tool key presses with mode transitions) ─────
     this.processPendingInputs?.(highlightSystem, chunkRegistry, camera)
 
     // ── Sync base controller state (auto-exit modes, builder movement, etc.) ─
-    this.#syncInternal(highlightSystem, chunkRegistry, camera, currentTarget)
+    this.#syncInternal(highlightSystem, chunkRegistry, camera, currentTarget, currentTool)
 
     // ── Update voxel highlight visualization ────────────────────────────────
     highlightSystem.setTarget(currentTarget, toolColor, toolMode, toolSubMode)
-    this.toolContext.currentTool?.update(highlightSystem, this.isBuilderMode(), this.getBuilderTarget(), currentTarget, toolColor)
+    currentTool?.update(highlightSystem, this.isBuilderMode(), this.getBuilderTarget(), currentTarget, toolColor)
 
     // ── Send all pending input (tool activation and/or movement) ────────────
-    this.sendInput(this.gameClient, highlightSystem, camera, chunkRegistry, this.hotbar.selectedIndex)
+    this.sendInput(this.gameClient, highlightSystem, camera, chunkRegistry)
 
     // ── Sync bulk selection visuals ─────────────────────────────────────────
-    this.toolContext.bulkSelection.setColor(toolColor)
+    this.bulkSelection.setColor(toolColor)
     if (this.isBulkActive()) {
       const bulkTarget = highlightSystem.getTarget(camera, chunkRegistry, toolMode, toolSubMode)
-      this.toolContext.bulkSelection.updateEnd(bulkTarget)
+      this.bulkSelection.updateEnd(bulkTarget)
     }
 
     // ── Get player position and sync camera ─────────────────────────────────
@@ -380,9 +386,7 @@ export class BaseController {
    * Internal sync - handles auto-exit modes, builder movement, long-press.
    * @private
    */
-  #syncInternal(highlightSystem, chunkRegistry, camera, currentTarget) {
-    const currentTool = this.toolContext.currentTool
-
+  #syncInternal(highlightSystem, chunkRegistry, camera, currentTarget, currentTool) {
     // Auto-exit builder mode if tool doesn't support it
     if (this.isBuilderMode() && (!currentTool || !currentTool.supportsBuilderMode())) {
       this.exitBuilderMode()
@@ -421,7 +425,16 @@ export class BaseController {
    */
   #syncToolUnselection() {
     if (this.unselectToolPressed) {
-      this.hotbar.handleQ()
+      const currentTool = this.hotbar.getCurrentTool()
+      
+      // Check if tool has back navigation (e.g., sub-mode exit)
+      const handled = currentTool?.onBackNavigation?.()
+      
+      if (!handled) {
+        // No back navigation handled, unselect the tool
+        this.hotbar.clearSelection()
+      }
+      
       this.unselectToolPressed = false
     }
   }
@@ -519,17 +532,25 @@ export class BaseController {
    * @param {number} slotIndex - Hotbar slot index
    * @param {number} pressCount - Number of presses (1, 2, or 3)
    * @param {VoxelHighlight} highlightSystem
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    */
   handleToolKeyPress(slotIndex, pressCount, highlightSystem, chunkRegistry, camera) {
-    const currentTool = this.toolContext.currentTool
+    const currentTool = this.hotbar.getCurrentTool()
+    const currentSlot = this.hotbar.getSelectedSlot()
+    const expandedView = currentTool?.getExpandedView?.()
+
+    // Check if pressing the same slot as current tool with expanded view
+    // If so, this is likely using expanded view controls, not requesting builder mode
+    const isExpandedViewInteraction = expandedView && 
+                                      currentSlot.index === slotIndex && 
+                                      slotIndex < expandedView.items.length
 
     if (pressCount === 1) {
       // Single press: normal mode
       this.exitBuilderMode()
-    } else if (pressCount >= 2) {
-      // Double press: builder mode
+    } else if (pressCount >= 2 && !isExpandedViewInteraction) {
+      // Double press: builder mode (only if not using expanded view controls)
       // Note: Triple press no longer triggers bulk mode - use long-press instead
       this.exitBulkMode()
 
@@ -547,11 +568,11 @@ export class BaseController {
   /**
    * Toggle builder mode on/off (B key).
    * @param {VoxelHighlight} highlightSystem
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {ChunkRegistry} chunkRegistry
    * @param {import('three').PerspectiveCamera} camera
    */
   toggleBuilderMode(highlightSystem, chunkRegistry, camera) {
-    const currentTool = this.toolContext.currentTool
+    const currentTool = this.hotbar.getCurrentTool()
 
     if (this.isBuilderMode()) {
       // Exit builder mode
@@ -572,10 +593,11 @@ export class BaseController {
    * This is the central entry point for all input sending.
    * @param {GameClient} client
    * @param {VoxelHighlight} highlightSystem
-   * @param {number} selectedSlotIndex - Current hotbar slot (for input type mapping)
+   * @param {import('three').PerspectiveCamera} camera
+   * @param {ChunkRegistry} chunkRegistry
    */
-  sendInput(client, highlightSystem, camera, chunkRegistry, selectedSlotIndex) {
-    const currentTool = this.toolContext.currentTool
+  sendInput(client, highlightSystem, camera, chunkRegistry) {
+    const currentTool = this.hotbar.getCurrentTool()
     const mode = currentTool?.getHighlightMode() ?? 'none'
 
     // Handle tool activation (only if tool selected)
@@ -585,7 +607,7 @@ export class BaseController {
 
     // Send movement input only when not in builder mode
     if (!this.isBuilderMode()) {
-      this.#sendMovementInputInternal(client, selectedSlotIndex)
+      this.#sendMovementInputInternal(client)
     }
   }
 
@@ -597,9 +619,21 @@ export class BaseController {
    * @param {'destroy'|'create'|'select'} mode
    * @param {VoxelHighlight} highlightSystem
    * @param {import('three').PerspectiveCamera} camera
-   * @param {import('../ChunkRegistry.js').ChunkRegistry} chunkRegistry
+   * @param {ChunkRegistry} chunkRegistry
    */
   #sendToolInputInternal(client, tool, mode, highlightSystem, camera, chunkRegistry) {
+    // Handle entity-targeting tools (combat)
+    if (tool.targetsEntities && tool.targetsEntities()) {
+      // Animation is server-driven via ToolComponent.lastUsedTick
+      // Client visual updates in main.js based on renderTick
+      const toolType = tool.getToolType()
+      if (toolType !== null) {
+        client.sendInput(NetworkProtocol.serializeInputToolUse(toolType, this.yaw, this.pitch))
+      }
+      return
+    }
+
+    // Handle voxel-targeting tools
     if (this.isBulkActive()) {
       // Get sub-mode from tool if available (for select tool)
       const subMode = tool?.getMode ? tool.getMode() : null
@@ -675,15 +709,11 @@ export class BaseController {
    * Send movement INPUT frame only when state changed.
    * @private
    * @param {GameClient} client
-   * @param {number} selectedSlotIndex - Current hotbar slot (for input type mapping)
    */
-  #sendMovementInputInternal(client, selectedSlotIndex) {
-    const inputType = this.#slotToInputType(selectedSlotIndex)
-
+  #sendMovementInputInternal(client) {
     if (this.buttons === this.#lastButtons &&
         this.yaw === this.#lastSentYaw &&
-        this.pitch === this.#lastSentPitch &&
-        inputType === this.#lastInputType) {
+        this.pitch === this.#lastSentPitch) {
       return
     }
 
@@ -691,19 +721,6 @@ export class BaseController {
     this.#lastButtons = this.buttons
     this.#lastSentYaw = this.yaw
     this.#lastSentPitch = this.pitch
-    this.#lastInputType = inputType
-  }
-
-  /**
-   * Map hotbar slot index to InputType value.
-   * @private
-   * @param {number} slotIndex
-   * @returns {number} InputType value
-   */
-  #slotToInputType(slotIndex) {
-    // For now, all inputs are MOVE type
-    // Future: different slots may trigger different input types
-    return InputType.MOVE
   }
 
   /**

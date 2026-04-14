@@ -22,3 +22,6 @@ export const GOBLIN_BEHAVIOR_BIT = AI_BEHAVIOR_BIT
 
 /** Health component bit - indicates HealthComponent data present */
 export const HEALTH_BIT = 1 << 2
+
+/** Tool component bit - indicates ToolComponent data present (player/ghost only) */
+export const TOOL_BIT = 1 << 3

@@ -2,20 +2,22 @@
 import { KeyboardController } from './KeyboardController.js'
 import { TouchController } from './TouchController.js'
 
-/** @typedef {import('../ui/ToolContext.js').ToolContext} ToolContext */
+/** @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight */
+/** @typedef {import('../ui/BulkVoxelsSelection.js').BulkVoxelsSelection} BulkVoxelsSelection */
 /** @typedef {import('../ui/Hotbar.js').Hotbar} Hotbar */
 
 /**
  * Detect the appropriate controller for the current device.
  * @param {HTMLElement} domElement - Element for pointer-lock (keyboard mode only).
  * @param {Object} options
- * @param {ToolContext} options.toolContext - Tool context for dependency access
+ * @param {VoxelHighlight} options.voxelHighlight - Voxel highlight system
+ * @param {BulkVoxelsSelection} options.bulkSelection - Bulk selection system
  * @param {Hotbar} options.hotbar - Hotbar UI component
  * @returns {KeyboardController|TouchController}
  */
-export function createController(domElement, { toolContext, hotbar }) {
+export function createController(domElement, { voxelHighlight, bulkSelection, hotbar }) {
   const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
   return isTouch 
-    ? new TouchController({ toolContext, hotbar }) 
-    : new KeyboardController(domElement, { toolContext, hotbar })
+    ? new TouchController({ voxelHighlight, bulkSelection, hotbar }) 
+    : new KeyboardController(domElement, { voxelHighlight, bulkSelection, hotbar })
 }

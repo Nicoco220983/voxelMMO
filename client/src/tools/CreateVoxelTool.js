@@ -1,6 +1,8 @@
 // @ts-check
 import { Tool } from './Tool.js'
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
+import { ToolType } from '../ToolCatalog.js'
+import { StoneVoxel, DirtVoxel, BasicVoxel, PlanksVoxel, BricksVoxel, MudVoxel, SlimeVoxel, LadderVoxel, GoblinBedVoxel } from '../voxels/index.js'
 
 /**
  * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
@@ -8,8 +10,24 @@ import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
 
 /**
  * Tool for creating voxels.
+ * Client-side only tool (getToolType returns null).
  */
 export class CreateVoxelTool extends Tool {
+  static TOOL_ID = ToolType.CREATE_VOXEL
+
+  // Available voxel types for the expanded view
+  static VOXEL_TYPES = [
+    StoneVoxel,
+    DirtVoxel,
+    BasicVoxel,
+    PlanksVoxel,
+    BricksVoxel,
+    MudVoxel,
+    SlimeVoxel,
+    LadderVoxel,
+    GoblinBedVoxel,
+  ]
+
   /** @type {number} */
   #voxelType
 
@@ -19,6 +37,10 @@ export class CreateVoxelTool extends Tool {
   constructor(voxelType = 1) { // 1 = BASIC
     super('Create Voxel', '➕')
     this.#voxelType = voxelType
+  }
+
+  static getToolTypeStatic() {
+    return ToolType.CREATE_VOXEL
   }
 
   /**
@@ -35,6 +57,39 @@ export class CreateVoxelTool extends Tool {
    */
   getVoxelType() {
     return this.#voxelType
+  }
+
+  /**
+   * Get the index of the current voxel type in VOXEL_TYPES.
+   * @returns {number}
+   */
+  getVoxelTypeIndex() {
+    return CreateVoxelTool.VOXEL_TYPES.findIndex(v => v.type === this.#voxelType)
+  }
+
+  /**
+   * Get expanded view data for the hotbar.
+   * Returns voxel palette to display in slots.
+   * @returns {{type: 'voxels', items: Array<import('../voxels/index.js').VoxelDef>, selectedIndex: number}}
+   */
+  getExpandedView() {
+    return {
+      type: 'voxels',
+      items: CreateVoxelTool.VOXEL_TYPES,
+      selectedIndex: this.getVoxelTypeIndex()
+    }
+  }
+
+  /**
+   * Handle selection in expanded view.
+   * Called by Hotbar when user selects a voxel type.
+   * @param {number} index - Index in items array
+   */
+  onExpandedViewSelect(index) {
+    const voxelDef = CreateVoxelTool.VOXEL_TYPES[index]
+    if (voxelDef) {
+      this.#voxelType = voxelDef.type
+    }
   }
 
   /**

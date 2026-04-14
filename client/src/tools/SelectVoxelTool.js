@@ -1,6 +1,7 @@
 // @ts-check
 import { Tool } from './Tool.js'
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
+import { ToolType } from '../ToolCatalog.js'
 import { chunkIdFromVoxelPos, getChunkPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../types.js'
 
 /**
@@ -13,8 +14,14 @@ import { chunkIdFromVoxelPos, getChunkPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZ
  * Supports bulk selection for copying regions of voxels.
  */
 export class SelectVoxelTool extends Tool {
+  static TOOL_ID = ToolType.SELECT_VOXEL
+
   /** @type {'destroy'|'copy'|'paste'} */
   #mode = 'destroy'
+
+  static getToolTypeStatic() {
+    return ToolType.SELECT_VOXEL
+  }
 
   /**
    * Copy buffer stores batched voxels from a copy operation.
@@ -50,6 +57,29 @@ export class SelectVoxelTool extends Tool {
    */
   isPasteMode() {
     return this.#mode === 'paste'
+  }
+
+  /**
+   * Handle back navigation (Q key pressed).
+   * If in a sub-mode, exits to main sub-tool selection.
+   * @returns {boolean} true if handled (don't unselect tool), false to unselect tool
+   */
+  onBackNavigation() {
+    // If in a sub-mode, go back to showing main sub-tools
+    if (this.#mode !== 'destroy') {
+      this.#mode = 'destroy'
+      return true // Handled, don't unselect
+    }
+    return false // Not handled, unselect tool
+  }
+
+  /**
+   * Called when the tool is deselected.
+   * Resets mode to default (destroy).
+   */
+  onDeselect() {
+    this.#mode = 'destroy'
+    this.resetRotation()
   }
 
   /**
@@ -151,6 +181,69 @@ export class SelectVoxelTool extends Tool {
    */
   getMode() {
     return this.#mode
+  }
+
+  /**
+   * Get expanded view data for the hotbar.
+   * Returns select mode options (destroy/copy/paste) or rotation controls when in paste mode.
+   * @returns {{type: 'select', items: Array<{id: string, name: string, icon: string}>, selectedIndex: number}|null}
+   */
+  getExpandedView() {
+    // In paste mode with copy buffer, show rotation controls
+    if (this.#mode === 'paste' && this.#copyBuffer) {
+      const rotationOptions = [
+        { id: 'rotateY', name: 'Rotate Y (Yaw)', icon: '↻' },
+        { id: 'rotateX', name: 'Rotate X (Pitch)', icon: '↺' },
+        { id: 'reset', name: 'Reset Rotation', icon: '⟲' },
+      ]
+      return {
+        type: 'select',
+        items: rotationOptions,
+        selectedIndex: -1 // No selection for rotation controls
+      }
+    }
+
+    // Default: show mode selection (destroy/copy/paste)
+    const selectOptions = [
+      { id: 'destroy', name: 'Destroy', icon: '💥' },
+      { id: 'copy', name: 'Copy', icon: '📋' },
+      { id: 'paste', name: 'Paste', icon: '📄' },
+    ]
+
+    const selectedIndex = selectOptions.findIndex(opt => opt.id === this.#mode)
+
+    return {
+      type: 'select',
+      items: selectOptions,
+      selectedIndex: selectedIndex >= 0 ? selectedIndex : 0
+    }
+  }
+
+  /**
+   * Handle selection in expanded view.
+   * Called by Hotbar when user selects an option.
+   * @param {number} index - Index in items array
+   */
+  onExpandedViewSelect(index) {
+    // In paste mode with copy buffer, handle rotation controls
+    if (this.#mode === 'paste' && this.#copyBuffer) {
+      const actions = ['rotateY', 'rotateX', 'reset']
+      const action = actions[index]
+      if (action === 'rotateY') {
+        this.rotateY()
+      } else if (action === 'rotateX') {
+        this.rotateX()
+      } else if (action === 'reset') {
+        this.resetRotation()
+      }
+      return
+    }
+
+    // Default: handle mode selection
+    const modes = ['destroy', 'copy', 'paste']
+    if (index >= 0 && index < modes.length) {
+      this.setMode(modes[index])
+    }
   }
 
   /**

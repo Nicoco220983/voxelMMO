@@ -87,11 +87,12 @@ export class TouchController extends BaseController {
 
   /**
    * @param {Object} options
-   * @param {import('../ui/ToolContext.js').ToolContext} options.toolContext - Tool context for dependency access
+   * @param {import('../ui/VoxelHighlight.js').VoxelHighlight} options.voxelHighlight - Voxel highlight system
+   * @param {import('../ui/BulkVoxelsSelection.js').BulkVoxelsSelection} options.bulkSelection - Bulk selection system
    * @param {import('../ui/Hotbar.js').Hotbar} options.hotbar - Hotbar UI component
    */
-  constructor({ toolContext, hotbar }) {
-    super({ toolContext, hotbar })
+  constructor({ voxelHighlight, bulkSelection, hotbar }) {
+    super({ voxelHighlight, bulkSelection, hotbar })
     this._isTouchController = true
     this.yaw = 0
     this.pitch = -0.3
@@ -453,7 +454,7 @@ export class TouchController extends BaseController {
    * @private
    */
   #triggerRotateX() {
-    const currentTool = this.toolContext?.currentTool
+    const currentTool = this.hotbar?.getCurrentTool()
     if (currentTool?.rotateX) {
       currentTool.rotateX()
     }
@@ -464,7 +465,7 @@ export class TouchController extends BaseController {
    * @private
    */
   #triggerRotateY() {
-    const currentTool = this.toolContext?.currentTool
+    const currentTool = this.hotbar?.getCurrentTool()
     if (currentTool?.rotateY) {
       currentTool.rotateY()
     }

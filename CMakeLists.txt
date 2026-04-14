@@ -14,6 +14,7 @@ find_package(unofficial-uwebsockets    CONFIG REQUIRED)
 add_executable(voxelmmo
     server/main.cpp
     server/common/EntityCatalog.cpp
+    server/common/ToolCatalog.cpp
     server/common/VoxelCatalog.cpp
     server/game/GameEngine.cpp
     server/game/ChunkSerializer.cpp
@@ -33,6 +34,7 @@ add_executable(voxelmmo
     server/game/systems/ChunkMembershipSystem.cpp
     server/game/systems/GoblinAISystem.cpp
     server/game/systems/HealthSystem.cpp
+    server/game/systems/CombatSystem.cpp
     server/game/systems/DisconnectedPlayerSystem.cpp
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp
@@ -40,6 +42,7 @@ add_executable(voxelmmo
     server/game/systems/SheepAISystem.cpp
     server/game/systems/GoblinAISystem.cpp
     server/game/systems/HealthSystem.cpp
+    server/game/systems/CombatSystem.cpp
     server/game/components/GroundContactComponent.cpp
     server/game/components/WalkComponent.cpp
 )
@@ -74,6 +77,7 @@ add_executable(voxelmmo_tests
     tests/server/test_save_integration.cpp
     # Server implementation files
     server/common/EntityCatalog.cpp
+    server/common/ToolCatalog.cpp
     server/common/VoxelCatalog.cpp
     server/game/WorldChunk.cpp
     server/game/WorldGenerator.cpp
@@ -90,6 +94,7 @@ add_executable(voxelmmo_tests
     server/game/voxels/GoblinBedVoxel.cpp
     server/game/systems/ChunkMembershipSystem.cpp
     server/game/systems/HealthSystem.cpp
+    server/game/systems/CombatSystem.cpp
     server/game/systems/DisconnectedPlayerSystem.cpp
     server/game/systems/InputSystem.cpp
     server/game/systems/PhysicsSystem.cpp

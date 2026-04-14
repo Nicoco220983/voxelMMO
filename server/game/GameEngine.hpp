@@ -319,6 +319,22 @@ private:
         VoxelType voxelType;
     };
     std::vector<PendingBulkVoxelCreation> pendingBulkVoxelCreations_;
+
+    /** @brief Pending tool use request (enqueued on TOOL_USE input). */
+    struct PendingToolUse {
+        PlayerId playerId;
+        uint8_t toolId;
+        float yaw;
+        float pitch;
+    };
+    std::vector<PendingToolUse> pendingToolUses_;
+
+    /** @brief Pending tool selection request (enqueued on TOOL_SELECT input). */
+    struct PendingToolSelect {
+        PlayerId playerId;
+        uint8_t toolId;
+    };
+    std::vector<PendingToolSelect> pendingToolSelects_;
     
     /** @brief Stateless procedural terrain generator for world generation. */
     std::unique_ptr<WorldGenerator> worldGenerator;
@@ -343,6 +359,8 @@ private:
     void processPendingVoxelCreations();
     void processPendingBulkVoxelDeletions();
     void processPendingBulkVoxelCreations();
+    void processPendingToolSelects();
+    void processPendingToolUses();
     const Chunk* chunkAt(SubVoxelCoord px, SubVoxelCoord py, SubVoxelCoord pz) noexcept;
     uint32_t generateRandomSeed();
 };

@@ -48,6 +48,9 @@ inline constexpr int32_t GOBLIN_ATTACK_RADIUS = 2 * SUBVOXEL_SIZE;  // 2 voxels
 /** @brief Damage per attack. */
 inline constexpr uint16_t GOBLIN_ATTACK_DAMAGE = 5;
 
+/** @brief Knockback impulse (sub-voxels/tick). */
+inline constexpr float GOBLIN_KNOCKBACK = 150.0f;
+
 /** @brief Default health for goblin entities. */
 inline constexpr uint16_t DEFAULT_HEALTH = 30;
 

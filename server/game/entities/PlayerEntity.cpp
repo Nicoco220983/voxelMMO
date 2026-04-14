@@ -3,6 +3,7 @@
 #include "game/components/JumpComponent.hpp"
 #include "game/components/WalkComponent.hpp"
 #include "game/components/HealthComponent.hpp"
+#include "game/components/ToolComponent.hpp"
 #include "common/EntityCatalog.hpp"
 #include <cmath>
 
@@ -54,6 +55,7 @@ entt::entity spawn(entt::registry& reg,
     reg.emplace<JumpComponent>(ent);
     reg.emplace<WalkComponent>(ent);
     reg.emplace<HealthComponent>(ent, DEFAULT_HEALTH, DEFAULT_HEALTH, /*lastDamageTick=*/0);
+    reg.emplace<ToolComponent>(ent);  // Default: HAND tool
 
     return ent;
 }
@@ -76,6 +78,9 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) 
     const auto& health = reg.get<HealthComponent>(ent);
     if (health.isNonDefault()) flags |= HEALTH_BIT;
 
+    const auto* tool = reg.try_get<ToolComponent>(ent);
+    if (tool && tool->isNonDefault()) flags |= TOOL_BIT;
+
     const auto& gid = reg.get<GlobalEntityIdComponent>(ent);
     w.write(gid.id);
     w.write(static_cast<uint8_t>(EntityType::PLAYER));
@@ -88,12 +93,15 @@ size_t serializeCreate(entt::registry& reg, entt::entity ent, SafeBufWriter& w) 
     if (flags & HEALTH_BIT) {
         HealthComponent::serialize(reg, ent, HEALTH_BIT, w);
     }
+    if (flags & TOOL_BIT) {
+        tool->serializeFields(w);
+    }
 
     return w.offset() - startOffset;
 }
 
 size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyComponent& dirty, SafeBufWriter& w) {
-    const uint8_t flags = dirty.dirtyFlags & (POSITION_BIT | HEALTH_BIT);
+    const uint8_t flags = dirty.dirtyFlags & (POSITION_BIT | HEALTH_BIT | TOOL_BIT);
 
     // Nothing to serialize if no tracked components are dirty
     if (flags == 0) {
@@ -108,6 +116,11 @@ size_t serializeUpdate(entt::registry& reg, entt::entity ent, const DirtyCompone
     w.write(flags);
     DynamicPositionComponent::serialize(reg, ent, flags, w);
     HealthComponent::serialize(reg, ent, flags, w);
+    if (flags & TOOL_BIT) {
+        if (const auto* tool = reg.try_get<ToolComponent>(ent)) {
+            tool->serializeFields(w);
+        }
+    }
 
     return w.offset() - startOffset;
 }
