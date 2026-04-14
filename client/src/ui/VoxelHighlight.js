@@ -248,14 +248,13 @@ export class VoxelHighlight {
   raycastTarget(camera, chunkRegistry, toolMode, subMode = null) {
     if (toolMode === 'none' || !camera) return null
 
-    // Get camera direction from yaw (Y) and pitch (X) rotation
-    const yaw = camera.rotation.y
-    const pitch = camera.rotation.x
-
-    const cosPitch = Math.cos(pitch)
-    const dirX = -Math.sin(yaw) * cosPitch
-    const dirY = Math.sin(pitch)
-    const dirZ = -Math.cos(yaw) * cosPitch
+    // Get camera direction directly from its quaternion so it always matches
+    // the rendered view regardless of rotation conventions.
+    const dir = new THREE.Vector3()
+    camera.getWorldDirection(dir)
+    const dirX = dir.x
+    const dirY = dir.y
+    const dirZ = dir.z
 
     const originX = camera.position.x
     const originY = camera.position.y

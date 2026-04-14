@@ -63,7 +63,11 @@ export class EntityDeserializer {
 
     const entView = new DataView(entityData.buffer, entityData.byteOffset, entityData.byteLength)
     const reader = new BufReader(entView)
-    return this.#applySnapshotEntitiesFromReader(entityRegistry, chunkRegistry, chunkId, reader, messageTick)
+    const count = this.#applySnapshotEntitiesFromReader(entityRegistry, chunkRegistry, chunkId, reader, messageTick)
+    if (reader.offset !== entityData.byteLength) {
+      console.error('[EntityDeserializer] Snapshot entity section not fully consumed:', reader.offset, '!=', entityData.byteLength)
+    }
+    return count
   }
 
   /**
@@ -155,7 +159,11 @@ export class EntityDeserializer {
 
     const entView = new DataView(entityData.buffer, entityData.byteOffset, entityData.byteLength)
     const reader = new BufReader(entView)
-    return this.#applySnapshotEntitiesFromReader(entityRegistry, chunkRegistry, chunkId, reader, messageTick)
+    const count = this.#applySnapshotEntitiesFromReader(entityRegistry, chunkRegistry, chunkId, reader, messageTick)
+    if (reader.offset !== entityData.byteLength) {
+      console.error('[EntityDeserializer] SnapshotDelta entity section not fully consumed:', reader.offset, '!=', entityData.byteLength)
+    }
+    return count
   }
 
   /**

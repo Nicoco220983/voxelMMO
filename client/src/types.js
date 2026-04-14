@@ -62,6 +62,12 @@
 /** @type {number} */ export const SUBVOXEL_BITS = 8
 /** @type {number} */ export const SUBVOXEL_SIZE = 1 << SUBVOXEL_BITS   // 256
 
+/** Player eye level offset above position in sub-voxels (~0.63 voxels = 161).
+ *  Player bbox height = 2*230 = 460 sub-voxels; eye at 85% of height from feet
+ *  => 0.85*460 - 230 = 161 sub-voxels above center.
+ */
+/** @type {number} */ export const PLAYER_EYE_LEVEL = 161
+
 // ── Chunk shift constants (must match server Types.hpp) ──────────────────────
 // Bit-shift from sub-voxel position to chunk coordinate = log2(chunk_dim × SUBVOXEL_SIZE)
 /** @type {number} */ export const CHUNK_SHIFT_Y = 13  // log2(32 × 256)

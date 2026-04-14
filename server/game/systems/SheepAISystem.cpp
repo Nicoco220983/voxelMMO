@@ -1,5 +1,6 @@
 #include "game/systems/SheepAISystem.hpp"
 #include "game/entities/SheepEntity.hpp"
+#include "game/components/HealthComponent.hpp"
 #include <entt/entt.hpp>
 #include <cmath>
 
@@ -15,6 +16,11 @@ void apply(entt::registry& reg, uint32_t currentTick) {
                   const EntityTypeComponent& etype)
     {
         if (etype.type != EntityType::SHEEP) return;
+
+        // Skip AI for dead entities
+        if (const auto* health = reg.try_get<HealthComponent>(ent)) {
+            if (health->current == 0) return;
+        }
 
         // Only act on state transitions
         if (currentTick < behavior.stateEndTick) return;

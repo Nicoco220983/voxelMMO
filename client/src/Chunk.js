@@ -267,7 +267,10 @@ export class Chunk {
 
     // Skip entity section (handled by EntityRegistry)
     const ess = view.getInt32(off, true)
-    // off += ess + 4  // Not needed, just ignore
+    off += 4 + ess
+    if (off !== view.byteLength) {
+      console.error('[Chunk] applySnapshot leftover bytes:', off, '!=', view.byteLength)
+    }
 
     this.dirty = true
   }
@@ -303,6 +306,9 @@ export class Chunk {
     }
 
     // Entity section is skipped (handled by EntityRegistry)
+    if (pOff !== pView.byteLength) {
+      console.error('[Chunk] applyVoxelDelta leftover bytes:', pOff, '!=', pView.byteLength)
+    }
 
     this.dirty = true
   }

@@ -44,6 +44,10 @@ namespace voxelmmo::GhostPlayerEntity {
  * @param playerId Persistent player ID.
  * @return Entity handle.
  */
+/// Player AABB half-extents in sub-voxels (0.4 × 0.9 × 0.4 voxels).
+inline constexpr int32_t GHOST_PLAYER_BBOX_HX     = static_cast<int32_t>(0.4f * SUBVOXEL_SIZE);
+inline constexpr int32_t GHOST_PLAYER_BBOX_HY     = static_cast<int32_t>(0.9f * SUBVOXEL_SIZE);
+inline constexpr int32_t GHOST_PLAYER_BBOX_HZ     = static_cast<int32_t>(0.4f * SUBVOXEL_SIZE);
 inline constexpr int32_t GHOST_MOVE_SPEED = 256;  ///< 20 vox/s × SUBVOXEL_SIZE × TICK_DT
 
 /** @brief Ghost players don't spawn naturally in the world. */

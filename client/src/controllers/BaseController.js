@@ -9,7 +9,7 @@
  */
 
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
-import { SUBVOXEL_SIZE } from '../types.js'
+import { SUBVOXEL_SIZE, PLAYER_EYE_LEVEL } from '../types.js'
 
 /**
  * Abstract base class for input controllers (keyboard/mouse or touch).
@@ -482,16 +482,16 @@ export class BaseController {
    */
   #syncCamera(camera, yaw, pitch) {
     const { posX, posY, posZ } = this.#getPlayerPosition()
+    const eyeY = posY + PLAYER_EYE_LEVEL
 
-    // Divide by SUBVOXEL_SIZE to get voxel coordinates for Three.js
-    camera.position.set(posX / SUBVOXEL_SIZE, posY / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
+    camera.position.set(posX / SUBVOXEL_SIZE, eyeY / SUBVOXEL_SIZE, posZ / SUBVOXEL_SIZE)
     camera.rotation.y = yaw
     camera.rotation.x = pitch
 
     return {
       posX, posY, posZ,
       vposX: posX / SUBVOXEL_SIZE,
-      vposY: posY / SUBVOXEL_SIZE,
+      vposY: eyeY / SUBVOXEL_SIZE,
       vposZ: posZ / SUBVOXEL_SIZE,
     }
   }
@@ -624,8 +624,6 @@ export class BaseController {
   #sendToolInputInternal(client, tool, mode, highlightSystem, camera, chunkRegistry) {
     // Handle entity-targeting tools (combat)
     if (tool.targetsEntities && tool.targetsEntities()) {
-      // Animation is server-driven via ToolComponent.lastUsedTick
-      // Client visual updates in main.js based on renderTick
       const toolType = tool.getToolType()
       if (toolType !== null) {
         client.sendInput(NetworkProtocol.serializeInputToolUse(toolType, this.yaw, this.pitch))

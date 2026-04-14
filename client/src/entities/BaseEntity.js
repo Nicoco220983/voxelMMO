@@ -76,4 +76,14 @@ export class BaseEntity {
     return this.motion.getReceivedPos()
   }
 
+  /**
+   * Get bounding box half-extents in sub-voxels.
+   * Override in subclasses to return correct dimensions.
+   * @returns {{hx: number, hy: number, hz: number}} Half-extents in sub-voxels
+   */
+  getBoundingBox() {
+    // Default: no bounding box
+    return { hx: 0, hy: 0, hz: 0 }
+  }
+
 }

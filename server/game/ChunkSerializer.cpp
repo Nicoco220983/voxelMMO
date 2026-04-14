@@ -440,8 +440,9 @@ size_t ChunkSerializer::serializeAllChunks(entt::registry& registry, ChunkRegist
 
         size_t bytesWritten = 0;
         bool hadSnapshot = false;
+        const bool isFirstSnapshot = !serState.hasBeenSerialized;
 
-        if (!serState.hasBeenSerialized) {
+        if (isFirstSnapshot) {
             // First time serializing this chunk: build full snapshot
             bytesWritten = buildSnapshot(*chunkPtr, registry, tick, chunkBuf, scratch);
             serState.hasBeenSerialized = true;
@@ -464,7 +465,9 @@ size_t ChunkSerializer::serializeAllChunks(entt::registry& registry, ChunkRegist
         }
 
         if (bytesWritten > 0) {
-            serState.deltaCount++;
+            if (!isFirstSnapshot) {
+                serState.deltaCount++;
+            }
             chunksSerialized++;
         }
 

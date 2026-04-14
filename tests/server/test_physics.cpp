@@ -3,6 +3,7 @@
 #include "game/systems/PhysicsSystem.hpp"
 #include "common/Types.hpp"
 #include "common/VoxelTypes.hpp"
+#include "game/entities/PlayerEntity.hpp"
 
 using namespace voxelmmo;
 
@@ -100,7 +101,7 @@ TEST_CASE("FULL entity lands on ground", "[physics]") {
     auto* pos = env.getPosition(ent);
     CHECK(pos->grounded == true);
     CHECK(pos->vy == 0);  // Stopped falling
-    CHECK(pos->y >= 256 * 10 + PLAYER_BBOX_HY);  // Resting on ground
+    CHECK(pos->y >= 256 * 10 + PlayerEntity::PLAYER_BBOX_HY);  // Resting on ground
 }
 
 TEST_CASE("FULL entity has terminal velocity", "[physics]") {
@@ -119,7 +120,7 @@ TEST_CASE("FULL entity stops at ground", "[physics]") {
     PhysicsTestEnv env(10);
     
     // Spawn on ground
-    int32_t groundY = 256 * 10 + PLAYER_BBOX_HY;
+    int32_t groundY = 256 * 10 + PlayerEntity::PLAYER_BBOX_HY;
     auto ent = env.spawnEntity(128, groundY + 500, 128, PhysicsMode::FULL);
     
     // Clear any velocity, let gravity do its work
@@ -174,7 +175,7 @@ TEST_CASE("FLYING entity collides with ground", "[physics]") {
     
     auto* pos = env.getPosition(ent);
     // Should have hit ground and stopped
-    CHECK(pos->y >= 256 * 10 + PLAYER_BBOX_HY);
+    CHECK(pos->y >= 256 * 10 + PlayerEntity::PLAYER_BBOX_HY);
     CHECK(pos->grounded == false);  // Flying never grounded
 }
 
@@ -202,7 +203,7 @@ TEST_CASE("Entity doesn't fall through thin floor", "[physics]") {
     env.tick(100);
     
     auto* pos = env.getPosition(ent);
-    CHECK(pos->y >= PLAYER_BBOX_HY);  // Didn't fall through
+    CHECK(pos->y >= PlayerEntity::PLAYER_BBOX_HY);  // Didn't fall through
     CHECK(pos->grounded);
 }
 

@@ -1,11 +1,12 @@
 // @ts-check
-import { BaseEntity } from './BaseEntity.js'
+import { LivingEntity } from './LivingEntity.js'
 import { EntityType } from '../EntityCatalog.js'
 import { SUBVOXEL_SIZE } from '../types.js'
 import { POSITION_BIT, AI_BEHAVIOR_BIT, HEALTH_BIT } from '../components/ComponentBits.js'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { GoblinBehaviorComponent } from '../components/GoblinBehaviorComponent.js'
 import { HealthComponent } from '../components/HealthComponent.js'
+
 import * as THREE from 'three'
 
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
@@ -32,12 +33,24 @@ import * as THREE from 'three'
  *
  * States: 0 = IDLE, 1 = WALKING, 2 = CHASE, 3 = ATTACK
  */
-export class GoblinEntity extends BaseEntity {
+/** Bounding box half-extents in sub-voxels (must match server GoblinEntity.hpp) */
+const GOBLIN_BBOX_HX = 115   // 0.45 voxels
+const GOBLIN_BBOX_HY = 179   // 0.7 voxels (taller for easier targeting)
+const GOBLIN_BBOX_HZ = 115   // 0.45 voxels
+
+export class GoblinEntity extends LivingEntity {
   /** @type {GoblinBehaviorComponent} */
   behavior = new GoblinBehaviorComponent()
 
-  /** @type {HealthComponent} Health component for damage/death tracking */
-  health = new HealthComponent()
+  /**
+   * Get bounding box half-extents in sub-voxels.
+   * @returns {{hx: number, hy: number, hz: number}}
+   */
+  getBoundingBox() {
+    return { hx: GOBLIN_BBOX_HX, hy: GOBLIN_BBOX_HY, hz: GOBLIN_BBOX_HZ }
+  }
+
+
 
   /** @type {THREE.Group|null} */
   mesh = null
@@ -183,6 +196,14 @@ export class GoblinEntity extends BaseEntity {
   updateAnimation(dt) {
     if (!this.mesh) return
 
+    // Check for damage and update flash effect
+    this.checkDamage()
+    this.updateDamageFlash(dt)
+
+    // Update death rotation (fall over when health reaches 0)
+    this.updateDeathRotation(dt)
+    if (this.isDead) return
+
     // Update position from motion component
     const pos = this.currentPos
     this.mesh.position.set(
@@ -324,6 +345,9 @@ export class GoblinEntity extends BaseEntity {
    * @param {THREE.Scene} scene
    */
   destroy(scene) {
+    // Clean up damage flash materials first
+    this._cleanupDamageFlash()
+
     if (this.mesh) {
       scene.remove(this.mesh)
       // Dispose geometries and materials
@@ -361,6 +385,7 @@ export class GoblinEntity extends BaseEntity {
       entity.motion.resetToDefaults()
       entity.behavior.resetToDefaults()
       entity.health.resetToDefaults()
+      // Note: LivingEntity.health is reset above
     }
 
     // 2. Deserialize only components indicated by mask

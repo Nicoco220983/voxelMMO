@@ -29,6 +29,15 @@ void apply(entt::registry& reg, uint32_t currentTick) {
     {
         if (etype.type != EntityType::GOBLIN) return;
 
+        // Skip AI for dead entities
+        if (const auto* health = reg.try_get<HealthComponent>(ent)) {
+            if (health->current == 0) return;
+        }
+
+        // Skip AI updates while airborne (e.g., from knockback)
+        // Let physics resolve knockback naturally; resume control when grounded
+        if (!dyn.grounded) return;
+
         // ========== Helper Lambdas ==========
         
         auto findNearestPlayer = [&]() -> std::pair<entt::entity, int32_t> {

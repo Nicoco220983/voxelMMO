@@ -274,7 +274,7 @@ entt::entity PhysicsTestEnv::spawnEntity(int32_t x, int32_t y, int32_t z, Physic
     registry.emplace<DirtyComponent>(ent);
     
     // Set bounding box based on mode
-    int32_t hx = PLAYER_BBOX_HX, hy = PLAYER_BBOX_HY, hz = PLAYER_BBOX_HZ;
+    int32_t hx = PlayerEntity::PLAYER_BBOX_HX, hy = PlayerEntity::PLAYER_BBOX_HY, hz = PlayerEntity::PLAYER_BBOX_HZ;
     if (mode == PhysicsMode::GHOST) {
         hx = hy = hz = 128;  // Smaller for ghosts
     }

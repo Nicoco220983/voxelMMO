@@ -1,11 +1,12 @@
 // @ts-check
-import { BaseEntity } from './BaseEntity.js'
+import { LivingEntity } from './LivingEntity.js'
 import { EntityType } from '../EntityCatalog.js'
 import { SUBVOXEL_SIZE, TICK_RATE } from '../types.js'
 import { POSITION_BIT, HEALTH_BIT, TOOL_BIT } from '../components/ComponentBits.js'
 import * as THREE from 'three'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { HealthComponent } from '../components/HealthComponent.js'
+
 
 /** @typedef {import('../utils.js').BufReader} BufReader */
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
@@ -30,7 +31,12 @@ import { HealthComponent } from '../components/HealthComponent.js'
  *
  * The self player entity is invisible (mesh not added to scene).
  */
-export class PlayerEntity extends BaseEntity {
+/** Bounding box half-extents in sub-voxels (must match server Types.hpp) */
+const PLAYER_BBOX_HX = 102   // 0.4 voxels
+const PLAYER_BBOX_HY = 230   // 0.9 voxels
+const PLAYER_BBOX_HZ = 102   // 0.4 voxels
+
+export class PlayerEntity extends LivingEntity {
   // ─── Movement constants (must match server Types.hpp) ───────────────────────
   /** Ghost player move speed in voxels/s (server: GHOST_MOVE_SPEED=256 sub-vox/tick) */
   static GHOST_MOVE_SPEED_VOXELS = 20.0
@@ -38,6 +44,14 @@ export class PlayerEntity extends BaseEntity {
   static PLAYER_WALK_SPEED_VOXELS = 6.0
   /** Player initial jump velocity in voxels/s (server: 110 sub-vox/tick) */
   static PLAYER_JUMP_VY_VOXELS = 110 / 256 * TICK_RATE  // ≈ 8.6 voxels/s
+
+  /**
+   * Get bounding box half-extents in sub-voxels.
+   * @returns {{hx: number, hy: number, hz: number}}
+   */
+  getBoundingBox() {
+    return { hx: PLAYER_BBOX_HX, hy: PLAYER_BBOX_HY, hz: PLAYER_BBOX_HZ }
+  }
 
   /** @type {THREE.Group|null} */
   mesh = null
@@ -81,8 +95,7 @@ export class PlayerEntity extends BaseEntity {
   /** @type {number} Smoothed horizontal speed */
   #smoothedSpeed = 0
 
-  /** @type {HealthComponent} Health component for damage/death tracking */
-  health = new HealthComponent()
+
 
   /**
    * @param {GlobalEntityId} globalId  GlobalEntityId.
@@ -124,9 +137,10 @@ export class PlayerEntity extends BaseEntity {
     const group = new THREE.Group()
 
     // Scale factor for all mesh parts (1.0 = base size)
-    const SIZE = .7
-    // Vertical offset to adjust mesh position relative to entity center
-    const HEIGHT_OFFSET = -.5
+    const SIZE = 1
+    // Vertical offset to center mesh on entity position (matching server bbox center)
+    // Server position is at center of bounding box (HY=0.9), mesh should be centered there
+    const HEIGHT_OFFSET = -.45
 
     // Color based on entity type
     const isGhost = entityType === EntityType.GHOST_PLAYER
@@ -242,6 +256,14 @@ export class PlayerEntity extends BaseEntity {
   updateAnimation(dt) {
     if (!this.mesh) return
 
+    // Check for damage and update flash effect
+    this.checkDamage()
+    this.updateDamageFlash(dt)
+
+    // Update death rotation (fall over when health reaches 0)
+    this.updateDeathRotation(dt)
+    if (this.isDead) return
+
     // Update position from motion component (predicted position from PhysicsPredictionSystem)
     const pos = this.currentPos
     this.mesh.position.set(
@@ -331,6 +353,8 @@ export class PlayerEntity extends BaseEntity {
    * @param {THREE.Scene} scene
    */
   destroy(scene) {
+    // Clean up damage flash materials first
+    this._cleanupDamageFlash()
     this.#destroyMesh()
     this.#scene = null
   }
@@ -354,6 +378,7 @@ export class PlayerEntity extends BaseEntity {
       // 1. Reset ALL components to defaults first
       entity.motion.resetToDefaults()
       entity.health.resetToDefaults()
+      // Note: LivingEntity.health is reset above
     }
 
     // 2. Deserialize only components indicated by mask (missing = stay at default)
@@ -375,6 +400,7 @@ export class PlayerEntity extends BaseEntity {
       // 1. Reset ALL components to defaults first
       entity.motion.resetToDefaults()
       entity.health.resetToDefaults()
+      // Note: LivingEntity.health is reset above
     }
 
     // 2. Deserialize only components indicated by mask (missing = stay at default)

@@ -201,8 +201,9 @@ void GameEngine::registerPlayer(GatewayId gwId, PlayerId playerId)
     std::lock_guard<std::recursive_mutex> lock(mtx_);
     // Player is tracked as "pending" (no entity yet) until JOIN message arrives.
     // Presence in gateways[gwId].players but not in playerEntities = pending.
-    if (auto it = gateways.find(gwId); it != gateways.end())
+    if (auto it = gateways.find(gwId); it != gateways.end()) {
         it->second.players.insert(playerId);
+    }
 }
 
 void GameEngine::teleportPlayer(PlayerId playerId, SubVoxelCoord sx, SubVoxelCoord sy, SubVoxelCoord sz) {

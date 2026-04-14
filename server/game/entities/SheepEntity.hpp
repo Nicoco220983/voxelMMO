@@ -28,9 +28,12 @@ struct SheepEntityTag {};
 
 namespace voxelmmo::SheepEntity {
 
-/** @brief Sheep dimensions in sub-voxels (slightly smaller than player). */
+/** @brief Sheep dimensions in sub-voxels.
+ * HY is larger than visual height to make sheep easier to hit in combat.
+ * The collision box extends above the visual model.
+ */
 inline constexpr int32_t SHEEP_BBOX_HX = 128;  // 0.5 voxels
-inline constexpr int32_t SHEEP_BBOX_HY = 128;  // 0.5 voxels
+inline constexpr int32_t SHEEP_BBOX_HY = 205;  // 0.8 voxels (taller for easier targeting)
 inline constexpr int32_t SHEEP_BBOX_HZ = 192;  // 0.75 voxels
 
 /** @brief Walking speed in sub-voxels per tick. */

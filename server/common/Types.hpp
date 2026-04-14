@@ -188,10 +188,6 @@ inline constexpr float   GRAVITY   = 9.81f;                           ///< Gravi
 inline constexpr int32_t GRAVITY_DECREMENT  = 6;
 /// Terminal velocity in sub-voxels/tick (≈ 128 m/s at 20 TPS).
 inline constexpr int32_t TERMINAL_VELOCITY  = 128 * SUBVOXEL_SIZE / TICK_RATE;
-/// Player AABB half-extents in sub-voxels (0.4 × 0.9 × 0.4 voxels).
-inline constexpr int32_t PLAYER_BBOX_HX     = static_cast<int32_t>(0.4f * SUBVOXEL_SIZE);
-inline constexpr int32_t PLAYER_BBOX_HY     = static_cast<int32_t>(0.9f * SUBVOXEL_SIZE);
-inline constexpr int32_t PLAYER_BBOX_HZ     = static_cast<int32_t>(0.4f * SUBVOXEL_SIZE);
 
 // ── Input-system movement speeds (sub-voxels per tick) ────────────────────
 // These constants now live in game/entities/GhostPlayerEntity.hpp and PlayerEntity.hpp

@@ -6,6 +6,7 @@
 #include "game/components/GlobalEntityIdComponent.hpp"
 #include <cmath>
 #include <limits>
+#include <iostream>
 
 namespace voxelmmo {
 namespace CombatSystem {
@@ -19,30 +20,48 @@ bool processToolUse(entt::registry& registry,
                     uint32_t currentTick) {
     const auto& catalog = ToolCatalog::instance();
 
+
     // Find player entity
     auto it = playerEntities.find(playerId);
-    if (it == playerEntities.end()) return false;
+    if (it == playerEntities.end()) {
+        return false;
+    }
 
     entt::entity attacker = it->second;
-    if (!registry.valid(attacker)) return false;
+    if (!registry.valid(attacker)) {
+        return false;
+    }
 
     // Check if entity has ToolComponent
     auto* toolComp = registry.try_get<ToolComponent>(attacker);
-    if (!toolComp) return false;
+    if (!toolComp) {
+        return false;
+    }
+
 
     // Validate tool matches
-    if (toolComp->toolId != toolId) return false;
+    if (toolComp->toolId != toolId) {
+        return false;
+    }
 
     // Check cooldown
-    if (!toolComp->canUse(currentTick, catalog)) return false;
+    if (!toolComp->canUse(currentTick, catalog)) {
+        return false;
+    }
 
     // Get tool info
     const auto* toolInfo = catalog.findById(toolId);
-    if (!toolInfo) return false;
+    if (!toolInfo) {
+        return false;
+    }
+
 
     // Get attacker position
     auto* attackerPos = registry.try_get<DynamicPositionComponent>(attacker);
-    if (!attackerPos) return false;
+    if (!attackerPos) {
+        return false;
+    }
+
 
     // Raycast for target
     entt::entity target = raycastEntity(registry, *attackerPos,
@@ -56,6 +75,7 @@ bool processToolUse(entt::registry& registry,
         return true;
     }
 
+
     // Apply hit
     HitRequest request;
     request.attacker = attacker;
@@ -64,7 +84,7 @@ bool processToolUse(entt::registry& registry,
     request.knockback = toolInfo->knockback;
     request.attackYaw = yaw;
 
-    applyHit(registry, request, currentTick);
+    HitResult result = applyHit(registry, request, currentTick);
 
     // Mark tool as used
     ToolComponent::markUsed(registry, attacker, currentTick, /*dirty=*/true);
@@ -127,9 +147,9 @@ void applyKnockback(entt::registry& registry,
     if (!dyn) return;
 
     // Calculate knockback velocity from yaw
-    // yaw 0 = +Z, yaw PI = -Z, yaw PI/2 = +X, -PI/2 = -X
-    float vx = std::sin(attackYaw) * knockbackSpeed;
-    float vz = std::cos(attackYaw) * knockbackSpeed;
+    // Must match raycast convention: yaw 0 = -Z, yaw PI = +Z, yaw PI/2 = -X, -PI/2 = +X
+    float vx = -std::sin(attackYaw) * knockbackSpeed;
+    float vz = -std::cos(attackYaw) * knockbackSpeed;
 
     // Add slight upward impulse for "flinch" effect
     float vy = dyn->vy + knockbackSpeed * 0.3f;
@@ -150,12 +170,13 @@ entt::entity raycastEntity(entt::registry& registry,
                            float maxRange,
                            entt::entity exclude) {
     // Calculate ray direction from yaw/pitch
-    // yaw: 0 = +Z, PI/2 = +X, PI = -Z, -PI/2 = -X
-    // pitch: positive = down, negative = up
+    // MUST MATCH CLIENT: camera.getWorldDirection() in client/src/controllers/BaseController.js
+    // Client pitch equals Three.js camera.rotation.x: positive = down, negative = up.
+    // yaw: 0 = -Z (facing away from camera default), PI = +Z, PI/2 = -X, -PI/2 = +X
     float cosPitch = std::cos(pitch);
-    float dirX = std::sin(yaw) * cosPitch;
-    float dirY = -std::sin(pitch);  // Negative because pitch down is positive
-    float dirZ = std::cos(yaw) * cosPitch;
+    float dirX = -std::sin(yaw) * cosPitch;
+    float dirY = std::sin(pitch);             // pitch positive (look down) -> dirY negative (down)
+    float dirZ = -std::cos(yaw) * cosPitch;
 
     // Normalize direction
     float len = std::sqrt(dirX * dirX + dirY * dirY + dirZ * dirZ);
@@ -165,21 +186,27 @@ entt::entity raycastEntity(entt::registry& registry,
         dirZ /= len;
     }
 
-    // Ray origin (attacker's eye level - add ~1.5 voxels = 384 sub-voxels)
+    // Ray origin is center of entity bounding box
     float rayOriginX = static_cast<float>(origin.x);
-    float rayOriginY = static_cast<float>(origin.y) + 384.0f;
+    float rayOriginY = static_cast<float>(origin.y);
     float rayOriginZ = static_cast<float>(origin.z);
+
 
     entt::entity closestHit = entt::null;
     float closestDist = maxRange;
+    int entitiesChecked = 0;
+    int entitiesWithHealth = 0;
 
     // Iterate all entities with bounding boxes
     auto view = registry.view<BoundingBoxComponent, DynamicPositionComponent>();
     for (auto [ent, bbox, pos] : view.each()) {
+        entitiesChecked++;
         if (ent == exclude) continue;
 
         // Skip entities without health (can't be damaged)
         if (!registry.try_get<HealthComponent>(ent)) continue;
+        entitiesWithHealth++;
+        
 
         // Build AABB
         float minX = static_cast<float>(pos.x - bbox.hx);
@@ -189,44 +216,57 @@ entt::entity raycastEntity(entt::registry& registry,
         float minZ = static_cast<float>(pos.z - bbox.hz);
         float maxZ = static_cast<float>(pos.z + bbox.hz);
 
+
         // Ray-AABB intersection (slab method)
         float tmin = 0.0f;
         float tmax = maxRange;
 
         // X slab
         if (std::abs(dirX) < 1e-6f) {
-            if (rayOriginX < minX || rayOriginX > maxX) continue;
+            if (rayOriginX < minX || rayOriginX > maxX) {
+                continue;
+            }
         } else {
             float tx1 = (minX - rayOriginX) / dirX;
             float tx2 = (maxX - rayOriginX) / dirX;
             if (tx1 > tx2) std::swap(tx1, tx2);
             tmin = std::max(tmin, tx1);
             tmax = std::min(tmax, tx2);
-            if (tmin > tmax) continue;
+            if (tmin > tmax) {
+                continue;
+            }
         }
 
         // Y slab
         if (std::abs(dirY) < 1e-6f) {
-            if (rayOriginY < minY || rayOriginY > maxY) continue;
+            if (rayOriginY < minY || rayOriginY > maxY) {
+                continue;
+            }
         } else {
             float ty1 = (minY - rayOriginY) / dirY;
             float ty2 = (maxY - rayOriginY) / dirY;
             if (ty1 > ty2) std::swap(ty1, ty2);
             tmin = std::max(tmin, ty1);
             tmax = std::min(tmax, ty2);
-            if (tmin > tmax) continue;
+            if (tmin > tmax) {
+                continue;
+            }
         }
 
         // Z slab
         if (std::abs(dirZ) < 1e-6f) {
-            if (rayOriginZ < minZ || rayOriginZ > maxZ) continue;
+            if (rayOriginZ < minZ || rayOriginZ > maxZ) {
+                continue;
+            }
         } else {
             float tz1 = (minZ - rayOriginZ) / dirZ;
             float tz2 = (maxZ - rayOriginZ) / dirZ;
             if (tz1 > tz2) std::swap(tz1, tz2);
             tmin = std::max(tmin, tz1);
             tmax = std::min(tmax, tz2);
-            if (tmin > tmax) continue;
+            if (tmin > tmax) {
+                continue;
+            }
         }
 
         // Hit found - check if closer than current closest
@@ -235,6 +275,7 @@ entt::entity raycastEntity(entt::registry& registry,
             closestHit = ent;
         }
     }
+
 
     return closestHit;
 }

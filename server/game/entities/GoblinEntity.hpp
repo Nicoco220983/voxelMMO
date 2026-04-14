@@ -28,9 +28,12 @@ struct GoblinEntityTag {};
 
 namespace voxelmmo::GoblinEntity {
 
-/** @brief Goblin dimensions in sub-voxels (smaller than player). */
+/** @brief Goblin dimensions in sub-voxels (smaller than player).
+ * HY is larger than visual height to make goblins easier to hit in combat.
+ * The collision box extends above the visual model.
+ */
 inline constexpr int32_t GOBLIN_BBOX_HX = 115;  // 0.45 voxels
-inline constexpr int32_t GOBLIN_BBOX_HY = 115;  // 0.45 voxels
+inline constexpr int32_t GOBLIN_BBOX_HY = 179;  // 0.7 voxels (taller for easier targeting)
 inline constexpr int32_t GOBLIN_BBOX_HZ = 115;  // 0.45 voxels
 
 /** @brief Walking speed when wandering (sub-voxels per tick). */

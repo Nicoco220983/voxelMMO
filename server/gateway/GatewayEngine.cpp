@@ -6,6 +6,8 @@
 #include <cstring>
 #include <vector>
 #include <unordered_map>
+#include <mutex>
+#include <unordered_set>
 
 namespace voxelmmo {
 
@@ -23,7 +25,11 @@ public:
     GatewayEngine::PlayerInputCallback inputCb;
 
     std::unordered_map<ChunkId, ChunkState> chunkStates;
+    mutable std::mutex chunkStatesMtx;
     std::unordered_map<PlayerId, PlayerInfo> players;
+    mutable std::mutex playersMtx;
+    std::unordered_set<uWS::WebSocket<false, true, PlayerConnection>*> closedSockets;
+    std::mutex closedSocketsMtx;
 };
 
 GatewayEngine::GatewayEngine() 
@@ -46,7 +52,9 @@ void GatewayEngine::setPlayerInputCallback(PlayerInputCallback cb) {
 // ── Incoming from game engine ─────────────────────────────────────────────
 
 void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
-    if (!pImpl->uwsLoop) return;
+    if (!pImpl->uwsLoop) {
+        return;
+    }
     
     // Copy the batch so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
@@ -59,7 +67,9 @@ void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
             // Read size from header (bytes 1-2, little-endian)
             uint16_t msgSize;
             std::memcpy(&msgSize, buf->data() + off + 1, 2);
-            if (off + msgSize > buf->size()) break;
+            if (off + msgSize > buf->size()) {
+                break;
+            }
             receiveChunkMessage(buf->data() + off, msgSize);
             off += msgSize;
         }
@@ -69,7 +79,9 @@ void GatewayEngine::receiveGameMessage(const uint8_t* data, size_t size) {
 }
 
 void GatewayEngine::receiveGameMessageForPlayer(PlayerId playerId, const uint8_t* data, size_t size) {
-    if (!pImpl->uwsLoop) return;
+    if (!pImpl->uwsLoop) {
+        return;
+    }
     
     // Copy the message so it can be safely captured across the thread boundary
     auto buf = std::make_shared<std::vector<uint8_t>>(data, data + size);
@@ -88,7 +100,9 @@ void GatewayEngine::broadcastBatch(const uint8_t* data, size_t size) {
 
 bool GatewayEngine::sendToPlayer(PlayerId playerId, const uint8_t* data, size_t size) {
     auto it = pImpl->sockets.find(playerId);
-    if (it == pImpl->sockets.end()) return false;
+    if (it == pImpl->sockets.end()) {
+        return false;
+    }
     const std::string_view msg(reinterpret_cast<const char*>(data), size);
     it->second->send(msg, uWS::OpCode::BINARY);
     return true;
@@ -130,11 +144,19 @@ void GatewayEngine::handleJoin(uWS::WebSocket<false, true, PlayerConnection>* ws
         // Only close if it's a different socket (actual reconnection)
         // Same socket = respawn, not reconnection
         if (existingIt->second != ws) {
-            // Close the old connection
+            // Close the old connection - the close callback handles cleanup
+            // (erases from sockets, calls disconnectCb, etc.)
             existingIt->second->close();
-            pImpl->sockets.erase(existingIt);
-            removePlayer(pid);
-            if (pImpl->disconnectCb) pImpl->disconnectCb(pid);
+            // NOTE: Do NOT erase here or call callbacks - close callback does it
+        }
+    }
+    
+    // CRITICAL: Check if the current ws was closed (e.g., by peer disconnecting)
+    // This can happen if the client disconnects while handleJoin is running
+    {
+        std::lock_guard<std::mutex> lock(pImpl->closedSocketsMtx);
+        if (pImpl->closedSockets.count(ws)) {
+            return;  // Socket was closed, don't use it
         }
     }
     
@@ -143,10 +165,13 @@ void GatewayEngine::handleJoin(uWS::WebSocket<false, true, PlayerConnection>* ws
     pImpl->sockets[pid] = ws;
     
     // Send all cached chunk state to the new player
-    for (const auto& [cid, state] : pImpl->chunkStates) {
-        auto [stateData, length] = state.getDataToSend(0);
-        if (length > 0) {
-            sendToPlayer(pid, stateData, length);
+    {
+        std::lock_guard<std::mutex> lock(pImpl->chunkStatesMtx);
+        for (const auto& [cid, state] : pImpl->chunkStates) {
+            auto [stateData, length] = state.getDataToSend(0);
+            if (length > 0) {
+                sendToPlayer(pid, stateData, length);
+            }
         }
     }
     
@@ -177,7 +202,9 @@ void GatewayEngine::listen(int port) {
             // Check if this is a JOIN message (first byte = ClientMessageType::JOIN = 1)
             if (size >= 1 && data[0] == static_cast<uint8_t>(ClientMessageType::JOIN)) {
                 auto joinMsg = NetworkProtocol::parseJoin(data, size);
-                if (!joinMsg) return;  // Invalid JOIN message
+                if (!joinMsg) {
+                    return;  // Invalid JOIN message
+                }
                 handleJoin(ws, *joinMsg);
             }
             
@@ -190,6 +217,11 @@ void GatewayEngine::listen(int port) {
 
         .close = [this](uWS::WebSocket<false, true, PlayerConnection>* ws,
                         int /*code*/, std::string_view /*reason*/) {
+            // Mark socket as closed BEFORE accessing user data
+            {
+                std::lock_guard<std::mutex> lock(pImpl->closedSocketsMtx);
+                pImpl->closedSockets.insert(ws);
+            }
             const PlayerId pid = ws->getUserData()->playerId;
             if (pid != 0) {
                 pImpl->sockets.erase(pid);
@@ -213,7 +245,9 @@ void GatewayEngine::listen(int port) {
 
 void GatewayEngine::receiveChunkMessage(const uint8_t* data, size_t size) {
     // Minimum header: [type(1)][size(2)][chunk_id(8)][tick(4)] = 15 bytes
-    if (size < NetworkProtocol::CHUNK_MESSAGE_HEADER_SIZE) return;
+    if (size < NetworkProtocol::CHUNK_MESSAGE_HEADER_SIZE) {
+        return;
+    }
 
     // size is at bytes 1-2, chunk_id at bytes 3-10
     ChunkId cid;
@@ -229,25 +263,30 @@ void GatewayEngine::receiveChunkMessage(const uint8_t* data, size_t size) {
 }
 
 ChunkState& GatewayEngine::getChunkState(ChunkId id) {
+    std::lock_guard<std::mutex> lock(pImpl->chunkStatesMtx);
     return pImpl->chunkStates[id];
 }
 
 const ChunkState* GatewayEngine::findChunkState(ChunkId id) const {
+    std::lock_guard<std::mutex> lock(pImpl->chunkStatesMtx);
     const auto it = pImpl->chunkStates.find(id);
     return (it != pImpl->chunkStates.end()) ? &it->second : nullptr;
 }
 
 void GatewayEngine::removeChunk(ChunkId id) {
+    std::lock_guard<std::mutex> lock(pImpl->chunkStatesMtx);
     pImpl->chunkStates.erase(id);
 }
 
 // ── Per-player snapshot tick tracking ─────────────────────────────────────
 
 void GatewayEngine::setPlayerStateTick(PlayerId pid, ChunkId cid, uint32_t tick) {
+    std::lock_guard<std::mutex> lock(pImpl->playersMtx);
     pImpl->players[pid].lastStateTick[cid] = tick;
 }
 
 uint32_t GatewayEngine::getPlayerStateTick(PlayerId pid, ChunkId cid) const {
+    std::lock_guard<std::mutex> lock(pImpl->playersMtx);
     const auto pit = pImpl->players.find(pid);
     if (pit == pImpl->players.end()) return 0;
     const auto cit = pit->second.lastStateTick.find(cid);
@@ -255,6 +294,7 @@ uint32_t GatewayEngine::getPlayerStateTick(PlayerId pid, ChunkId cid) const {
 }
 
 void GatewayEngine::removePlayer(PlayerId pid) {
+    std::lock_guard<std::mutex> lock(pImpl->playersMtx);
     pImpl->players.erase(pid);
 }
 

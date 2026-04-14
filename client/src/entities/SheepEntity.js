@@ -1,11 +1,12 @@
 // @ts-check
-import { BaseEntity } from './BaseEntity.js'
+import { LivingEntity } from './LivingEntity.js'
 import { EntityType } from '../EntityCatalog.js'
 import { SUBVOXEL_SIZE } from '../types.js'
 import { POSITION_BIT, AI_BEHAVIOR_BIT, HEALTH_BIT } from '../components/ComponentBits.js'
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
 import { SheepBehaviorComponent } from '../components/SheepBehaviorComponent.js'
 import { HealthComponent } from '../components/HealthComponent.js'
+
 import * as THREE from 'three'
 
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
@@ -28,12 +29,24 @@ import * as THREE from 'three'
  *   - Legs: 4 small boxes (0.15 x 0.4 x 0.15) with pivot at y=-0.25, feet at y=-0.65
  *   - Eyes: small black boxes at y=0.3
  */
-export class SheepEntity extends BaseEntity {
+/** Bounding box half-extents in sub-voxels (must match server SheepEntity.hpp) */
+const SHEEP_BBOX_HX = 128   // 0.5 voxels
+const SHEEP_BBOX_HY = 205   // 0.8 voxels (taller for easier targeting)
+const SHEEP_BBOX_HZ = 192   // 0.75 voxels
+
+export class SheepEntity extends LivingEntity {
   /** @type {SheepBehaviorComponent} */
   behavior = new SheepBehaviorComponent()
 
-  /** @type {HealthComponent} Health component for damage/death tracking */
-  health = new HealthComponent()
+  /**
+   * Get bounding box half-extents in sub-voxels.
+   * @returns {{hx: number, hy: number, hz: number}}
+   */
+  getBoundingBox() {
+    return { hx: SHEEP_BBOX_HX, hy: SHEEP_BBOX_HY, hz: SHEEP_BBOX_HZ }
+  }
+
+
 
   /** @type {THREE.Group|null} */
   mesh = null
@@ -128,6 +141,14 @@ export class SheepEntity extends BaseEntity {
   updateAnimation(dt) {
     if (!this.mesh) return
 
+    // Check for damage and update flash effect
+    this.checkDamage()
+    this.updateDamageFlash(dt)
+
+    // Update death rotation (fall over when health reaches 0)
+    this.updateDeathRotation(dt)
+    if (this.isDead) return
+
     // Update position from motion component (predicted position from PhysicsPredictionSystem)
     const pos = this.currentPos
     this.mesh.position.set(
@@ -170,6 +191,9 @@ export class SheepEntity extends BaseEntity {
    * @param {THREE.Scene} scene
    */
   destroy(scene) {
+    // Clean up damage flash materials first
+    this._cleanupDamageFlash()
+
     if (this.mesh) {
       scene.remove(this.mesh)
       // Dispose geometries and materials
@@ -207,6 +231,7 @@ export class SheepEntity extends BaseEntity {
       entity.motion.resetToDefaults()
       entity.behavior.resetToDefaults()
       entity.health.resetToDefaults()
+      // Note: LivingEntity.health is reset above
     }
 
     // 2. Deserialize only components indicated by mask (missing = stay at default)

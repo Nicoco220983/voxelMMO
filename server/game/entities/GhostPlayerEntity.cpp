@@ -25,7 +25,7 @@ entt::entity spawn(entt::registry& reg,
     reg.emplace<EntityTypeComponent>(ent, EntityType::GHOST_PLAYER);
     reg.emplace<InputComponent>(ent);
     reg.emplace<PlayerComponent>(ent, playerId);
-    reg.emplace<BoundingBoxComponent>(ent, PLAYER_BBOX_HX, PLAYER_BBOX_HY, PLAYER_BBOX_HZ);
+    reg.emplace<BoundingBoxComponent>(ent, GHOST_PLAYER_BBOX_HX, GHOST_PLAYER_BBOX_HY, GHOST_PLAYER_BBOX_HZ);
     reg.emplace<PhysicsModeComponent>(ent, PhysicsMode::GHOST);
     reg.emplace<ToolComponent>(ent);  // Default: HAND tool
 

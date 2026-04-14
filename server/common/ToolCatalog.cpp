@@ -26,7 +26,7 @@ ToolInfo makeDefaultToolInfo(ToolType type) {
                 5,          // 5 damage
                 10,         // 0.5 second cooldown at 20tps
                 768.0f,     // 3 voxels range (3 * 256)
-                200.0f      // knockback impulse
+                100.0f      // knockback impulse
             };
         default:
             return ToolInfo{

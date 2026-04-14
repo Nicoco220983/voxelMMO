@@ -13,6 +13,7 @@ import { HandTool } from './tools/HandTool.js'
 import { SelectVoxelTool } from './tools/SelectVoxelTool.js'
 import { ToolType, registerTool, getToolClass } from './ToolCatalog.js'
 import { Tool } from './tools/Tool.js'
+import { DebugVisualizer } from './DebugVisualizer.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -36,16 +37,27 @@ const ssaoPass = rm.ssaoPass
 const _mode = new URLSearchParams(location.search).get('mode')
 const _entityType = _mode === 'ghost' ? EntityType.GHOST_PLAYER : EntityType.PLAYER
 
+// ── Debug Mode ─────────────────────────────────────────────────────────────
+// ?debug=true → Enable debug visualizations (entity bounding boxes, etc.)
+const _debug = new URLSearchParams(location.search).get('debug')
+const _debugEnabled = _debug === 'true' || _debug === '1' || _debug === ''
+const debugVisualizer = new DebugVisualizer(scene, _debugEnabled)
+if (_debugEnabled) {
+  console.info('[main] Debug mode enabled - entity bounding boxes visible')
+}
+
 // Generate or retrieve session token for entity recovery across reconnects
+// Uses sessionStorage (tab-specific) so each browser tab gets a unique session.
+// sessionStorage persists across page refreshes but is NOT shared between tabs.
 function getOrCreateSessionToken() {
   const STORAGE_KEY = 'voxelmmo_session_token'
-  let token = localStorage.getItem(STORAGE_KEY)
+  let token = sessionStorage.getItem(STORAGE_KEY)
   if (!token) {
     // Generate 16-byte random token and encode as base64
     const bytes = new Uint8Array(16)
     crypto.getRandomValues(bytes)
     token = btoa(String.fromCharCode(...bytes))
-    localStorage.setItem(STORAGE_KEY, token)
+    sessionStorage.setItem(STORAGE_KEY, token)
   }
   // Decode base64 back to Uint8Array
   const binary = atob(token)
@@ -104,6 +116,9 @@ const selectVoxelTool = hotbar.slots[1]
 if (selectVoxelTool instanceof SelectVoxelTool) {
   selectVoxelTool.setChunkRegistry(client.chunkRegistry)
 }
+
+// Wire up debug visualizer to entity registry
+debugVisualizer.setEntityRegistry(client.entityRegistry)
 
 // ── Tool Visual System ─────────────────────────────────────────────────────
 // Static Tool class manages first-person visuals via Tool.updateVisualSystem()
@@ -177,6 +192,10 @@ function animate() {
   // ── Entity updates ──────────────────────────────────────────────────────
   // Update entity animations (sheep leg swing, player mesh position, etc.)
   client.updateEntities(dt)
+
+  // ── Debug visualizer update ─────────────────────────────────────────────
+  // Update entity bounding box visualizations
+  debugVisualizer.update()
 
   // ── Hotbar render ───────────────────────────────────────────────────────
   // Updates UI slots based on selfEntity.toolId

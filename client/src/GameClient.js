@@ -82,6 +82,14 @@ export class GameClient {
   }
 
   /**
+   * Get the entity registry for accessing all entities.
+   * @returns {EntityRegistry}
+   */
+  get entityRegistry() {
+    return this.#entityRegistry
+  }
+
+  /**
    * @param {string}      url    Full WebSocket URL, e.g. "ws://localhost:8080".
    * @param {THREE.Scene} scene  The Three.js scene to add/remove chunk meshes into.
    */
@@ -448,6 +456,10 @@ export class GameClient {
     const entityCount = EntityDeserializer.applySnapshotEntities(this.#entityRegistry, this.#chunkRegistry, chunkId, view, off, ess, messageTick)
     off += ess
 
+    if (off !== view.byteLength) {
+      console.error('[GameClient] SNAPSHOT parsing leftover bytes:', off, '!=', view.byteLength)
+    }
+
     chunk.dirty = true
     return { voxelCount: decompressedVoxels.length, entityCount }
   }
@@ -495,30 +507,34 @@ export class GameClient {
    * @returns {{voxelCount: number, entityCount: number}}
    */
   #applySnapshotDelta(view, compressed, chunkId, messageTick) {
-    const { chunk, pView, pOff: entityOff, voxelCount } = this.#parseVoxelDeltas(view, compressed, chunkId)
+    // SNAPSHOT_DELTA uses the same payload layout as SNAPSHOT:
+    // header(15) + flags(1) + cvs(4) + lz4_voxels + ess(4) + entity_data
+    // (there is no outer compression wrapper; the _COMPRESSED type only refers
+    // to the internal voxel/entity compression already present in snapshots.)
+    const raw = new Uint8Array(view.buffer, view.byteOffset, view.byteLength)
+    let off = 15  // skip type(1) + size(2) + chunkId(8) + tick(4)
+
+    const flags = view.getUint8(off++)
+    const cvs   = view.getInt32(off, true); off += 4
+
+    // Get or create chunk and set voxels
+    const chunk = this.#getOrCreateChunk(chunkId)
+    const decompressedVoxels = lz4Decompress(raw.subarray(off, off + cvs), chunk.voxels.length)
+    chunk.setVoxels(decompressedVoxels)
+    off += cvs
 
     // Entity section: full entities (like snapshot), not deltas
-    // The entity section format matches snapshots:
-    //   [entity_section_stored_size(4)] [entity_data]
-    // where entity_data starts with entity_count(4) if uncompressed,
-    // or [uncomp_size(4)][lz4_data] if compressed
-    let entityCount = 0
-    if (entityOff + 4 <= pView.byteLength) {
-      // Read entity_section_stored_size (size of entity_data that follows)
-      const ess = pView.getInt32(entityOff, true)
-      const payloadOff = entityOff + 4
-      if (ess > 0 && payloadOff + ess <= pView.byteLength) {
-        // Get flags from message header (position 15) - indicates if entity section is compressed
-        const flags = view.getUint8(15)
-        // Extract payload bytes from the decompressed view
-        const payload = new Uint8Array(pView.buffer, pView.byteOffset, pView.byteLength)
-        entityCount = EntityDeserializer.applySnapshotDeltaEntities(
-          this.#entityRegistry, this.#chunkRegistry, chunkId, payload, payloadOff, ess, flags, messageTick)
-      }
+    const ess = view.getInt32(off, true); off += 4
+    const entityCount = EntityDeserializer.applySnapshotDeltaEntities(
+      this.#entityRegistry, this.#chunkRegistry, chunkId, raw, off, ess, flags, messageTick)
+    off += ess
+
+    if (off !== view.byteLength) {
+      console.error('[GameClient] SNAPSHOT_DELTA parsing leftover bytes:', off, '!=', view.byteLength)
     }
 
     chunk.dirty = true
-    return { voxelCount, entityCount }
+    return { voxelCount: decompressedVoxels.length, entityCount }
   }
 
   /**
@@ -537,6 +553,9 @@ export class GameClient {
     if (entityOff + 4 <= pView.byteLength) {
       const reader = new BufReader(pView, entityOff)
       entityCount = EntityDeserializer.applyDeltaEntities(this.#entityRegistry, this.#chunkRegistry, chunkId, reader, messageTick)
+      if (reader.offset !== pView.byteLength) {
+        console.error('[GameClient] TICK_DELTA entity parsing leftover bytes:', reader.offset, '!=', pView.byteLength)
+      }
     }
 
     chunk.dirty = true

@@ -2,6 +2,7 @@
 #include "game/components/GroundContactComponent.hpp"
 #include "game/components/JumpComponent.hpp"
 #include "game/components/WalkComponent.hpp"
+#include "game/components/HealthComponent.hpp"
 #include "common/VoxelPhysicProps.hpp"
 
 namespace voxelmmo {
@@ -17,6 +18,11 @@ void apply(entt::registry& reg) {
                   DynamicPositionComponent& dyn,
                   const EntityTypeComponent& et)
     {
+        // Skip input for dead entities
+        if (const auto* health = reg.try_get<HealthComponent>(ent)) {
+            if (health->current == 0) return;
+        }
+
         int32_t nvx = dyn.vx, nvy = dyn.vy, nvz = dyn.vz;
 
         // Check if entity is climbing (center inside ladder)

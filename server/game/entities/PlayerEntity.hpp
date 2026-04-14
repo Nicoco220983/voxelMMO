@@ -44,6 +44,10 @@ namespace voxelmmo::PlayerEntity {
  * @param playerId Persistent player ID.
  * @return Entity handle.
  */
+/// Player AABB half-extents in sub-voxels (0.4 × 0.9 × 0.4 voxels).
+inline constexpr int32_t PLAYER_BBOX_HX     = static_cast<int32_t>(0.4f * SUBVOXEL_SIZE);
+inline constexpr int32_t PLAYER_BBOX_HY     = static_cast<int32_t>(0.9f * SUBVOXEL_SIZE);
+inline constexpr int32_t PLAYER_BBOX_HZ     = static_cast<int32_t>(0.4f * SUBVOXEL_SIZE);
 inline constexpr int32_t PLAYER_WALK_SPEED = 77;   ///<  6 vox/s × SUBVOXEL_SIZE × TICK_DT
 inline constexpr int32_t PLAYER_JUMP_VY    = 90;   ///< gives ≈ 3.9 voxel jump height
 inline constexpr uint16_t DEFAULT_HEALTH   = 100;  ///< Default player health points
