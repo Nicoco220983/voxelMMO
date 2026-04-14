@@ -209,6 +209,7 @@ export class SheepEntity extends LivingEntity {
       })
       this.mesh = null
     }
+    super.destroy(scene)
   }
 
   // ─── Static Deserialization Methods ───────────────────────────────────────

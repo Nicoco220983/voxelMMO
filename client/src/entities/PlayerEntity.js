@@ -357,6 +357,7 @@ export class PlayerEntity extends LivingEntity {
     this._cleanupDamageFlash()
     this.#destroyMesh()
     this.#scene = null
+    super.destroy(scene)
   }
 
   // ─── Static Deserialization Methods ───────────────────────────────────────

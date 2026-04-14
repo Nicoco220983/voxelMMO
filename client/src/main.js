@@ -13,7 +13,7 @@ import { HandTool } from './tools/HandTool.js'
 import { SelectVoxelTool } from './tools/SelectVoxelTool.js'
 import { ToolType, registerTool, getToolClass } from './ToolCatalog.js'
 import { Tool } from './tools/Tool.js'
-import { DebugVisualizer } from './DebugVisualizer.js'
+import { GameState } from './GameState.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
 
@@ -41,7 +41,7 @@ const _entityType = _mode === 'ghost' ? EntityType.GHOST_PLAYER : EntityType.PLA
 // ?debug=true → Enable debug visualizations (entity bounding boxes, etc.)
 const _debug = new URLSearchParams(location.search).get('debug')
 const _debugEnabled = _debug === 'true' || _debug === '1' || _debug === ''
-const debugVisualizer = new DebugVisualizer(scene, _debugEnabled)
+GameState.debugMode = _debugEnabled
 if (_debugEnabled) {
   console.info('[main] Debug mode enabled - entity bounding boxes visible')
 }
@@ -117,8 +117,7 @@ if (selectVoxelTool instanceof SelectVoxelTool) {
   selectVoxelTool.setChunkRegistry(client.chunkRegistry)
 }
 
-// Wire up debug visualizer to entity registry
-debugVisualizer.setEntityRegistry(client.entityRegistry)
+// (Debug visualizations are now handled per-entity in BaseEntity.updateDebug)
 
 // ── Tool Visual System ─────────────────────────────────────────────────────
 // Static Tool class manages first-person visuals via Tool.updateVisualSystem()
@@ -195,7 +194,9 @@ function animate() {
 
   // ── Debug visualizer update ─────────────────────────────────────────────
   // Update entity bounding box visualizations
-  debugVisualizer.update()
+  for (const entity of client.entityRegistry.all()) {
+    entity.updateDebug(scene)
+  }
 
   // ── Hotbar render ───────────────────────────────────────────────────────
   // Updates UI slots based on selfEntity.toolId

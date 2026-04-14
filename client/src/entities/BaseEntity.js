@@ -1,10 +1,22 @@
 // @ts-check
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
+import { GameState } from '../GameState.js'
+import { SUBVOXEL_SIZE } from '../types.js'
+import * as THREE from 'three'
 
 /** @typedef {import('../types.js').ChunkId} ChunkId */
 /** @typedef {import('../types.js').SubVoxelCoord} SubVoxelCoord */
 /** @typedef {import('../types.js').GlobalEntityId} GlobalEntityId */
 /** @typedef {import('../types.js').EntityType} EntityType */
+
+// Shared debug bounding box resources
+const _debugBoxGeometry = new THREE.BoxGeometry(1, 1, 1)
+const _debugBoxMaterial = new THREE.LineBasicMaterial({
+  color: 0x00ff00,
+  transparent: true,
+  opacity: 0.8,
+  depthTest: false,
+})
 
 /**
  * @class BaseEntity
@@ -84,6 +96,74 @@ export class BaseEntity {
   getBoundingBox() {
     // Default: no bounding box
     return { hx: 0, hy: 0, hz: 0 }
+  }
+
+  /** @type {THREE.LineSegments|null} */
+  #debugWireframe = null
+
+  /**
+   * Update debug visualization for this entity.
+   * Creates, updates, or removes the bounding box wireframe based on GameState.debugMode.
+   * @param {THREE.Scene} scene
+   */
+  updateDebug(scene) {
+    if (!GameState.debugMode) {
+      if (this.#debugWireframe) {
+        scene.remove(this.#debugWireframe)
+        this.#debugWireframe.geometry.dispose()
+        this.#debugWireframe = null
+      }
+      return
+    }
+
+    const bbox = this.getBoundingBox()
+    if (bbox.hx === 0 && bbox.hy === 0 && bbox.hz === 0) {
+      if (this.#debugWireframe) {
+        scene.remove(this.#debugWireframe)
+        this.#debugWireframe.geometry.dispose()
+        this.#debugWireframe = null
+      }
+      return
+    }
+
+    if (!this.#debugWireframe) {
+      const edges = new THREE.EdgesGeometry(_debugBoxGeometry)
+      this.#debugWireframe = new THREE.LineSegments(edges, _debugBoxMaterial)
+      scene.add(this.#debugWireframe)
+    }
+
+    const pos = this.currentPos
+    const centerX = pos.x / SUBVOXEL_SIZE
+    const centerY = pos.y / SUBVOXEL_SIZE
+    const centerZ = pos.z / SUBVOXEL_SIZE
+
+    const scaleX = (bbox.hx * 2) / SUBVOXEL_SIZE
+    const scaleY = (bbox.hy * 2) / SUBVOXEL_SIZE
+    const scaleZ = (bbox.hz * 2) / SUBVOXEL_SIZE
+
+    this.#debugWireframe.position.set(centerX, centerY, centerZ)
+    this.#debugWireframe.scale.set(scaleX, scaleY, scaleZ)
+  }
+
+  /**
+   * Remove debug visualization from scene.
+   * @param {THREE.Scene} scene
+   */
+  destroyDebug(scene) {
+    if (this.#debugWireframe) {
+      scene.remove(this.#debugWireframe)
+      this.#debugWireframe.geometry.dispose()
+      this.#debugWireframe = null
+    }
+  }
+
+  /**
+   * Destroy this entity and its debug visuals.
+   * Subclasses that override this MUST call super.destroy(scene).
+   * @param {THREE.Scene} scene
+   */
+  destroy(scene) {
+    this.destroyDebug(scene)
   }
 
 }
