@@ -3,6 +3,7 @@ import { Tool } from './Tool.js'
 import { InputType, NetworkProtocol } from '../NetworkProtocol.js'
 import { ToolType } from '../ToolCatalog.js'
 import { chunkIdFromVoxelPos, getChunkPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZE_Z } from '../types.js'
+import { StoneVoxel, DirtVoxel, BasicVoxel, PlanksVoxel, BricksVoxel, MudVoxel, SlimeVoxel, LadderVoxel, GoblinBedVoxel } from '../voxels/index.js'
 
 /**
  * @typedef {import('../ui/VoxelHighlight.js').VoxelHighlight} VoxelHighlight
@@ -10,18 +11,33 @@ import { chunkIdFromVoxelPos, getChunkPos, CHUNK_SIZE_X, CHUNK_SIZE_Y, CHUNK_SIZ
  */
 
 /**
- * Tool for selecting voxels with destroy/copy/paste modes.
- * Supports bulk selection for copying regions of voxels.
+ * Unified voxel tool with create/destroy/copy/paste sub-modes.
+ * Supports bulk selection, copy buffers, and paste preview with rotation.
  */
-export class SelectVoxelTool extends Tool {
-  static TOOL_ID = ToolType.SELECT_VOXEL
+export class VoxelTool extends Tool {
+  static TOOL_ID = ToolType.VOXEL
 
-  /** @type {'destroy'|'copy'|'paste'} */
-  #mode = 'destroy'
+  // Available voxel types for the expanded view in create mode
+  static VOXEL_TYPES = [
+    StoneVoxel,
+    DirtVoxel,
+    BasicVoxel,
+    PlanksVoxel,
+    BricksVoxel,
+    MudVoxel,
+    SlimeVoxel,
+    LadderVoxel,
+    GoblinBedVoxel,
+  ]
 
-  static getToolTypeStatic() {
-    return ToolType.SELECT_VOXEL
-  }
+  /** @type {'create'|'destroy'|'copy'|'paste'} */
+  #mode = 'create'
+
+  /** @type {number} */
+  #voxelType = 1 // BASIC
+
+  /** @type {boolean} */
+  #paletteOpen = false
 
   /**
    * Copy buffer stores batched voxels from a copy operation.
@@ -39,13 +55,17 @@ export class SelectVoxelTool extends Tool {
   /** @type {ChunkRegistry|null} */
   #chunkRegistry = null
 
+  static getToolTypeStatic() {
+    return ToolType.VOXEL
+  }
+
   constructor() {
-    super('Select Voxel', '↖')
+    super('Voxel', '🧱')
   }
 
   /**
-   * Set the current sub-mode (destroy/copy/paste).
-   * @param {'destroy'|'copy'|'paste'} mode
+   * Set the current sub-mode (create/destroy/copy/paste).
+   * @param {'create'|'destroy'|'copy'|'paste'} mode
    */
   setMode(mode) {
     this.#mode = mode
@@ -61,24 +81,29 @@ export class SelectVoxelTool extends Tool {
 
   /**
    * Handle back navigation (Q key pressed).
-   * If in a sub-mode, exits to main sub-tool selection.
+   * If viewing the voxel palette, closes it and returns to mode selection.
+   * If in any sub-mode other than the default (create), resets to create.
    * @returns {boolean} true if handled (don't unselect tool), false to unselect tool
    */
   onBackNavigation() {
-    // If in a sub-mode, go back to showing main sub-tools
-    if (this.#mode !== 'destroy') {
-      this.#mode = 'destroy'
-      return true // Handled, don't unselect
+    if (this.#paletteOpen) {
+      this.#paletteOpen = false
+      return true
     }
-    return false // Not handled, unselect tool
+    if (this.#mode !== 'create') {
+      this.#mode = 'create'
+      return true
+    }
+    return false
   }
 
   /**
    * Called when the tool is deselected.
-   * Resets mode to default (destroy).
+   * Resets mode to default (create) and closes palette.
    */
   onDeselect() {
-    this.#mode = 'destroy'
+    this.#mode = 'create'
+    this.#paletteOpen = false
     this.resetRotation()
   }
 
@@ -126,7 +151,7 @@ export class SelectVoxelTool extends Tool {
     if (!this.#copyBuffer) return { ...voxel }
 
     const { width, height, depth } = this.#copyBuffer
-    
+
     // Center at origin for rotation
     let x = voxel.rx - (width - 1) / 2
     let y = voxel.ry - (height - 1) / 2
@@ -177,18 +202,53 @@ export class SelectVoxelTool extends Tool {
 
   /**
    * Get the current sub-mode.
-   * @returns {'destroy'|'copy'|'paste'}
+   * @returns {'create'|'destroy'|'copy'|'paste'}
    */
   getMode() {
     return this.#mode
   }
 
   /**
+   * Set the voxel type to create.
+   * @param {number} voxelType
+   */
+  setVoxelType(voxelType) {
+    this.#voxelType = voxelType
+  }
+
+  /**
+   * Get the current voxel type.
+   * @returns {number}
+   */
+  getVoxelType() {
+    return this.#voxelType
+  }
+
+  /**
+   * Get the index of the current voxel type in VOXEL_TYPES.
+   * @returns {number}
+   */
+  getVoxelTypeIndex() {
+    return VoxelTool.VOXEL_TYPES.findIndex(v => v.type === this.#voxelType)
+  }
+
+  /**
    * Get expanded view data for the hotbar.
-   * Returns select mode options (destroy/copy/paste) or rotation controls when in paste mode.
-   * @returns {{type: 'select', items: Array<{id: string, name: string, icon: string}>, selectedIndex: number}|null}
+   * Returns mode selection by default.
+   * When palette is open, shows voxel palette.
+   * When in paste mode with copy buffer, shows rotation controls.
+   * @returns {{type: 'voxels'|'select', items: Array<{id?: string, name?: string, label?: string, icon?: string, textures?: string|Object}>, selectedIndex: number}|null}
    */
   getExpandedView() {
+    // When palette is open, show voxel palette for create mode
+    if (this.#paletteOpen) {
+      return {
+        type: 'voxels',
+        items: VoxelTool.VOXEL_TYPES,
+        selectedIndex: this.getVoxelTypeIndex()
+      }
+    }
+
     // In paste mode with copy buffer, show rotation controls
     if (this.#mode === 'paste' && this.#copyBuffer) {
       const rotationOptions = [
@@ -199,12 +259,13 @@ export class SelectVoxelTool extends Tool {
       return {
         type: 'select',
         items: rotationOptions,
-        selectedIndex: -1 // No selection for rotation controls
+        selectedIndex: -1
       }
     }
 
-    // Default: show mode selection (destroy/copy/paste)
+    // Default: show mode selection (create/destroy/copy/paste)
     const selectOptions = [
+      { id: 'create', name: 'Create', icon: '➕' },
       { id: 'destroy', name: 'Destroy', icon: '💥' },
       { id: 'copy', name: 'Copy', icon: '📋' },
       { id: 'paste', name: 'Paste', icon: '📄' },
@@ -225,6 +286,15 @@ export class SelectVoxelTool extends Tool {
    * @param {number} index - Index in items array
    */
   onExpandedViewSelect(index) {
+    // When palette is open, handle voxel palette selection
+    if (this.#paletteOpen) {
+      const voxelDef = VoxelTool.VOXEL_TYPES[index]
+      if (voxelDef) {
+        this.#voxelType = voxelDef.type
+      }
+      return
+    }
+
     // In paste mode with copy buffer, handle rotation controls
     if (this.#mode === 'paste' && this.#copyBuffer) {
       const actions = ['rotateY', 'rotateX', 'reset']
@@ -240,9 +310,13 @@ export class SelectVoxelTool extends Tool {
     }
 
     // Default: handle mode selection
-    const modes = ['destroy', 'copy', 'paste']
+    const modes = ['create', 'destroy', 'copy', 'paste']
     if (index >= 0 && index < modes.length) {
       this.setMode(modes[index])
+      // Entering create mode opens the voxel palette
+      if (this.#mode === 'create') {
+        this.#paletteOpen = true
+      }
     }
   }
 
@@ -328,7 +402,7 @@ export class SelectVoxelTool extends Tool {
    */
   copyRegion(start, end) {
     if (!this.#chunkRegistry) return false
-    
+
     // Reset rotation on new copy
     this.resetRotation()
 
@@ -387,11 +461,11 @@ export class SelectVoxelTool extends Tool {
 
     return this.#copyBuffer.voxels.map(voxel => {
       const rotated = this.#applyRotation(voxel)
-      return SelectVoxelTool.serializeCreateInput(
+      return VoxelTool.serializeCreateInput(
         target.x + rotated.rx,
         target.y + rotated.ry,
         target.z + rotated.rz,
-        voxel.type
+        rotated.type
       )
     })
   }
@@ -450,7 +524,7 @@ export class SelectVoxelTool extends Tool {
    */
   #getVoxelAt(vx, vy, vz) {
     if (!this.#chunkRegistry) return null
-    
+
     const chunkId = chunkIdFromVoxelPos(vx, vy, vz)
     const chunk = this.#chunkRegistry.get(chunkId)
     if (!chunk) return null
@@ -464,13 +538,15 @@ export class SelectVoxelTool extends Tool {
   }
 
   getHighlightMode() {
+    if (this.#mode === 'create') return 'create'
+    if (this.#mode === 'destroy') return 'destroy'
     return 'select'
   }
 
   getHighlightColor() {
-    // Red for destroy, light grey for copy, green for paste
+    if (this.#mode === 'create') return 0x00FF00
     if (this.#mode === 'destroy') return 0xFF0000
-    if (this.#mode === 'paste') return 0x00FF00  // Green for paste
+    if (this.#mode === 'paste') return 0x00FF00
     return 0xD3D3D3  // Light grey for copy
   }
 
@@ -479,12 +555,7 @@ export class SelectVoxelTool extends Tool {
   }
 
   supportsBulkMode() {
-    // Paste mode has no bulk mode (batch is handled by single click)
     return this.#mode !== 'paste'
-  }
-
-  needsSelectMode() {
-    return true
   }
 
   /**
@@ -493,11 +564,13 @@ export class SelectVoxelTool extends Tool {
    * @returns {ArrayBuffer|Array<ArrayBuffer>|null}
    */
   serializeBuilderInput(targetVoxel) {
+    if (this.#mode === 'create') {
+      return VoxelTool.serializeCreateInput(targetVoxel.x, targetVoxel.y, targetVoxel.z, this.#voxelType)
+    }
     if (this.#mode === 'destroy') {
-      return SelectVoxelTool.serializeDestroyInput(targetVoxel.x, targetVoxel.y, targetVoxel.z)
+      return VoxelTool.serializeDestroyInput(targetVoxel.x, targetVoxel.y, targetVoxel.z)
     }
     if (this.#mode === 'paste' && this.#copyBuffer) {
-      // Paste entire buffer (all voxels)
       return this.getPasteInputs(targetVoxel)
     }
     return null
@@ -518,9 +591,24 @@ export class SelectVoxelTool extends Tool {
   }
 
   /**
+   * Serialize a BULK_VOXEL_CREATE input frame (for create mode bulk).
+   * @param {number} startX
+   * @param {number} startY
+   * @param {number} startZ
+   * @param {number} endX
+   * @param {number} endY
+   * @param {number} endZ
+   * @returns {ArrayBuffer}
+   */
+  serializeBulkCreateInput(startX, startY, startZ, endX, endY, endZ) {
+    return NetworkProtocol.serializeInputBulkVoxelCreate(startX, startY, startZ, endX, endY, endZ, this.#voxelType)
+  }
+
+  /**
    * Handle bulk action completion based on current mode.
    * For copy: fills the copy buffer (local only, returns null).
    * For destroy: returns bulk destroy input.
+   * For create: returns bulk create input.
    * For paste: returns array of voxel create inputs.
    * @param {{x: number, y: number, z: number}} start
    * @param {{x: number, y: number, z: number}} end
@@ -528,22 +616,26 @@ export class SelectVoxelTool extends Tool {
    */
   onBulkComplete(start, end) {
     if (this.#mode === 'copy') {
-      // Copy is local, no network input needed
       this.copyRegion(start, end)
       return null
     }
-    
+
     if (this.#mode === 'destroy') {
       return this.serializeBulkDestroyInput(start.x, start.y, start.z, end.x, end.y, end.z)
     }
-    
+
+    if (this.#mode === 'create') {
+      return this.serializeBulkCreateInput(start.x, start.y, start.z, end.x, end.y, end.z)
+    }
+
     if (this.#mode === 'paste') {
-      // Use minimum corner as anchor for paste
       const anchorX = Math.min(start.x, end.x)
       const anchorY = Math.min(start.y, end.y)
       const anchorZ = Math.min(start.z, end.z)
       return this.getPasteInputs({ x: anchorX, y: anchorY, z: anchorZ })
     }
+
+    return null
   }
 
   /**
@@ -553,7 +645,5 @@ export class SelectVoxelTool extends Tool {
    */
   serializeRotation() {
     return { ...this.#rotation }
-    
-    return null
   }
 }

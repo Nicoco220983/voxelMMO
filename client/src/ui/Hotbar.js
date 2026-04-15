@@ -1,7 +1,6 @@
 // @ts-check
 import { HandTool } from '../tools/HandTool.js'
-import { SelectVoxelTool } from '../tools/SelectVoxelTool.js'
-import { CreateVoxelTool } from '../tools/CreateVoxelTool.js'
+import { VoxelTool } from '../tools/VoxelTool.js'
 import { ToolType, getToolClass } from '../ToolCatalog.js'
 
 /**
@@ -53,9 +52,8 @@ export class Hotbar {
    * @private
    */
   #setDefaultTools() {
-    this.slots[0] = new HandTool()      // Key "1"
-    this.slots[1] = new SelectVoxelTool() // Key "2"
-    this.slots[2] = new CreateVoxelTool() // Key "3"
+    this.slots[0] = new HandTool() // Key "1"
+    this.slots[1] = new VoxelTool()  // Key "2"
     this.render()
   }
 

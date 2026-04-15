@@ -10,7 +10,7 @@ import { DeathScreen } from './ui/DeathScreen.js'
 import { createController } from './controllers/ControllerManager.js'
 import { voxelTexturesReady } from './VoxelTextures.js'
 import { HandTool } from './tools/HandTool.js'
-import { SelectVoxelTool } from './tools/SelectVoxelTool.js'
+import { VoxelTool } from './tools/VoxelTool.js'
 import { ToolType, registerTool, getToolClass } from './ToolCatalog.js'
 import { Tool } from './tools/Tool.js'
 import { GameContext, applyGraphicsPreset, GRAPHICS_PRESETS } from './GameContext.js'
@@ -127,10 +127,10 @@ const bulkSelection = new BulkVoxelsSelection(scene)
 // Reads selfEntity.toolId to highlight selected slot
 const hotbar = new Hotbar({ gameClient: client })
 
-// Set chunk registry on SelectVoxelTool for copy/paste operations
-const selectVoxelTool = hotbar.slots[1]
-if (selectVoxelTool instanceof SelectVoxelTool) {
-  selectVoxelTool.setChunkRegistry(client.chunkRegistry)
+// Set chunk registry on VoxelTool for copy/paste operations
+const voxelTool = hotbar.slots[1]
+if (voxelTool instanceof VoxelTool) {
+  voxelTool.setChunkRegistry(client.chunkRegistry)
 }
 
 // (Debug visualizations are now handled per-entity in BaseEntity.updateDebug)

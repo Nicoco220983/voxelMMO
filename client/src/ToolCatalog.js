@@ -11,8 +11,7 @@
  */
 export const ToolType = {
   HAND: 0,
-  SELECT_VOXEL: 1,
-  CREATE_VOXEL: 2,
+  VOXEL: 1,
   NONE: 255,
 }
 

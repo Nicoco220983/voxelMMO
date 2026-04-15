@@ -12,10 +12,9 @@ namespace voxelmmo {
  */
 enum class ToolType : uint8_t {
     HAND = 0,           // Default unarmed attack
-    SELECT_VOXEL = 1,   // Voxel selection tool (destroy/copy/paste)
-    CREATE_VOXEL = 2,   // Voxel creation tool
+    VOXEL = 1,          // Voxel tool (create/destroy/copy/paste)
     NONE = 255,         // No tool selected
-    COUNT = 3
+    COUNT = 2
 };
 
 /**

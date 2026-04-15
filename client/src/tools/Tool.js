@@ -266,7 +266,7 @@ export class Tool {
    * Delegates to static method by default.
    * 
    * - Server-authoritative tools (HandTool, etc.): return ToolType.HAND
-   * - Client-side tools (CreateVoxelTool, SelectVoxelTool): return null
+   * - Client-side tools (VoxelTool): return null
    * 
    * This determines whether selecting the tool requires server confirmation
    * (for combat/sync) or can be applied immediately client-side.
