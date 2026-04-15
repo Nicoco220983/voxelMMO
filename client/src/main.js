@@ -13,9 +13,23 @@ import { HandTool } from './tools/HandTool.js'
 import { SelectVoxelTool } from './tools/SelectVoxelTool.js'
 import { ToolType, registerTool, getToolClass } from './ToolCatalog.js'
 import { Tool } from './tools/Tool.js'
-import { GameState } from './GameState.js'
+import { GameContext, applyGraphicsPreset, GRAPHICS_PRESETS } from './GameContext.js'
 
 /** @typedef {import('./types.js').SubVoxelCoord} SubVoxelCoord */
+
+// ── Mobile Detection ───────────────────────────────────────────────────────
+GameContext.isMobile = /Mobi|Android|iPhone|iPad|iPod/i.test(navigator.userAgent) || navigator.maxTouchPoints > 1
+if (GameContext.isMobile) {
+  console.info('[main] Mobile device detected')
+}
+
+// ── Graphics Preset ─────────────────────────────────────────────────────────
+// ?gfx=low|medium|high|ultra → override default graphics settings
+const _gfx = new URLSearchParams(location.search).get('gfx')
+const defaultPreset = GameContext.isMobile ? 'low' : 'high'
+const selectedPreset = _gfx && GRAPHICS_PRESETS[_gfx] ? _gfx : defaultPreset
+applyGraphicsPreset(GameContext, /** @type {import('./GameContext.js').GraphicsPreset} */ (selectedPreset))
+console.info('[main] Graphics preset:', GameContext.graphicsPreset)
 
 // ── Texture Loading Guard ───────────────────────────────────────────────────
 let texturesReady = false
@@ -32,6 +46,8 @@ const camera   = rm.camera
 const composer = rm.composer
 const ssaoPass = rm.ssaoPass
 
+rm.applySettings(GameContext)
+
 // ── Network ───────────────────────────────────────────────────────────────
 // ?mode=ghost → GHOST_PLAYER (noclip); default (bare URL) → PLAYER (full physics)
 const _mode = new URLSearchParams(location.search).get('mode')
@@ -41,7 +57,7 @@ const _entityType = _mode === 'ghost' ? EntityType.GHOST_PLAYER : EntityType.PLA
 // ?debug=true → Enable debug visualizations (entity bounding boxes, etc.)
 const _debug = new URLSearchParams(location.search).get('debug')
 const _debugEnabled = _debug === 'true' || _debug === '1' || _debug === ''
-GameState.debugMode = _debugEnabled
+GameContext.debugMode = _debugEnabled
 if (_debugEnabled) {
   console.info('[main] Debug mode enabled - entity bounding boxes visible')
 }
@@ -209,7 +225,7 @@ function animate() {
     Tool.updateVisualSystem(self.toolId, self.toolLastUsedTick, client.renderTick)
   }
 
-  client.pruneDistantChunks(posInfo.vposX, posInfo.vposZ)
+  client.pruneDistantChunks(posInfo.vposX, posInfo.vposZ, GameContext.chunkLoadRadius)
   if (texturesReady) client.rebuildDirtyChunks()
 
   composer.render()

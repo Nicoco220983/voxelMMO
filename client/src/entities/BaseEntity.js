@@ -1,6 +1,6 @@
 // @ts-check
 import { DynamicPositionComponent } from '../components/DynamicPositionComponent.js'
-import { GameState } from '../GameState.js'
+import { GameContext } from '../GameContext.js'
 import { SUBVOXEL_SIZE } from '../types.js'
 import * as THREE from 'three'
 
@@ -103,11 +103,11 @@ export class BaseEntity {
 
   /**
    * Update debug visualization for this entity.
-   * Creates, updates, or removes the bounding box wireframe based on GameState.debugMode.
+   * Creates, updates, or removes the bounding box wireframe based on GameContext.debugMode.
    * @param {THREE.Scene} scene
    */
   updateDebug(scene) {
-    if (!GameState.debugMode) {
+    if (!GameContext.debugMode) {
       if (this.#debugWireframe) {
         scene.remove(this.#debugWireframe)
         this.#debugWireframe.geometry.dispose()

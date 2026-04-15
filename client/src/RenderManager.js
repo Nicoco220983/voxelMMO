@@ -60,17 +60,18 @@ export class RenderManager {
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.35))
     const sun = new THREE.DirectionalLight(0xffffff, 0.8)
     sun.position.set(200, 400, 100)
-    sun.castShadow = true
-    sun.shadow.mapSize.width = 2048
-    sun.shadow.mapSize.height = 2048
-    sun.shadow.camera.near = 0.5
-    sun.shadow.camera.far = 1000
+    this.sun = sun
+    this.sun.castShadow = true
+    this.sun.shadow.mapSize.width = 2048
+    this.sun.shadow.mapSize.height = 2048
+    this.sun.shadow.camera.near = 0.5
+    this.sun.shadow.camera.far = 1000
     const d = 300
-    sun.shadow.camera.left = -d
-    sun.shadow.camera.right = d
-    sun.shadow.camera.top = d
-    sun.shadow.camera.bottom = -d
-    this.scene.add(sun)
+    this.sun.shadow.camera.left = -d
+    this.sun.shadow.camera.right = d
+    this.sun.shadow.camera.top = d
+    this.sun.shadow.camera.bottom = -d
+    this.scene.add(this.sun)
   }
 
   _setupSky() {
@@ -163,6 +164,27 @@ export class RenderManager {
     this.camera.updateProjectionMatrix()
     this.renderer.setSize(window.innerWidth, window.innerHeight)
     this.composer.setSize(window.innerWidth, window.innerHeight)
+  }
+
+  /**
+   * Apply graphics settings from GameContext.
+   * @param {import('./GameContext.js').GameContextType} ctx
+   */
+  applySettings(ctx) {
+    this.renderer.setPixelRatio(Math.min(devicePixelRatio, ctx.pixelRatio))
+    this.renderer.shadowMap.enabled = ctx.shadowsEnabled
+    if (this.sun) {
+      this.sun.castShadow = ctx.shadowsEnabled
+      if (ctx.shadowsEnabled) {
+        this.renderer.shadowMap.needsUpdate = true
+      }
+    }
+    if (this.scene.fog) {
+      this.scene.fog.density = ctx.fogDensity
+    }
+    if (this.ssaoPass) {
+      this.ssaoPass.enabled = ctx.ssaoEnabled
+    }
   }
 
   /** Render one frame through the post-processing composer. */
