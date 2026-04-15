@@ -1,4 +1,5 @@
 // @ts-check
+import { GameContext } from '../GameContext.js'
 import { KeyboardController } from './KeyboardController.js'
 import { TouchController } from './TouchController.js'
 
@@ -16,8 +17,7 @@ import { TouchController } from './TouchController.js'
  * @returns {KeyboardController|TouchController}
  */
 export function createController(domElement, { voxelHighlight, bulkSelection, hotbar }) {
-  const isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0
-  return isTouch 
-    ? new TouchController({ voxelHighlight, bulkSelection, hotbar }) 
+  return GameContext.isMobile
+    ? new TouchController({ voxelHighlight, bulkSelection, hotbar })
     : new KeyboardController(domElement, { voxelHighlight, bulkSelection, hotbar })
 }

@@ -444,7 +444,7 @@ export class BaseController {
    * @private
    */
   #syncHotbarSelection() {
-    if (this.selectedSlotIndex !== null && !(this instanceof /** @type {any} */ (import('./TouchController.js').TouchController))) {
+    if (this.selectedSlotIndex !== null && !this._isTouchController) {
       this.hotbar.selectSlot(this.selectedSlotIndex)
     }
   }

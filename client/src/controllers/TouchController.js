@@ -251,6 +251,16 @@ export class TouchController extends BaseController {
         continue
       }
 
+      const hotbarSlot = target?.closest?.('.hotbar-slot')
+      if (hotbarSlot) {
+        const index = parseInt(hotbarSlot.dataset.index, 10)
+        if (!Number.isNaN(index)) {
+          this.hotbar.selectSlot(index)
+        }
+        e.preventDefault()
+        continue
+      }
+
       if ((target === this.#lookBase || this.#lookBase?.contains(target)) && this.#lookTouchId === null) {
         this.#lookTouchId = touch.identifier
         const rect = this.#lookBase.getBoundingClientRect()
@@ -476,7 +486,7 @@ export class TouchController extends BaseController {
    * @private
    */
   #triggerBack() {
-    this.hotbar.handleQ()
+    this.hotbar.clearSelection()
     this.selectedSlotIndex = null
   }
 
@@ -485,8 +495,13 @@ export class TouchController extends BaseController {
    * Called from main loop when mode changes.
    */
   updateRotationButtonsVisibility() {
-    const isRotateMode = this.hotbar?.isInRotateMode?.() ?? false
-    
+    const currentTool = this.hotbar?.getCurrentTool?.()
+    const expandedView = currentTool?.getExpandedView?.()
+    const expandedType = expandedView?.type
+
+    const isRotateMode = expandedType === 'rotate'
+    const showBack = expandedType === 'voxels' || expandedType === 'select' || isRotateMode
+
     if (this.#rotateXBtn) {
       this.#rotateXBtn.style.display = isRotateMode ? 'flex' : 'none'
     }
@@ -494,10 +509,6 @@ export class TouchController extends BaseController {
       this.#rotateYBtn.style.display = isRotateMode ? 'flex' : 'none'
     }
     if (this.#backBtn) {
-      // Show back button when in any special mode (voxels, select, rotate)
-      const showBack = this.hotbar?.isInVoxelMode?.() || 
-                       this.hotbar?.isInSelectMode?.() || 
-                       isRotateMode
       this.#backBtn.style.display = showBack ? 'flex' : 'none'
     }
   }

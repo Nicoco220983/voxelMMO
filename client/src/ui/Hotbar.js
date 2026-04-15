@@ -32,7 +32,8 @@ export class Hotbar {
   /** @type {Tool|null} */
   #currentTool = null
 
-
+  /** @type {HTMLElement|null} */
+  backBtn = null
 
   /**
    * @param {Object} options
@@ -42,7 +43,7 @@ export class Hotbar {
     this.#gameClient = gameClient
     this.slotElements = []
     this.slots = Array(10).fill(null)
-    
+
     this.createDOM()
     this.#setDefaultTools()
   }
@@ -71,6 +72,17 @@ export class Hotbar {
 
     hotbar.innerHTML = ''
     this.slotElements = []
+
+    this.backBtn = document.createElement('div')
+    this.backBtn.className = 'hotbar-back-btn'
+    this.backBtn.textContent = '←'
+    this.backBtn.title = 'Back'
+    this.backBtn.addEventListener('click', () => this.clearSelection())
+    this.backBtn.addEventListener('touchstart', (e) => {
+      e.preventDefault()
+      this.clearSelection()
+    }, { passive: false })
+    hotbar.appendChild(this.backBtn)
 
     for (let i = 0; i < 10; i++) {
       const slot = document.createElement('div')
@@ -156,6 +168,12 @@ export class Hotbar {
     // Get expanded view from current tool (if any)
     const expandedView = currentTool?.getExpandedView?.()
     
+    // Show/hide hotbar back button based on expanded view
+    if (this.backBtn) {
+      const hasExpandedView = !!expandedView
+      this.backBtn.style.display = hasExpandedView ? 'flex' : 'none'
+    }
+
     // Render each slot
     for (let i = 0; i < 10; i++) {
       const slotEl = this.slotElements[i]
